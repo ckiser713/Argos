@@ -26,3 +26,5 @@ sudo systemctl restart nix-daemon
 After completing these steps, the Nix environment will be ready to use.
 
 
+
+

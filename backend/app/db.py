@@ -323,6 +323,28 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_knowledge_edges_project ON knowledge_edges(project_id);
             CREATE INDEX IF NOT EXISTS idx_knowledge_edges_source ON knowledge_edges(source);
             CREATE INDEX IF NOT EXISTS idx_knowledge_edges_target ON knowledge_edges(target);
+
+            CREATE TABLE IF NOT EXISTS gap_reports (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_reports_project ON gap_reports(project_id);
+
+            CREATE TABLE IF NOT EXISTS gap_suggestions (
+                id TEXT PRIMARY KEY,
+                report_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                ticket_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                related_files_json TEXT,
+                FOREIGN KEY(report_id) REFERENCES gap_reports(id),
+                FOREIGN KEY(ticket_id) REFERENCES idea_tickets(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_suggestions_report ON gap_suggestions(report_id);
             """
         )
         conn.commit()

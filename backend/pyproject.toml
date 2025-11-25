@@ -19,6 +19,7 @@ pypdf = "^3.17.4"
 langchain-text-splitters = "^0.0.1"
 langgraph = "^0.0.30"
 langchain-openai = "^0.1.0"
+tree-sitter-languages = "^1.10.2"
 
 
 

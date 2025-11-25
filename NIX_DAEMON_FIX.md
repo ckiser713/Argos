@@ -69,3 +69,5 @@ ls -la /nix/var/nix/daemon-socket/
 
 The socket should exist and be readable by your user.
 
+
+

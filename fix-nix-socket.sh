@@ -32,3 +32,5 @@ echo ""
 echo "Now run: newgrp nixbld"
 echo "Then: nix develop"
 
+
+

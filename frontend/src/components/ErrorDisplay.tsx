@@ -5,7 +5,7 @@
 import React from "react";
 import { AlertTriangle, X, RefreshCw } from "lucide-react";
 import { getErrorMessage, isRetryableError, categorizeError } from "../lib/errorHandling";
-import { GlassCard } from "./GlassCard";
+import { GlassCard } from "../../components/GlassCard";
 
 interface ErrorDisplayProps {
   error: unknown;

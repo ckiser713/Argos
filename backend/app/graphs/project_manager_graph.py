@@ -11,7 +11,7 @@ except ImportError:
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt.tool_node import get_executor_for_config
+from langgraph.prebuilt import ToolExecutor
 
 
 @tool
@@ -32,7 +32,7 @@ tools = [search_knowledge, create_roadmap, trigger_n8n_workflow]
 
 # Create tool executor using available function
 try:
-    tool_executor = get_executor_for_config(tools, {})
+    tool_executor = ToolExecutor(tools)
 except Exception:
     # Fallback: simple executor
     class SimpleToolExecutor:

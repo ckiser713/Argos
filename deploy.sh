@@ -54,3 +54,5 @@ echo "Run E2E tests: pnpm e2e"
 echo ""
 echo "Stop services: docker-compose -f ops/docker-compose.yml down"
 
+
+
