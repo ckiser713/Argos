@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.domain.models import IngestJob, IngestStatus, IngestRequest
+from app.services.rag_service import rag_service
 
 
 class IngestService:
@@ -31,10 +32,25 @@ class IngestService:
             created_at=datetime.utcnow(),
             status=IngestStatus.QUEUED,
             progress=0.0,
-            message="Job queued (stub).",
+            message="Job queued.",
         )
         self._jobs[job_id] = job
         return job
+
+    def process_job(self, job_id: str):
+        job = self.get_job(job_id)
+        if not job:
+            return
+        self.update_job(job_id, status=IngestStatus.RUNNING, progress=0.1, message="Processing...")
+        
+        try:
+            # Read file content (stub for now)
+            text = f"Content of {job.source_path}"  # TODO: actual file reading
+            metadata = {"source": job.source_path}
+            rag_service.ingest_document(text, metadata)
+            self.update_job(job_id, status=IngestStatus.COMPLETED, progress=1.0, message="Ingested successfully.")
+        except Exception as e:
+            self.update_job(job_id, status=IngestStatus.FAILED, message=str(e))
 
     def update_job(
         self,

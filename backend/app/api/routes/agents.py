@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from app.domain.models import (
     AgentProfile,
@@ -30,12 +30,21 @@ def list_agent_runs() -> List[AgentRun]:
     return agent_service.list_runs()
 
 
-@router.post("/runs", response_model=AgentRun, summary="Start an agent run (stubbed)")
-def create_agent_run(request: AgentRunRequest) -> AgentRun:
+@router.post("/runs", response_model=AgentRun, summary="Start an agent run")
+async def create_agent_run(
+    request: AgentRunRequest, 
+    background_tasks: BackgroundTasks
+):
     agent = agent_service.get_agent(request.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent_service.create_run(request)
+    # 1. Create DB Record
+    run = agent_service.create_run_record(request)
+    
+    # 2. Offload Execution
+    background_tasks.add_task(agent_service.execute_run, run.id)
+    
+    return run
 
 
 @router.get("/runs/{run_id}", response_model=AgentRun, summary="Get agent run by ID")
