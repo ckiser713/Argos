@@ -1,14 +1,13 @@
 # tests/conftest.py
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
+from app.config import get_settings
 from fastapi.testclient import TestClient
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
-
-from app.config import get_settings
 
 
 @pytest.fixture(scope="session")

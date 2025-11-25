@@ -17,6 +17,7 @@ import {
 import { GlassCard } from './GlassCard';
 import { ScrambleText } from './ScrambleText';
 import { useIdeas } from '../src/hooks/useIdeas'; // Assuming ideas map to tasks for now
+import { ErrorDisplay } from '../src/components/ErrorDisplay';
 
 // --- Types ---
 
@@ -65,18 +66,101 @@ const COLUMNS: { id: ColumnId; label: string; color: string }[] = [
 
 export const MissionControlBoard: React.FC = () => {
    // 1. Fetch Real Data
-   const { data, isLoading } = useIdeas({ status: 'active' });
+   const { data, isLoading, error, refetch } = useIdeas({ status: 'active' });
+
+   // Helper function to extract file references from text
+   const extractFileReferences = (text: string): string[] => {
+      // Simple regex to find file paths (e.g., "auth.ts", "src/utils.ts", "backend/api.py")
+      const filePattern = /[\w\-_/]+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|h|hpp|md|txt|json|yaml|yml|toml|xml|sql|sh|bash|zsh|fish|ps1|bat|cmd|rb|php|swift|kt|scala|clj|hs|ml|fs|vb|cs|dart|r|m|pl|pm|sh|bash|zsh|fish|ps1|bat|cmd|rb|php|swift|kt|scala|clj|hs|ml|fs|vb|cs|dart|r|m|pl|pm)/gi;
+      const matches = text.match(filePattern);
+      return matches ? [...new Set(matches)] : [];
+   };
+
+   // Helper function to derive origin from ticket data
+   const deriveOrigin = (ticket: any): OriginType => {
+      // Check if ticket has sourceChannel or infer from category/repoHints
+      if (ticket.sourceChannel === 'chat') return 'chat';
+      if (ticket.sourceChannel === 'file' || ticket.category === 'research_topic') return 'pdf';
+      if (ticket.repoHints && ticket.repoHints.length > 0) return 'repo';
+      return 'chat'; // default
+   };
+
+   // Helper function to derive confidence from ticket data
+   const deriveConfidence = (ticket: any): number => {
+      // Base confidence on presence of supporting data
+      let confidence = 0.7; // base
+      if (ticket.sourceQuotes && ticket.sourceQuotes.length > 0) confidence += 0.1;
+      if (ticket.repoHints && ticket.repoHints.length > 0) confidence += 0.1;
+      if (ticket.impliedTaskSummaries && ticket.impliedTaskSummaries.length > 0) confidence += 0.1;
+      return Math.min(confidence * 100, 100);
+   };
 
    // 2. Transform Data if necessary (adapt Backend IdeaTicket to Frontend Task)
-   const tasks: Task[] = data?.items.map(ticket => ({
-      id: ticket.id,
-      title: ticket.title,
-      origin: 'chat', // derive from ticket metadata
-      confidence: 85, // derive or default
-      column: mapStatusToColumn(ticket.status), // helper function
-      context: [], // TODO: derive from ticket data
-      priority: ticket.priority || 'medium'
-   })) || [];
+   const tasks: Task[] = data?.items.map(ticket => {
+      const context: ContextFile[] = [];
+      
+      // Extract context from repoHints
+      if (ticket.repoHints && Array.isArray(ticket.repoHints)) {
+         ticket.repoHints.forEach((hint: string) => {
+            context.push({
+               name: hint,
+               type: 'code' as const
+            });
+         });
+      }
+      
+      // Extract file references from impliedTaskSummaries
+      if (ticket.impliedTaskSummaries && Array.isArray(ticket.impliedTaskSummaries)) {
+         ticket.impliedTaskSummaries.forEach((summary: string) => {
+            const files = extractFileReferences(summary);
+            files.forEach(file => {
+               context.push({
+                  name: file,
+                  type: 'code' as const
+               });
+            });
+         });
+      }
+      
+      // Extract file references from sourceQuotes
+      if (ticket.sourceQuotes && Array.isArray(ticket.sourceQuotes)) {
+         ticket.sourceQuotes.forEach((quote: string) => {
+            const files = extractFileReferences(quote);
+            files.forEach(file => {
+               context.push({
+                  name: file,
+                  type: 'code' as const
+               });
+            });
+         });
+      }
+      
+      // Extract file references from originStory
+      if (ticket.originStory) {
+         const files = extractFileReferences(ticket.originStory);
+         files.forEach(file => {
+            context.push({
+               name: file,
+               type: 'code' as const
+            });
+         });
+      }
+      
+      // Remove duplicates
+      const uniqueContext = context.filter((item, index, self) =>
+         index === self.findIndex(t => t.name === item.name)
+      );
+      
+      return {
+         id: ticket.id,
+         title: ticket.title,
+         origin: deriveOrigin(ticket),
+         confidence: ticket.confidence ? Math.round(ticket.confidence * 100) : deriveConfidence(ticket),
+         column: mapStatusToColumn(ticket.status),
+         context: uniqueContext,
+         priority: ticket.priority || 'medium'
+      };
+   }) || [];
 
    const [isDragging, setIsDragging] = useState(false);
    const [chatDropActive, setChatDropActive] = useState(false);
@@ -97,7 +181,19 @@ export const MissionControlBoard: React.FC = () => {
       }
    };
 
-   if (isLoading) return <div>Loading Mission Control...</div>;
+   if (isLoading) return <div className="text-gray-400 font-mono">Loading Mission Control...</div>;
+
+   if (error) {
+      return (
+         <div className="p-6">
+            <ErrorDisplay
+               error={error}
+               onRetry={() => refetch()}
+               title="Failed to load mission control tasks"
+            />
+         </div>
+      );
+   }
 
    return (
       <div className="h-[calc(100vh-140px)] w-full relative overflow-hidden flex flex-col perspective-[2000px]">

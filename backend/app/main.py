@@ -1,21 +1,25 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
 from app.api.routes import (
-    system,
-    context,
-    workflows,
-    ingest,
     agents,
-    knowledge,
-    streaming,
-    project_intel,
-    mode,
+    auth,
+    context,
     gap_analysis,
+    ideas,
+    ingest,
+    knowledge,
+    mode,
+    project_intel,
     projects,
+    roadmap,
+    streaming,
+    system,
+    workflows,
 )
+from app.config import get_settings
 from app.db import init_db
+from app.services.auth_service import verify_token
 
 
 def create_app() -> FastAPI:
@@ -38,18 +42,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Skip auth in test environment
+    if settings.debug or getattr(settings, 'skip_auth', False):
+        auth_deps = []
+    else:
+        auth_deps = [Depends(verify_token)]
+
     # Routers grouped by resource
-    app.include_router(system.router, prefix="/api", tags=["system"])
-    app.include_router(projects.router, prefix="/api", tags=["projects"])
-    app.include_router(context.router, prefix="/api/context", tags=["context"])
-    app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
-    app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
-    app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
-    app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
-    app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
-    app.include_router(project_intel.router, prefix="/api", tags=["project-intel"])
-    app.include_router(mode.router, prefix="/api", tags=["mode"])
-    app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis"])
+    app.include_router(auth.router, prefix="/api", tags=["auth"])
+    app.include_router(system.router, prefix="/api", tags=["system"], dependencies=auth_deps)
+    app.include_router(projects.router, prefix="/api", tags=["projects"], dependencies=auth_deps)
+    app.include_router(context.router, prefix="/api", tags=["context"], dependencies=auth_deps)
+    app.include_router(workflows.router, prefix="/api", tags=["workflows"], dependencies=auth_deps)
+    app.include_router(ingest.router, prefix="/api", tags=["ingest"], dependencies=auth_deps)
+    app.include_router(agents.router, prefix="/api", tags=["agents"], dependencies=auth_deps)
+    app.include_router(knowledge.router, prefix="/api", tags=["knowledge"], dependencies=auth_deps)
+    app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"], dependencies=auth_deps)
+    app.include_router(project_intel.router, prefix="/api", tags=["project-intel"], dependencies=auth_deps)
+    app.include_router(mode.router, prefix="/api", tags=["mode"], dependencies=auth_deps)
+    app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis"], dependencies=auth_deps)
+    app.include_router(roadmap.router, prefix="/api", tags=["roadmap"], dependencies=auth_deps)
+    app.include_router(ideas.router, prefix="/api", tags=["ideas"], dependencies=auth_deps)
 
     return app
 

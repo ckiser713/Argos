@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Sequence
 
 from app.domain.project_intel import (
     EmbeddingVector,
@@ -244,6 +244,7 @@ def extract_idea_candidates_from_segments(
 
     return candidates
 
+
 # Clustering + ticket promotion
 def cluster_ideas(candidates: List[IdeaCandidate]) -> List[IdeaCluster]:
     """
@@ -332,9 +333,7 @@ def cluster_ideas(candidates: List[IdeaCandidate]) -> List[IdeaCluster]:
         for key, group in sorted(groups.items(), key=lambda kv: kv[0]):
             # Use the highest-confidence candidate as cluster name.
             top = sorted(group, key=lambda c: (-c.confidence, c.id))[0]
-            cluster_id = _stable_id(
-                "idea_cluster", [top.project_id or "", key, top.id]
-            )
+            cluster_id = _stable_id("idea_cluster", [top.project_id or "", key, top.id])
             clusters.append(
                 IdeaCluster(
                     id=cluster_id,
@@ -353,6 +352,7 @@ def cluster_ideas(candidates: List[IdeaCandidate]) -> List[IdeaCluster]:
         },
     )
     return clusters
+
 
 def promote_clusters_to_tickets(
     clusters: List[IdeaCluster],
@@ -387,15 +387,10 @@ def promote_clusters_to_tickets(
             best = sorted(ideas, key=lambda c: (-c.confidence, c.id))[0]
             title = best.title
             summaries = [c.summary for c in ideas]
-            description = "Cluster of related ideas:\n\n" + "\n\n".join(
-                f"- {s}" for s in summaries
-            )
+            description = "Cluster of related ideas:\n\n" + "\n\n".join(f"- {s}" for s in summaries)
         else:
             title = cl.name
-            description = (
-                "Ticket generated from idea cluster with "
-                f"{len(cl.idea_ids)} related ideas."
-            )
+            description = f"Ticket generated from idea cluster with {len(cl.idea_ids)} related ideas."
 
         ticket_id = _stable_id("idea_ticket", [project_id or "", cl.id])
 

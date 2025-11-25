@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
-
-from fastapi import APIRouter, HTTPException, status
+from typing import Dict, List, Optional
 
 from app.domain.project_intel import (
     IdeaCandidate,
@@ -18,6 +16,8 @@ from app.services.project_intel_service import (
     extract_idea_candidates_from_segments,
     promote_clusters_to_tickets,
 )
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["project-intel"])
@@ -25,11 +25,13 @@ router = APIRouter(prefix="/projects", tags=["project-intel"])
 # We assume you have a way to fetch ChatSegments per project.
 # Adjust this import / function name to your actual implementation.
 try:  # pragma: no cover - integration point
-    from app.domain.chat import ChatSegment # Assuming ChatSegment is in app.domain.chat
+    from app.domain.chat import ChatSegment  # Assuming ChatSegment is in app.domain.chat
+
     # from app.repos.chat_segments_repo import list_segments_for_project # Original comment
     # For now, let's create a stub function as chat_segments_repo is not provided
     _chat_segments_store: Dict[str, List[ChatSegment]] = {}
-    class DummyChatSegment(ChatSegment): # Creating a dummy ChatSegment
+
+    class DummyChatSegment(ChatSegment):  # Creating a dummy ChatSegment
         id: str = "dummy_id"
         text: str = "dummy text"
         chat_id: str = "dummy_chat_id"
@@ -37,10 +39,20 @@ try:  # pragma: no cover - integration point
 
     def list_segments_for_project(project_id: str) -> List[ChatSegment]:
         logger.warning(f"Using dummy list_segments_for_project for project {project_id}")
-        if project_id == "test-project-rebuild": # Simulate some data for testing
+        if project_id == "test-project-rebuild":  # Simulate some data for testing
             return [
-                DummyChatSegment(id="seg1", text="we should add a new feature for context management", chat_id="chat1", project_id=project_id),
-                DummyChatSegment(id="seg2", text="refactor the old auth module", chat_id="chat1", project_id=project_id),
+                DummyChatSegment(
+                    id="seg1",
+                    text="we should add a new feature for context management",
+                    chat_id="chat1",
+                    project_id=project_id,
+                ),
+                DummyChatSegment(
+                    id="seg2",
+                    text="refactor the old auth module",
+                    chat_id="chat1",
+                    project_id=project_id,
+                ),
             ]
         return []
 
@@ -50,8 +62,6 @@ except ImportError:  # pragma: no cover
 
 
 # ---- schemas for PATCH ----
-
-from pydantic import BaseModel
 
 
 class TicketUpdateRequest(BaseModel):
@@ -91,9 +101,7 @@ def rebuild_project_ideas(project_id: str) -> dict:
 
     # Build a simple lookup for ticket promotion summaries.
     cand_lookup = {c.id: c for c in candidates}
-    tickets: List[IdeaTicket] = promote_clusters_to_tickets(
-        clusters, candidate_lookup=cand_lookup
-    )
+    tickets: List[IdeaTicket] = promote_clusters_to_tickets(clusters, candidate_lookup=cand_lookup)
 
     # Persist
     repo.save_candidates(candidates)

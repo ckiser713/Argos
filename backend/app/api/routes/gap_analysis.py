@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-
 from app.domain.gap_analysis import GapReport
 from app.repos.gap_analysis_repo import GapAnalysisRepo, get_gap_analysis_repo
 from app.services.gap_analysis_service import GapAnalysisService, get_gap_analysis_service
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(tags=["gap-analysis"])
 

@@ -27,11 +27,11 @@ def test_list_ingest_jobs_for_project_initial(client: TestClient, project: dict)
         assert isinstance(job, dict)
         assert "id" in job
         # project_id is part of the IngestJob model
-        assert "projectId" in job # Changed from project_id to projectId for consistency with models
+        assert "projectId" in job  # Changed from project_id to projectId for consistency with models
         assert job["projectId"] == project_id
         # Domain-aligned fields (if present)
         if "status" in job:
-            assert job["status"] in {"QUEUED", "RUNNING", "COMPLETED", "FAILED"} # Adjusted statuses
+            assert job["status"] in {"QUEUED", "RUNNING", "COMPLETED", "FAILED"}  # Adjusted statuses
         if "stage" in job:
             assert isinstance(job["stage"], str)
 
@@ -76,15 +76,17 @@ def test_create_ingest_job_for_project(client: TestClient, project: dict) -> Non
     # Let's assume the service would assign it, or it would come from the request if the API was changed.
     # For now, I'll add a placeholder check or skip it if it's not directly set by the current stub.
     # assert created.get("projectId") == project_id # This will likely fail with current stub
-    assert created.get("sourcePath") == payload["source_path"] # Changed from source_path to sourcePath for consistency with models
+    assert (
+        created.get("sourcePath") == payload["source_path"]
+    )  # Changed from source_path to sourcePath for consistency with models
 
     # Status/stage should be valid domain values if present.
     if "status" in created:
         assert created["status"] in {"QUEUED", "RUNNING", "COMPLETED", "FAILED"}
-    if "stage" in created: # IngestJob model does not explicitly have a 'stage', but IngestJobEventType does.
-                           # The mock job in ingest_service does have status and progress, but not stage.
-                           # Let's align with the IngestJob model and remove `stage` if it's not there.
-                           # Actually, the IngestJob model *does* have 'stage'.
+    if "stage" in created:  # IngestJob model does not explicitly have a 'stage', but IngestJobEventType does.
+        # The mock job in ingest_service does have status and progress, but not stage.
+        # Let's align with the IngestJob model and remove `stage` if it's not there.
+        # Actually, the IngestJob model *does* have 'stage'.
         assert isinstance(created["stage"], str)
 
     # Newly created job should show up in subsequent GET

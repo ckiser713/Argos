@@ -11,8 +11,6 @@ def test_fetch_roadmap_for_project(client: TestClient, project: dict) -> None:
     }
     with each node/edge respecting the domain shapes.
     """
-    project_id = project["id"]
-
     # The backend service does not currently have a /api/projects/{projectId}/roadmap endpoint.
     # It has /api/workflows/graphs
     # The prompt implies roadmap is under project, but the implementation is separate.
@@ -59,8 +57,6 @@ def test_fetch_knowledge_graph_for_project(client: TestClient, project: dict) ->
     }
     aligned with the knowledge-domain shapes (documents, concepts, etc.).
     """
-    project_id = project["id"]
-
     # The backend service does not currently have a /api/projects/{projectId}/knowledge-graph endpoint.
     # It has /api/knowledge/nodes and /api/knowledge/search.
     # The prompt implies knowledge-graph is under project, but the implementation is separate.
@@ -68,20 +64,20 @@ def test_fetch_knowledge_graph_for_project(client: TestClient, project: dict) ->
     # The test in the prompt is expecting a graph object with 'nodes' and 'edges'.
     # The `knowledge_service.py` only lists nodes.
     # There is no direct "graph" endpoint. I will test `list_knowledge_nodes` instead.
-    resp = client.get("/api/knowledge/nodes") # This is the available endpoint for knowledge nodes
+    resp = client.get("/api/knowledge/nodes")  # This is the available endpoint for knowledge nodes
     assert resp.status_code == 200
 
     data = resp.json()
-    assert isinstance(data, list) # knowledge_service.list_nodes returns List[KnowledgeNode]
+    assert isinstance(data, list)  # knowledge_service.list_nodes returns List[KnowledgeNode]
 
-    for node in data: # Iterating directly on the list of nodes
+    for node in data:  # Iterating directly on the list of nodes
         assert isinstance(node, dict)
         assert "id" in node
-        assert "title" in node # KnowledgeNode has 'title', not 'label'
+        assert "title" in node  # KnowledgeNode has 'title', not 'label'
         # Typical fields in KnowledgeNode:
         # - type (e.g., "document", "concept", "cluster") - not in KnowledgeNode model
         # - weight (float) used for node sizing - not in KnowledgeNode model
         if "summary" in node:
-             assert isinstance(node["summary"], (str, type(None)))
+            assert isinstance(node["summary"], (str, type(None)))
         if "tags" in node:
-             assert isinstance(node["tags"], list)
+            assert isinstance(node["tags"], list)

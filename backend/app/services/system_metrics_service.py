@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from typing import Optional, Tuple
+from typing import Optional
 
 try:
     import psutil  # type: ignore[import-not-found]
@@ -28,7 +28,8 @@ _DEFAULT_CONTEXT_TOTAL_TOKENS = 8_000_000
 
 try:
     # Optional: if you have app.config with Settings, wire context config here.
-    from app.config import get_settings # Adjusted to use get_settings
+    from app.config import get_settings  # Adjusted to use get_settings
+
     settings = get_settings()
 except ImportError:  # pragma: no cover - configuration not available in tests
     settings = None  # type: ignore[assignment]
@@ -282,9 +283,7 @@ def _ratio(numerator: float, denominator: float) -> float:
     return float(numerator) / float(denominator)
 
 
-def _max_status(
-    current: SystemStatusLiteral, candidate: SystemStatusLiteral
-) -> SystemStatusLiteral:
+def _max_status(current: SystemStatusLiteral, candidate: SystemStatusLiteral) -> SystemStatusLiteral:
     order = {"nominal": 0, "warning": 1, "critical": 2}
     return candidate if order[candidate] > order[current] else current
 

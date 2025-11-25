@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-
 from typing import Literal
-
 
 from pydantic import BaseModel, Field
 
-
-
-
 ExecutionMode = Literal["normal", "paranoid"]
-
-
 
 
 class ProjectExecutionSettings(BaseModel):
@@ -22,13 +15,11 @@ class ProjectExecutionSettings(BaseModel):
     so they should remain small and fast to validate.
     """
 
-
     project_id: str = Field(..., description="Logical project identifier")
     mode: ExecutionMode = Field(
         "normal",
         description="Execution mode: 'normal' for fast single-pass, 'paranoid' for extra validation",
     )
-
 
     # LLM tuning
     llm_temperature: float = Field(
@@ -38,7 +29,6 @@ class ProjectExecutionSettings(BaseModel):
         description="Base temperature used for this project's LLM calls",
     )
 
-
     # How many validation / cross-check passes should be attempted for critical operations.
     validation_passes: int = Field(
         1,
@@ -46,7 +36,6 @@ class ProjectExecutionSettings(BaseModel):
         le=10,
         description="Number of validation / checker passes on critical flows",
     )
-
 
     # Clamp parallelism for tools / sub-agents to avoid over-fanout in paranoid mode.
     max_parallel_tools: int = Field(

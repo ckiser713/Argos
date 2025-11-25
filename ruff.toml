@@ -1,6 +1,8 @@
 # Global lint rules for Python (may `extend = "backend/ruff.toml"` later)
 target-version = "py311"
 line-length = 120
+
+[lint]
 select = ["E", "F", "W", "I", "N"] # Basic error, flake, warning, import, naming checks
 
 [format]

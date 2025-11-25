@@ -226,6 +226,14 @@ cortex/
 -   Node.js 20+ and pnpm/yarn/npm
 -   Docker (for Qdrant, Postgres, n8n, and optional observability stack)
 
+### Development Environment Setup
+
+1.  Install [Docker](https://docs.docker.com/get-docker/).
+2.  Install [Docker Compose](https://docs.docker.com/compose/install/) (V2 is recommended).
+3.  Install Python 3.11+.
+4.  Install Node.js 18+.
+5.  Run `ops/check_env.sh` to verify your environment.
+
 ### Development
 
 #### 1. Backend (FastAPI) – dev mode
@@ -259,6 +267,44 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 The API will be available at:
 
 -   Interactive docs (Swagger): `http://localhost:8000/api/docs`
+
+#### 2. Frontend (React + Vite) – dev mode
+
+From the project root:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The frontend will be available at `http://localhost:5173`
+
+### Testing
+
+#### Backend Tests
+
+```bash
+cd backend
+pytest
+```
+
+#### E2E Tests
+
+E2E tests use Playwright and test the full stack (frontend + backend).
+
+1. Install dependencies:
+```bash
+pnpm install
+pnpm exec playwright install --with-deps
+```
+
+2. Run tests:
+```bash
+pnpm e2e
+```
+
+For more details, see [e2e/README.md](e2e/README.md)
 -   ReDoc: `http://localhost:8000/api/redoc`
 
 #### 2. Frontend (React) – dev mode

@@ -1,12 +1,13 @@
-FROM rocm/pytorch:rocm6.1_ubuntu22.04_py3.10_pytorch_2.1.2
+FROM rocm/pytorch:rocm7.1_ubuntu22.04_py3.11_pytorch_2.9.1
 
 # Install build deps
 RUN apt-get update && apt-get install -y git build-essential
 
-# Install vLLM from source (optimized for ROCm)
+# Install vLLM from source (optimized for ROCm) - custom build
 RUN pip uninstall -y torch torchvision
-RUN pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1
-RUN pip install vllm==0.4.2 --no-build-isolation
+RUN pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/rocm7.1
+# vLLM and llama.cpp provided by custom builds - assume installed or add here
+RUN pip install vllm --no-build-isolation  # Update to latest or custom
 
 # Environment for AMD
 ENV HIP_VISIBLE_DEVICES=0

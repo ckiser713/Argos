@@ -87,30 +87,17 @@ export type IngestJobStatus =
  */
 export interface IngestJob {
   id: ID;
-  projectId: ID;
-  sourceId: ID;
-  originalFilename: string;
-  byteSize: number;
-  mimeType?: string;
-  isDeepScan: boolean;
-  /**
-   * Current processing stage (for UI badges).
-   */
-  stage: IngestStage;
-  /**
-   * Numeric progress for current stage (0-100).
-   */
-  progress: number;
+  source_path: string;
+  created_at: string;
   status: IngestJobStatus;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  errorMessage?: string;
-  /**
-   * If this ingest job resulted in a CanonicalDocument, link it.
-   */
-  canonicalDocumentId?: ID;
+  progress: number; // 0.0 - 1.0
+  message?: string;
 }
+
+export interface IngestRequest {
+  source_path: string;
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* Canonical Documents, Chunks, Clusters */
@@ -345,6 +332,13 @@ export interface AgentRun {
   finalMessageId?: ID; // The ID of the final, conclusive message
   attachedDocumentIds: ID[]; // Documents identified/generated during the run
 }
+
+export interface AgentRunRequest {
+  project_id: string;
+  agent_id: string;
+  input_prompt: string;
+}
+
 
 export type AgentStepStatus = 'pending' | 'processing' | 'complete' | 'failed';
 export type AgentStepKind =

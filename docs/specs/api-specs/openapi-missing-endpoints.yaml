@@ -1,0 +1,771 @@
+openapi: 3.0.3
+info:
+  title: Cortex API - Missing Endpoints
+  version: 1.0.0
+  description: OpenAPI specification for missing and incomplete API endpoints
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+  - url: https://api.cortex.example.com/api
+    description: Production server
+
+tags:
+  - name: ingest
+    description: Ingestion and job management
+  - name: roadmap
+    description: Roadmap and dependency management
+  - name: knowledge
+    description: Knowledge graph operations
+  - name: context
+    description: Context window management
+  - name: agents
+    description: Agent runs and execution
+  - name: ideas
+    description: Ideas, clusters, tickets, and tasks
+
+paths:
+  /projects/{projectId}/ingest/jobs/{jobId}:
+    delete:
+      tags:
+        - ingest
+      summary: Delete ingest job
+      operationId: deleteIngestJob
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '204':
+          description: Job successfully deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+    get:
+      tags:
+        - ingest
+      summary: Get ingest job
+      operationId: getIngestJob
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/ingest/jobs/{jobId}/cancel:
+    post:
+      tags:
+        - ingest
+      summary: Cancel ingest job
+      operationId: cancelIngestJob
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/roadmap/nodes:
+    get:
+      tags:
+        - roadmap
+      summary: List roadmap nodes
+      operationId: listRoadmapNodes
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, ACTIVE, COMPLETE, BLOCKED]
+        - name: laneId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of roadmap nodes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoadmapNodes'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      security:
+        - BearerAuth: []
+
+    post:
+      tags:
+        - roadmap
+      summary: Create roadmap node
+      operationId: createRoadmapNode
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoadmapNodeRequest'
+      responses:
+        '201':
+          description: Node created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoadmapNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/roadmap/nodes/{nodeId}:
+    get:
+      tags:
+        - roadmap
+      summary: Get roadmap node
+      operationId: getRoadmapNode
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Node details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoadmapNode'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+    patch:
+      tags:
+        - roadmap
+      summary: Update roadmap node
+      operationId: updateRoadmapNode
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoadmapNodeRequest'
+      responses:
+        '200':
+          description: Node updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoadmapNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/roadmap/edges:
+    get:
+      tags:
+        - roadmap
+      summary: List roadmap edges
+      operationId: listRoadmapEdges
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: List of roadmap edges
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoadmapEdges'
+      security:
+        - BearerAuth: []
+
+    post:
+      tags:
+        - roadmap
+      summary: Create roadmap edge
+      operationId: createRoadmapEdge
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoadmapEdgeRequest'
+      responses:
+        '201':
+          description: Edge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoadmapEdge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/roadmap/edges/{edgeId}:
+    delete:
+      tags:
+        - roadmap
+      summary: Delete roadmap edge
+      operationId: deleteRoadmapEdge
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: edgeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Edge deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/context/items:
+    post:
+      tags:
+        - context
+      summary: Add context items
+      operationId: addContextItems
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddContextItemsRequest'
+      responses:
+        '200':
+          description: Items added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddContextItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/context/items/{contextItemId}:
+    patch:
+      tags:
+        - context
+      summary: Update context item
+      operationId: updateContextItem
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: contextItemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContextItemRequest'
+      responses:
+        '200':
+          description: Item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateContextItemResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/agent-runs/{runId}:
+    get:
+      tags:
+        - agents
+      summary: Get agent run
+      operationId: getAgentRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/agent-runs/{runId}/steps:
+    get:
+      tags:
+        - agents
+      summary: List agent run steps
+      operationId: listAgentRunSteps
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: List of steps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAgentSteps'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/agent-runs/{runId}/messages:
+    get:
+      tags:
+        - agents
+      summary: List agent run messages
+      operationId: listAgentRunMessages
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAgentMessages'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+    post:
+      tags:
+        - agents
+      summary: Append message to agent run
+      operationId: appendAgentRunMessage
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppendMessageRequest'
+      responses:
+        '201':
+          description: Message appended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+  /projects/{projectId}/agent-runs/{runId}/cancel:
+    post:
+      tags:
+        - agents
+      summary: Cancel agent run
+      operationId: cancelAgentRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - BearerAuth: []
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Project ID
+
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Ingest job ID
+
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Pagination cursor
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+      description: Maximum number of results
+
+  schemas:
+    IngestJob:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    RoadmapNode:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, COMPLETE, BLOCKED]
+
+    CreateRoadmapNodeRequest:
+      type: object
+      required:
+        - label
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, COMPLETE, BLOCKED]
+        dependsOnIds:
+          type: array
+          items:
+            type: string
+
+    UpdateRoadmapNodeRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, COMPLETE, BLOCKED]
+        dependsOnIds:
+          type: array
+          items:
+            type: string
+
+    RoadmapEdge:
+      type: object
+      properties:
+        id:
+          type: string
+        fromNodeId:
+          type: string
+        toNodeId:
+          type: string
+        kind:
+          type: string
+          enum: [depends_on, relates_to]
+
+    CreateRoadmapEdgeRequest:
+      type: object
+      required:
+        - fromNodeId
+        - toNodeId
+      properties:
+        fromNodeId:
+          type: string
+        toNodeId:
+          type: string
+        kind:
+          type: string
+          enum: [depends_on, relates_to]
+
+    PaginatedRoadmapNodes:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoadmapNode'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+
+    PaginatedRoadmapEdges:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoadmapEdge'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+
+    AddContextItemsRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - type
+              - tokens
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+                enum: [PDF, REPO, CHAT, CUSTOM]
+              tokens:
+                type: integer
+                minimum: 0
+              pinned:
+                type: boolean
+
+    AddContextItemsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+        budget:
+          type: object
+
+    UpdateContextItemRequest:
+      type: object
+      properties:
+        pinned:
+          type: boolean
+
+    UpdateContextItemResponse:
+      type: object
+      properties:
+        item:
+          type: object
+        budget:
+          type: object
+
+    AgentRun:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        workflowId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, RUNNING, COMPLETED, FAILED, CANCELLED]
+
+    AgentStep:
+      type: object
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        status:
+          type: string
+
+    AgentMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+
+    PaginatedAgentSteps:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentStep'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+
+    PaginatedAgentMessages:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentMessage'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+
+    AppendMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+        contextItemIds:
+          type: array
+          items:
+            type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: 'openapi-error-responses.yaml#/components/schemas/Error'
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: 'openapi-error-responses.yaml#/components/schemas/Error'
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: 'openapi-error-responses.yaml#/components/schemas/Error'
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []
+

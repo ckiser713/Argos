@@ -1,14 +1,13 @@
 import pytest
-
 from app.domain.gap_analysis import GapStatus
 from app.services.gap_analysis_service import (
     CodeChunk,
+    CoderLLMClient,
+    CodeSearchBackend,
     GapAnalysisConfig,
     GapAnalysisService,
     IdeaTicket,
     IdeaTicketProvider,
-    CodeSearchBackend,
-    CoderLLMClient,
 )
 
 
@@ -75,7 +74,9 @@ async def test_generate_gap_report_implemented():
     matches = [
         CodeChunk(file_path="a.py", content="code a", similarity=0.9),
         CodeChunk(file_path="b.py", content="code b", similarity=0.92),
-        CodeChunk(file_path="c.py", content="code c", similarity=0.5), # This one should not be considered "implemented" by default config if min_high_matches is 2
+        CodeChunk(
+            file_path="c.py", content="code c", similarity=0.5
+        ),  # This one should not be considered "implemented" by default config if min_high_matches is 2
     ]
     search_backend = FakeCodeSearchBackend(matches_by_ticket_id={"T2": matches})
     coder_client = FakeCoderLLMClient()
@@ -100,8 +101,8 @@ async def test_generate_gap_report_implemented():
     assert "b.py" in suggestion.related_files
     # Note that c.py will also be included in related_files because the service gathers all.
     assert "c.py" in suggestion.related_files
-    assert 0.8 <= suggestion.confidence <= 1.0 # The mean of implemented_matches (0.9, 0.92)
-    assert suggestion.notes == "implemented for T2 with 3 matches" # CoderLLMClient receives all chunks
+    assert 0.8 <= suggestion.confidence <= 1.0  # The mean of implemented_matches (0.9, 0.92)
+    assert suggestion.notes == "implemented for T2 with 3 matches"  # CoderLLMClient receives all chunks
 
 
 @pytest.mark.asyncio
@@ -133,5 +134,7 @@ async def test_generate_gap_report_partially_implemented():
     assert suggestion.status == "partially_implemented"
     assert "partial.py" in suggestion.related_files
     assert "low.py" in suggestion.related_files
-    assert 0.0 < suggestion.confidence <= 1.0 # Based on (top_sim - partial_threshold) / (implemented_threshold - partial_threshold)
+    assert (
+        0.0 < suggestion.confidence <= 1.0
+    )  # Based on (top_sim - partial_threshold) / (implemented_threshold - partial_threshold)
     assert suggestion.notes == "partially_implemented for T3 with 2 matches"

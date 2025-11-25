@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Iterable, List, Protocol, Sequence, Tuple, Optional, runtime_checkable
+from typing import List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 from pydantic import BaseModel
 
-from app.domain.gap_analysis import GapReport, GapSuggestion, GapStatus
+from app.domain.gap_analysis import GapReport, GapStatus, GapSuggestion
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ class IdeaTicket(Protocol):
     Structural protocol for the IdeaTicket objects exposed by the Project Intelligence layer.
     Only the attributes required for gap analysis are specified here.
     """
+
     id: str
     project_id: str
     title: str
@@ -28,6 +29,7 @@ class CodeChunk(BaseModel):
     """
     Lightweight view of a code chunk returned from vector search.
     """
+
     file_path: str
     content: str
     similarity: float
@@ -76,6 +78,7 @@ class GapAnalysisService:
     and LLM runtimes. Those concerns are modeled via small protocol interfaces
     that can be implemented by adapters (e.g., Qdrant-backed search, HTTP LLM client).
     """
+
     ticket_provider: IdeaTicketProvider
     code_search: CodeSearchBackend
     coder_client: CoderLLMClient
@@ -89,9 +92,7 @@ class GapAnalysisService:
         suggestions: List[GapSuggestion] = []
 
         for ticket in tickets:
-            code_chunks = await self.code_search.search_related_code(
-                ticket, top_k=self.config.top_k
-            )
+            code_chunks = await self.code_search.search_related_code(ticket, top_k=self.config.top_k)
             status, confidence = self._classify_status(code_chunks)
             logger.debug(
                 "Ticket %s classified as %s (confidence=%.3f, matches=%d)",
@@ -136,13 +137,9 @@ class GapAnalysisService:
         if not code_chunks:
             return "unmapped", 0.0
 
-        implemented_matches = [
-            c for c in code_chunks if c.similarity >= self.config.implemented_threshold
-        ]
+        implemented_matches = [c for c in code_chunks if c.similarity >= self.config.implemented_threshold]
         partial_matches = [
-            c
-            for c in code_chunks
-            if self.config.partial_threshold <= c.similarity < self.config.implemented_threshold
+            c for c in code_chunks if self.config.partial_threshold <= c.similarity < self.config.implemented_threshold
         ]
 
         if len(implemented_matches) >= self.config.min_high_matches:
@@ -230,14 +227,8 @@ class NullCoderLLMClient(CoderLLMClient):
             return f"No related code was found for ticket '{ticket.title}' ({ticket.id})."
         if status == "implemented":
             files = sorted({c.file_path for c in code_chunks})
-            return (
-                "Ticket appears to be implemented. Related files: "
-                + ", ".join(files)
-            )
+            return "Ticket appears to be implemented. Related files: " + ", ".join(files)
         if status == "partially_implemented":
             files = sorted({c.file_path for c in code_chunks})
-            return (
-                "Ticket appears to be partially implemented across: "
-                + ", ".join(files)
-            )
+            return "Ticket appears to be partially implemented across: " + ", ".join(files)
         return "Gap analysis status is unknown; no additional details are available."

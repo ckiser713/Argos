@@ -1,15 +1,27 @@
-from . import system, context, workflows, ingest, agents, knowledge, streaming, project_intel, mode, gap_analysis, projects
+from . import (
+    agents,
+    context,
+    gap_analysis,
+    ingest,
+    knowledge,
+    mode,
+    project_intel,
+    projects,
+    streaming,
+    system,
+    workflows,
+)
 
 __all__ = [
-    "system",
-    "context",
-    "workflows",
-    "ingest",
     "agents",
-    "knowledge",
-    "streaming",
-    "project_intel",
-    "mode",
+    "context",
     "gap_analysis",
+    "ingest",
+    "knowledge",
+    "mode",
+    "project_intel",
     "projects",
+    "streaming",
+    "system",
+    "workflows",
 ]

@@ -5,9 +5,8 @@ from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from app.domain.common import to_camel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CortexProjectStatus(str, Enum):
@@ -75,3 +74,14 @@ class ProjectFactory:
     @staticmethod
     def _slugify(value: str) -> str:
         return "-".join(value.lower().split())
+
+
+class Roadmap(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    graph: dict
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)

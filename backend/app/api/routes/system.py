@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
-
+from app.domain.models import MessageResponse  # Keep MessageResponse if still needed
 from app.domain.system_metrics import SystemStatus
 from app.services.system_metrics_service import get_system_status
-from app.domain.models import MessageResponse # Keep MessageResponse if still needed
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/system", tags=["system"])
 
