@@ -18,10 +18,8 @@
           overlays = [ poetry2nix.overlays.default ];
         };
 
-        # Python 3.11 with Poetry
-        pythonEnv = pkgs.python311.withPackages (ps: with ps; [
-          poetry
-        ]);
+        # Python 3.11
+        pythonEnv = pkgs.python311;
 
         # Node.js 20 with pnpm
         nodejs = pkgs.nodejs_20;
@@ -78,27 +76,16 @@
           pnpm
           # TypeScript
           nodePackages.typescript
-          # Playwright
-          nodePackages.playwright
         ];
 
-        # Import sub-flakes directly (not as flakes, but as Nix expressions)
-        # This avoids self-referencing issues
-        backendFlake = let
-          backendPkgs = import nixpkgs {
-            inherit system;
-            overlays = [ poetry2nix.overlays.default ];
-          };
-        in (import ./backend/flake.nix {
-          nixpkgs = nixpkgs;
-          poetry2nix = poetry2nix;
-          flake-utils = flake-utils;
-        }).packages.${system};
+        # Import sub-flakes
+        backendFlake = import ./backend/flake.nix {
+          inherit nixpkgs poetry2nix flake-utils;
+        };
 
-        frontendFlake = (import ./frontend/flake.nix {
-          nixpkgs = nixpkgs;
-          flake-utils = flake-utils;
-        }).packages.${system};
+        frontendFlake = import ./frontend/flake.nix {
+          inherit nixpkgs flake-utils;
+        };
 
         # Docker compose wrapper script
         dockerComposeWrapper = pkgs.writeScriptBin "cortex-docker" ''
@@ -165,8 +152,8 @@
 
         # Build outputs
         packages = {
-          backend = backendFlake.default;
-          frontend = frontendFlake.default;
+          backend = backendFlake.packages.${system}.default;
+          frontend = frontendFlake.packages.${system}.default;
           docker-compose = dockerComposeWrapper;
 
           default = pkgs.symlinkJoin {

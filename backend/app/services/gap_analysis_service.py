@@ -9,6 +9,10 @@ from pydantic import BaseModel
 
 from app.domain.gap_analysis import GapReport, GapStatus, GapSuggestion
 
+# --- Imports for Real Implementations ---
+from app.repos import project_intel_repo
+from app.services import llm_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -164,44 +168,42 @@ class GapAnalysisService:
         return "unmapped", confidence
 
 
-_default_service: Optional[GapAnalysisService] = None
+# --- Concrete Adapters ---
 
 
-def configure_gap_analysis_service(service: GapAnalysisService) -> None:
-    """
-    Configure the module-level service used by the convenience generate_gap_report() function.
-
-    In production, this should be called once at startup with real dependencies
-    (e.g., Qdrant-backed search, HTTP coder client, and the actual ticket provider).
-    """
-    global _default_service
-    _default_service = service
-    logger.info("GapAnalysisService configured: %r", service)
+class ProjectIntelTicketProvider(IdeaTicketProvider):
+    async def list_tickets_for_project(self, project_id: str) -> Sequence[IdeaTicket]:
+        # Connects to the existing project_intel_repo
+        return project_intel_repo.list_tickets(project_id)
 
 
-def get_gap_analysis_service() -> GapAnalysisService:
-    if _default_service is None:
-        # Fall back to a null service that does not talk to external systems.
-        configure_gap_analysis_service(
-            GapAnalysisService(
-                ticket_provider=NullTicketProvider(),
-                code_search=NullCodeSearchBackend(),
-                coder_client=NullCoderLLMClient(),
-            )
+class LLMCoderClient(CoderLLMClient):
+    async def generate_gap_notes(
+        self,
+        ticket: IdeaTicket,
+        code_chunks: Sequence[CodeChunk],
+        status: GapStatus,
+    ) -> str:
+        # Connects to the existing llm_service
+        context_str = "\n\n".join(
+            [f"File: {c.file_path}\nContent:\n{c.content}" for c in code_chunks]
         )
-    assert _default_service is not None
-    return _default_service
+        prompt = (
+            f"Analyze the gap for the following ticket:\n"
+            f"Title: {ticket.title}\n"
+            f"Description: {ticket.description}\n\n"
+            f"Status classified as: {status}\n\n"
+            f"Relevant Code Context:\n{context_str}\n\n"
+            f"Task: Provide a concise set of notes explaining the implementation gap or existing logic. "
+            f"If implemented, explain how. If missing, explain what needs to be added."
+        )
 
-
-async def generate_gap_report(project_id: str) -> GapReport:
-    """
-    Convenience wrapper matching the requested signature.
-
-    This delegates to the configured GapAnalysisService instance, which should
-    be wired with real dependencies in the application startup code.
-    """
-    service = get_gap_analysis_service()
-    return await service.generate_gap_report(project_id)
+        return llm_service.generate_text(
+            prompt=prompt,
+            project_id=ticket.project_id,
+            base_temperature=0.0,
+            model="gpt-4o",
+        )
 
 
 class NullTicketProvider(IdeaTicketProvider):
@@ -232,3 +234,50 @@ class NullCoderLLMClient(CoderLLMClient):
             files = sorted({c.file_path for c in code_chunks})
             return "Ticket appears to be partially implemented across: " + ", ".join(files)
         return "Gap analysis status is unknown; no additional details are available."
+
+
+_default_service: Optional[GapAnalysisService] = None
+
+
+def configure_gap_analysis_service(service: GapAnalysisService) -> None:
+    """
+    Configure the module-level service used by the convenience generate_gap_report() function.
+    """
+    global _default_service
+    _default_service = service
+    logger.info("GapAnalysisService configured: %r", service)
+
+
+def get_gap_analysis_service() -> GapAnalysisService:
+    if _default_service is None:
+        # Import inside function to avoid circular imports with qdrant_code_search
+        try:
+            from app.services.qdrant_code_search import QdrantCodeSearchBackend
+
+            configure_gap_analysis_service(
+                GapAnalysisService(
+                    ticket_provider=ProjectIntelTicketProvider(),
+                    code_search=QdrantCodeSearchBackend(),
+                    coder_client=LLMCoderClient(),
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize real GapAnalysisService: {e}. Falling back to Null services.")
+            configure_gap_analysis_service(
+                GapAnalysisService(
+                    ticket_provider=NullTicketProvider(),
+                    code_search=NullCodeSearchBackend(),
+                    coder_client=NullCoderLLMClient(),
+                )
+            )
+
+    assert _default_service is not None
+    return _default_service
+
+
+async def generate_gap_report(project_id: str) -> GapReport:
+    """
+    Convenience wrapper matching the requested signature.
+    """
+    service = get_gap_analysis_service()
+    return await service.generate_gap_report(project_id)

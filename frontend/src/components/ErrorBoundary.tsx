@@ -3,7 +3,7 @@
  */
 
 import React, { Component, ErrorInfo, ReactNode } from "react";
-import { GlassCard } from "./GlassCard";
+import { GlassCard } from "../../components/GlassCard";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { logError } from "../lib/errorHandling";
 
