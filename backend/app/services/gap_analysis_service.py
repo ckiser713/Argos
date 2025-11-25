@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable, List, Protocol, Sequence, Tuple, Optional, runtime_checkable
 
@@ -79,7 +79,7 @@ class GapAnalysisService:
     ticket_provider: IdeaTicketProvider
     code_search: CodeSearchBackend
     coder_client: CoderLLMClient
-    config: GapAnalysisConfig = GapAnalysisConfig()
+    config: GapAnalysisConfig = field(default_factory=GapAnalysisConfig)
 
     async def generate_gap_report(self, project_id: str) -> GapReport:
         logger.info("Starting gap analysis for project %s", project_id)
