@@ -85,6 +85,44 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project ON ingest_jobs(project_id);
             CREATE INDEX IF NOT EXISTS idx_ingest_jobs_source ON ingest_jobs(source_id);
+
+            CREATE TABLE IF NOT EXISTS idea_tickets (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                cluster_id TEXT,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL,
+                priority TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                origin_idea_ids_json TEXT,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_idea_tickets_project ON idea_tickets(project_id);
+
+            CREATE TABLE IF NOT EXISTS knowledge_nodes (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                tags_json TEXT,
+                type TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_knowledge_nodes_project ON knowledge_nodes(project_id);
+
+            CREATE TABLE IF NOT EXISTS agent_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                input_prompt TEXT,
+                output_summary TEXT,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_runs_project ON agent_runs(project_id);
             """
         )
         conn.commit()

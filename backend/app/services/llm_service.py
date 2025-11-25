@@ -3,10 +3,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
+import openai
+from app.config import get_settings
 from app.repos.mode_repo import get_project_settings
 from app.domain.mode import ProjectExecutionSettings
 
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
+
+client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
 def _call_underlying_llm(
@@ -14,17 +20,21 @@ def _call_underlying_llm(
     *,
     temperature: float,
     max_tokens: int,
-    model: str,
-    **extra_kwargs: Any,
+    model: str = None, 
+    **kwargs
 ) -> str:
-    """Thin wrapper around your actual inference stack (vLLM, llama.cpp, etc.).
-
-    This function is intentionally kept small and mode-agnostic; callers should
-    perform mode lookups before invoking it.
-    """
-    # TODO: replace with the actual integration to your model runtime.
-    logger.warning("Using dummy LLM client for: %s", prompt[:50])
-    return f"dummy-response for: {prompt[:50]}..."
+    target_model = model or settings.llm_model_name
+    
+    try:
+        response = client.chat.completions.create(
+            model=target_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"LLM Error: {str(e)}"
 
 
 def generate_text(

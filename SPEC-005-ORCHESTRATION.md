@@ -1,3 +1,20 @@
+Goal: Implement the LangGraph state machine that drives agent behavior.
+
+Markdown
+
+# SPEC-005: LangGraph Orchestration Engine
+
+## Context
+`project_manager_graph.py` is empty. We need a state machine that can loop, call tools, and maintain memory of the current goal.
+
+## Requirements
+- **State Schema:** Must track `messages` list, `current_step`, and `generated_artifacts`.
+- **Tools:** Bind `RagService.search` and `RoadmapService.create_nodes` as tools.
+- **Graph Structure:** `Start` -> `Agent` -> `ToolNode` -> `Agent` -> `End`.
+
+## Implementation Guide (`backend/app/graphs/project_manager_graph.py`)
+
+```python
 from typing import TypedDict, Annotated, Sequence
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolExecutor, ToolInvocation

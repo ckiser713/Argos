@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     atlas_db_path: str = Field(default=str(Path("atlas.db")))
     atlas_checkpoints_db_path: str = Field(default=str(Path("atlas_checkpoints.db")))
 
+    # LLM settings
+    llm_base_url: str = Field(default="http://localhost:11434/v1", env="CORTEX_LLM_BASE_URL")
+    llm_api_key: str = Field(default="ollama", env="CORTEX_LLM_API_KEY")
+    llm_model_name: str = Field(default="llama3", env="CORTEX_LLM_MODEL")
+
     # --- Execution mode defaults ---
     normal_mode_llm_temperature: float = Field(0.2, env="CORTEX_NORMAL_TEMP")
     normal_mode_validation_passes: int = Field(1, env="CORTEX_NORMAL_VALIDATION_PASSES")

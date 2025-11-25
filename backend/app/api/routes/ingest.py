@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from app.domain.models import IngestJob, IngestRequest
 from app.services.ingest_service import ingest_service
@@ -16,9 +16,11 @@ def list_ingest_jobs() -> List[IngestJob]:
 @router.post(
     "/jobs",
     response_model=IngestJob,
-    summary="Create a new ingest job (stubbed)",
+    summary="Create a new ingest job",
 )
-def create_ingest_job(request: IngestRequest) -> IngestJob:
+def create_ingest_job(request: IngestRequest, background_tasks: BackgroundTasks) -> IngestJob:
     if not request.source_path:
         raise HTTPException(status_code=400, detail="source_path is required")
-    return ingest_service.create_job(request)
+    job = ingest_service.create_job(request)
+    background_tasks.add_task(ingest_service.process_job, job.id)
+    return job
