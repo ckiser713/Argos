@@ -13,11 +13,14 @@ from app.api.routes import (
     project_intel,
     mode,
     gap_analysis,
+    projects,
 )
+from app.db import init_db
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    init_db()
 
     app = FastAPI(
         title=settings.app_name,
@@ -36,17 +39,17 @@ def create_app() -> FastAPI:
     )
 
     # Routers grouped by resource
-    app.include_router(system.router, prefix="/api", tags=["system"]) # system.router already has prefix /system
+    app.include_router(system.router, prefix="/api", tags=["system"])
+    app.include_router(projects.router, prefix="/api", tags=["projects"])
     app.include_router(context.router, prefix="/api/context", tags=["context"])
     app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
     app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
     app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
     app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
     app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
-    app.include_router(project_intel.router, prefix="/api", tags=["project-intel"]) # project_intel.router already has prefix /projects
-    app.include_router(mode.router, prefix="/api", tags=["mode"]) # mode.router already has prefix /projects
+    app.include_router(project_intel.router, prefix="/api", tags=["project-intel"])
+    app.include_router(mode.router, prefix="/api", tags=["mode"])
     app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis"])
-
 
     return app
 
