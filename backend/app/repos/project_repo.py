@@ -29,18 +29,14 @@ class ProjectRepository:
 
     def get_project(self, project_id: str) -> Optional[CortexProject]:
         with db_session() as conn:
-            row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?", (project_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
             if not row:
                 return None
             return self._row_to_model(row)
 
     def get_by_slug(self, slug: str) -> Optional[CortexProject]:
         with db_session() as conn:
-            row = conn.execute(
-                "SELECT * FROM projects WHERE slug = ?", (slug,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
             if not row:
                 return None
             return self._row_to_model(row)

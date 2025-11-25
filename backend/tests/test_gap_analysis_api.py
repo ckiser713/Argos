@@ -1,26 +1,24 @@
-from datetime import datetime, timezone
-from typing import Sequence
-
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from app.domain.gap_analysis import GapReport
 from app.api.routes.gap_analysis import (
-    router as gap_router,
     get_gap_analysis_repo_dep,
     get_gap_analysis_service_dep,
 )
+from app.api.routes.gap_analysis import (
+    router as gap_router,
+)
+from app.domain.gap_analysis import GapReport
 from app.repos.gap_analysis_repo import GapAnalysisRepo
 from app.services.gap_analysis_service import (
     CodeChunk,
+    CoderLLMClient,
+    CodeSearchBackend,
     GapAnalysisConfig,
     GapAnalysisService,
     IdeaTicket,
     IdeaTicketProvider,
-    CodeSearchBackend,
-    CoderLLMClient,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class FakeTicket:

@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Literal
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
-
 
 # -------- Core / System --------
 
 
-
-
 # -------- Context / Memory --------
+
 
 class ContextItemType(str, Enum):
     PDF = "pdf"
@@ -26,9 +24,30 @@ class ContextItem(BaseModel):
     name: str
     type: ContextItemType
     tokens: int = Field(ge=0)
+    pinned: bool = False
+    canonical_document_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class ContextBudget(BaseModel):
+    project_id: str
+    total_tokens: int
+    used_tokens: int
+    available_tokens: int
+    items: List[ContextItem] = Field(default_factory=list)
+
+
+class AddContextItemsRequest(BaseModel):
+    items: List[ContextItem]
+
+
+class AddContextItemsResponse(BaseModel):
+    items: List[ContextItem]
+    budget: ContextBudget
 
 
 # -------- Workflows / Graphs --------
+
 
 class WorkflowNode(BaseModel):
     id: str
@@ -56,6 +75,8 @@ class WorkflowRunStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
 
 
 class WorkflowRun(BaseModel):
@@ -65,6 +86,9 @@ class WorkflowRun(BaseModel):
     started_at: datetime
     finished_at: Optional[datetime] = None
     last_message: Optional[str] = None
+    task_id: Optional[str] = None
+    paused_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
 
 
 class WorkflowNodeStatus(str, Enum):
@@ -72,6 +96,7 @@ class WorkflowNodeStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class WorkflowNodeState(BaseModel):
@@ -82,20 +107,31 @@ class WorkflowNodeState(BaseModel):
 
 # -------- Ingestion --------
 
+
 class IngestStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class IngestJob(BaseModel):
     id: str
+    project_id: Optional[str] = None
     source_path: str
+    original_filename: Optional[str] = None
+    byte_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    stage: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     status: IngestStatus
     progress: float = Field(ge=0.0, le=1.0)
     message: Optional[str] = None
+    error_message: Optional[str] = None
+    canonical_document_id: Optional[str] = None
 
 
 class IngestRequest(BaseModel):
@@ -103,6 +139,7 @@ class IngestRequest(BaseModel):
 
 
 # -------- Agents --------
+
 
 class AgentProfile(BaseModel):
     id: str
@@ -116,50 +153,288 @@ class AgentRunStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentRun(BaseModel):
     id: str
+    project_id: str
+    workflow_id: Optional[str] = None
     agent_id: str
     status: AgentRunStatus
+    input_query: Optional[str] = None
+    input_prompt: Optional[str] = None
+    output_summary: Optional[str] = None
+    context_item_ids: List[str] = Field(default_factory=list)
     started_at: datetime
     finished_at: Optional[datetime] = None
-    input_prompt: str
-    output_summary: Optional[str] = None
 
 
 class AgentRunRequest(BaseModel):
+    project_id: str
     agent_id: str
     input_prompt: str
+    context_item_ids: List[str] = Field(default_factory=list)
+
+
+class AgentStepStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentStep(BaseModel):
+    id: str
+    run_id: str
+    step_number: int
+    node_id: Optional[str] = None
+    status: AgentStepStatus
+    input: Optional[str] = None
+    output: Optional[str] = None
+    error: Optional[str] = None
+    duration_ms: Optional[int] = None
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class AgentMessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class AgentMessage(BaseModel):
+    id: str
+    run_id: str
+    role: AgentMessageRole
+    content: str
+    context_item_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class AgentNodeState(BaseModel):
+    run_id: str
+    node_id: str
+    status: str
+    progress: float = Field(ge=0.0, le=1.0)
+    messages: List[str] = Field(default_factory=list)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+
+
+class AppendMessageRequest(BaseModel):
+    content: str
+    context_item_ids: List[str] = Field(default_factory=list)
 
 
 # -------- Ideas / Project Tickets --------
 
 
+class IdeaCandidateStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class IdeaCandidate(BaseModel):
+    id: str
+    project_id: str
+    type: str
+    summary: str
+    status: IdeaCandidateStatus
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_log_ids: List[str] = Field(default_factory=list)
+    source_channel: Optional[str] = None
+    source_user: Optional[str] = None
+    created_at: datetime
+
+
+class IdeaCluster(BaseModel):
+    id: str
+    project_id: str
+    label: str
+    description: Optional[str] = None
+    color: Optional[str] = None
+    idea_ids: List[str] = Field(default_factory=list)
+    priority: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class IdeaTicketStatus(str, Enum):
+    ACTIVE = "active"
+    COMPLETE = "complete"
+    BLOCKED = "blocked"
+
+
+class IdeaTicketPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class IdeaTicket(BaseModel):
+    id: str
+    project_id: str
+    idea_id: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    status: IdeaTicketStatus
+    priority: IdeaTicketPriority
+    origin_story: Optional[str] = None
+    category: Optional[str] = None
+    implied_task_summaries: List[str] = Field(default_factory=list)
+    repo_hints: List[str] = Field(default_factory=list)
+    source_quotes: Optional[str] = None
+    source_channel: Optional[str] = None
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    created_at: datetime
+    updated_at: datetime
+
+
+class MissionControlTaskColumn(str, Enum):
+    BACKLOG = "backlog"
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+
+
+class MissionControlTaskOrigin(str, Enum):
+    REPO = "repo"
+    CHAT = "chat"
+    PDF = "pdf"
+
+
+class MissionControlTask(BaseModel):
+    id: str
+    project_id: str
+    title: str
+    origin: MissionControlTaskOrigin
+    confidence: float = Field(ge=0.0, le=1.0)
+    column: MissionControlTaskColumn
+    context: List[ContextItem] = Field(default_factory=list)
+    priority: Optional[str] = None
+    idea_id: Optional[str] = None
+    ticket_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# -------- Roadmap --------
+
+
+class RoadmapNodeStatus(str, Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    COMPLETE = "complete"
+    BLOCKED = "blocked"
+
+
+class RoadmapNodePriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RoadmapNode(BaseModel):
+    id: str
+    project_id: str
+    label: str
+    description: Optional[str] = None
+    status: RoadmapNodeStatus
+    priority: Optional[RoadmapNodePriority] = None
+    start_date: Optional[datetime] = None
+    target_date: Optional[datetime] = None
+    depends_on_ids: List[str] = Field(default_factory=list)
+    lane_id: Optional[str] = None
+    idea_id: Optional[str] = None
+    ticket_id: Optional[str] = None
+    mission_control_task_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RoadmapEdgeKind(str, Enum):
+    DEPENDS_ON = "depends_on"
+    RELATES_TO = "relates_to"
+
+
+class RoadmapEdge(BaseModel):
+    id: str
+    project_id: str
+    from_node_id: str
+    to_node_id: str
+    kind: RoadmapEdgeKind
+    label: Optional[str] = None
+    created_at: datetime
+
+
+class RoadmapGraph(BaseModel):
+    nodes: List[RoadmapNode]
+    edges: List[RoadmapEdge]
+    generated_at: datetime
 
 
 # -------- Knowledge Graph --------
 
+
 class KnowledgeNode(BaseModel):
     id: str
+    project_id: str
     title: str
     summary: Optional[str] = None
+    text: Optional[str] = None
+    type: str
     tags: List[str] = Field(default_factory=list)
-    related_ids: List[str] = Field(default_factory=list)
+    metadata: Optional[dict] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class KnowledgeEdge(BaseModel):
+    id: str
+    project_id: str
+    source: str
+    target: str
+    type: str
+    weight: Optional[float] = None
+    label: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class KnowledgeGraph(BaseModel):
+    nodes: List[KnowledgeNode]
+    edges: List[KnowledgeEdge]
+    generated_at: datetime
 
 
 class KnowledgeSearchRequest(BaseModel):
     query: str
-    max_results: int = Field(default=10, ge=1, le=100)
+    type: Optional[str] = None
+    tags: Optional[List[str]] = None
+    limit: int = Field(default=10, ge=1, le=100)
+    max_results: int = Field(default=10, ge=1, le=100)  # Alias for limit
+    use_vector_search: bool = Field(default=True, alias="useVectorSearch")
+
+    def __init__(self, **data):
+        # Support both limit and max_results
+        if "limit" in data and "max_results" not in data:
+            data["max_results"] = data["limit"]
+        elif "max_results" in data and "limit" not in data:
+            data["limit"] = data["max_results"]
+        super().__init__(**data)
 
 
 # -------- Simple text response for stubs --------
+
 
 class MessageResponse(BaseModel):
     message: str
 
 
 # -------- Streaming Events --------
+
 
 class IngestJobEventType(str, Enum):
     QUEUED = "ingest.job.queued"

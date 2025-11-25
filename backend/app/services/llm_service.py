@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 import openai
+
 from app.config import get_settings
-from app.repos.mode_repo import get_project_settings
 from app.domain.mode import ProjectExecutionSettings
+from app.repos.mode_repo import get_project_settings
 
 logger = logging.getLogger(__name__)
 
@@ -15,22 +16,23 @@ settings = get_settings()
 client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
+def get_llm_client() -> openai.OpenAI:
+    return client
+
+
 def _call_underlying_llm(
-    prompt: str,
-    *,
-    temperature: float,
-    max_tokens: int,
-    model: str = None, 
-    **kwargs
+    prompt: str, *, temperature: float, max_tokens: int, model: str = None, json_mode: bool = False, **kwargs
 ) -> str:
     target_model = model or settings.llm_model_name
-    
+
     try:
+        response_format = {"type": "json_object"} if json_mode else {"type": "text"}
         response = client.chat.completions.create(
             model=target_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format=response_format,
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -44,6 +46,7 @@ def generate_text(
     base_temperature: float,
     max_tokens: int = 500,
     model: str = "default_llm",
+    json_mode: bool = False,
     **extra_kwargs: Any,
 ) -> str:
     """
@@ -62,6 +65,7 @@ def generate_text(
             "temperature": temperature,
             "max_tokens": max_tokens,
             "model": model,
+            "json_mode": json_mode,
         },
     )
 
@@ -71,6 +75,7 @@ def generate_text(
         temperature=temperature,
         max_tokens=max_tokens,
         model=model,
+        json_mode=json_mode,
         **extra_kwargs,
     )
 
@@ -99,7 +104,7 @@ def generate_text(
 
         validated = _call_underlying_llm(
             checker_prompt,
-            temperature=min(temperature, 0.2), # Checker LLM usually benefits from lower temp
+            temperature=min(temperature, 0.2),  # Checker LLM usually benefits from lower temp
             max_tokens=max_tokens,
             model=model,
             **extra_kwargs,

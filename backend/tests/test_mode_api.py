@@ -1,17 +1,16 @@
 import pytest
-from fastapi.testclient import TestClient
-
 from app.api.routes.mode import router
-from app.domain.mode import ProjectExecutionSettings
+from app.main import create_app  # Assuming create_app is available for test setup
 from app.repos import mode_repo
-from app.main import create_app # Assuming create_app is available for test setup
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="module")
 def client_mode() -> TestClient:
     app = create_app()
-    app.include_router(router) # Include the mode router
+    app.include_router(router)  # Include the mode router
     return TestClient(app)
+
 
 @pytest.fixture(autouse=True)
 def reset_mode_repo():
@@ -89,10 +88,10 @@ def test_patch_mode_partial_update(client_mode: TestClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["project_id"] == project_id
-    assert data["mode"] == "paranoid" # Should retain previous mode
-    assert data["llm_temperature"] == 0.15 # Should retain previous temperature
-    assert data["validation_passes"] == 5 # Should update this field
-    assert data["max_parallel_tools"] == 8 # Should retain default if not set initially
+    assert data["mode"] == "paranoid"  # Should retain previous mode
+    assert data["llm_temperature"] == 0.15  # Should retain previous temperature
+    assert data["validation_passes"] == 5  # Should update this field
+    assert data["max_parallel_tools"] == 8  # Should retain default if not set initially
 
     # Verify with GET
     get_resp = client_mode.get(f"/projects/{project_id}/mode")

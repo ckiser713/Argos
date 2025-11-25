@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict
 
 from app.config import get_settings
 from app.domain.mode import ExecutionMode, ProjectExecutionSettings
@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_SETTINGS_STORE: Dict[str, ProjectExecutionSettings] = {}
 
 
-def _build_default_settings(
-    project_id: str, mode: ExecutionMode
-) -> ProjectExecutionSettings:
+def _build_default_settings(project_id: str, mode: ExecutionMode) -> ProjectExecutionSettings:
     """Builds default settings for a project based on the configured mode."""
     settings = get_settings()
 

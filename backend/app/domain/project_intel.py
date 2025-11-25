@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional, List
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
-
 
 IdeaLabel = str
 EmbeddingVector = List[float]
@@ -64,11 +63,7 @@ class IdeaTicket(BaseModel):
     status: IdeaTicketStatus = "candidate"
     priority: IdeaTicketPriority = "medium"
 
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     origin_idea_ids: List[str] = Field(default_factory=list)

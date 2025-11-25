@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Dict, List
 
 import pytest
-
 from app.domain.mode import ProjectExecutionSettings
 from app.repos import mode_repo
 from app.services import llm_service

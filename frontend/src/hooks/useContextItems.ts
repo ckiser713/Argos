@@ -1,27 +1,21 @@
 // src/hooks/useContextItems.ts
-import { useQuery } from "@tanstack/react-query";
-import { getContext } from "../lib/cortexApi";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  getContext,
+  addContextItems,
+  updateContextItem,
+  removeContextItem,
+} from "../lib/cortexApi";
 import type { ContextItem, ContextBudget } from "../domain/types";
 
-export interface UseContextItemsResult {
-  items: ContextItem[];
-  budget: ContextBudget;
-}
-
-export const contextQueryKey = (projectId?: string) =>
+export const contextQueryKey = (projectId: string) =>
   ["context", { projectId }] as const;
 
-export async function fetchContext(projectId?: string): Promise<UseContextItemsResult> {
-  return getContext(projectId);
-}
-
-/**
- * Fetch working context (items + budget) for Deep Research / StrategyDeck panels.
- */
-export function useContextItems(projectId?: string) {
+export function useContextBudget(projectId: string) {
   const query = useQuery({
     queryKey: contextQueryKey(projectId),
-    queryFn: () => fetchContext(projectId),
+    queryFn: () => getContext(projectId),
+    enabled: !!projectId,
   });
 
   return {
@@ -30,4 +24,41 @@ export function useContextItems(projectId?: string) {
     error: query.error,
     refetch: query.refetch,
   };
+}
+
+export function useAddContextItems(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (payload: { items: ContextItem[] }) => addContextItems(projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contextQueryKey(projectId) });
+    },
+  });
+
+  return mutation;
+}
+
+export function useUpdateContextItem(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ itemId, payload }: { itemId: string; payload: Partial<ContextItem> }) =>
+      updateContextItem(projectId, itemId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contextQueryKey(projectId) });
+    },
+  });
+
+  return mutation;
+}
+
+export function useRemoveContextItem(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (itemId: string) => removeContextItem(projectId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contextQueryKey(projectId) });
+    },
+  });
+
+  return mutation;
 }

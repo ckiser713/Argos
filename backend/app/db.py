@@ -115,6 +115,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS agent_runs (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
                 status TEXT NOT NULL,
                 input_prompt TEXT,
                 output_summary TEXT,
@@ -123,6 +124,205 @@ def init_db() -> None:
                 FOREIGN KEY(project_id) REFERENCES projects(id)
             );
             CREATE INDEX IF NOT EXISTS idx_agent_runs_project ON agent_runs(project_id);
+
+            CREATE TABLE IF NOT EXISTS idea_candidates (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_doc_id TEXT NOT NULL,
+                source_doc_chunk_id TEXT NOT NULL,
+                original_text TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                embedding_json TEXT,
+                cluster_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id),
+                FOREIGN KEY(source_id) REFERENCES ingest_sources(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_idea_candidates_project ON idea_candidates(project_id);
+            CREATE INDEX IF NOT EXISTS idx_idea_candidates_cluster ON idea_candidates(cluster_id);
+
+            CREATE TABLE IF NOT EXISTS idea_clusters (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                idea_ids_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_idea_clusters_project ON idea_clusters(project_id);
+
+            CREATE TABLE IF NOT EXISTS roadmaps (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                graph_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_roadmaps_project ON roadmaps(project_id);
+
+            CREATE TABLE IF NOT EXISTS context_items (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                tokens INTEGER NOT NULL DEFAULT 0,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                canonical_document_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_context_items_project ON context_items(project_id);
+            CREATE INDEX IF NOT EXISTS idx_context_items_pinned ON context_items(pinned);
+
+            CREATE TABLE IF NOT EXISTS agent_steps (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                step_number INTEGER NOT NULL,
+                node_id TEXT,
+                status TEXT NOT NULL,
+                input_json TEXT,
+                output_json TEXT,
+                error TEXT,
+                duration_ms INTEGER,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                FOREIGN KEY(run_id) REFERENCES agent_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps(run_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_steps_step_number ON agent_steps(run_id, step_number);
+
+            CREATE TABLE IF NOT EXISTS agent_messages (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                context_item_ids_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(run_id) REFERENCES agent_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_messages_created_at ON agent_messages(run_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS agent_node_states (
+                run_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress REAL NOT NULL DEFAULT 0,
+                messages_json TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                error TEXT,
+                PRIMARY KEY (run_id, node_id),
+                FOREIGN KEY(run_id) REFERENCES agent_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_node_states_run ON agent_node_states(run_id);
+
+            CREATE TABLE IF NOT EXISTS workflow_graphs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                graph_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_graphs_project ON workflow_graphs(project_id);
+
+            CREATE TABLE IF NOT EXISTS workflow_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                input_json TEXT,
+                output_json TEXT,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                last_message TEXT,
+                task_id TEXT,
+                checkpoint_json TEXT,
+                paused_at TEXT,
+                cancelled_at TEXT,
+                estimated_completion TEXT,
+                FOREIGN KEY(project_id) REFERENCES projects(id),
+                FOREIGN KEY(workflow_id) REFERENCES workflow_graphs(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_project ON workflow_runs(project_id);
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_task_id ON workflow_runs(task_id);
+
+            CREATE TABLE IF NOT EXISTS workflow_node_states (
+                run_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress REAL NOT NULL DEFAULT 0,
+                messages_json TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                error TEXT,
+                PRIMARY KEY (run_id, node_id),
+                FOREIGN KEY(run_id) REFERENCES workflow_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_node_states_run ON workflow_node_states(run_id);
+
+            CREATE TABLE IF NOT EXISTS roadmap_nodes (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL,
+                priority TEXT,
+                start_date TEXT,
+                target_date TEXT,
+                depends_on_ids_json TEXT,
+                lane_id TEXT,
+                idea_id TEXT,
+                ticket_id TEXT,
+                mission_control_task_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_roadmap_nodes_project ON roadmap_nodes(project_id);
+            CREATE INDEX IF NOT EXISTS idx_roadmap_nodes_status ON roadmap_nodes(status);
+
+            CREATE TABLE IF NOT EXISTS roadmap_edges (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                from_node_id TEXT NOT NULL,
+                to_node_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                label TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id),
+                FOREIGN KEY(from_node_id) REFERENCES roadmap_nodes(id),
+                FOREIGN KEY(to_node_id) REFERENCES roadmap_nodes(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_roadmap_edges_project ON roadmap_edges(project_id);
+            CREATE INDEX IF NOT EXISTS idx_roadmap_edges_from ON roadmap_edges(from_node_id);
+            CREATE INDEX IF NOT EXISTS idx_roadmap_edges_to ON roadmap_edges(to_node_id);
+
+            CREATE TABLE IF NOT EXISTS knowledge_edges (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                type TEXT NOT NULL,
+                weight REAL,
+                label TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id),
+                FOREIGN KEY(source) REFERENCES knowledge_nodes(id),
+                FOREIGN KEY(target) REFERENCES knowledge_nodes(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_knowledge_edges_project ON knowledge_edges(project_id);
+            CREATE INDEX IF NOT EXISTS idx_knowledge_edges_source ON knowledge_edges(source);
+            CREATE INDEX IF NOT EXISTS idx_knowledge_edges_target ON knowledge_edges(target);
             """
         )
         conn.commit()

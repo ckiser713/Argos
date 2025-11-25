@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
-
 from app.domain.mode import ExecutionMode, ProjectExecutionSettings
 from app.repos import mode_repo
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["mode"])
@@ -57,27 +56,23 @@ def update_project_mode(
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one field (mode, llm_temperature, validation_passes, max_parallel_tools) must be provided.",
+            detail=(
+                "At least one field (mode, llm_temperature, validation_passes, max_parallel_tools) must be provided."
+            ),
         )
 
-    updated = current.copy(update={
-        "mode": body.mode if body.mode is not None else current.mode,
-        "llm_temperature": (
-            body.llm_temperature
-            if body.llm_temperature is not None
-            else current.llm_temperature
-        ),
-        "validation_passes": (
-            body.validation_passes
-            if body.validation_passes is not None
-            else current.validation_passes
-        ),
-        "max_parallel_tools": (
-            body.max_parallel_tools
-            if body.max_parallel_tools is not None
-            else current.max_parallel_tools
-        ),
-    })
+    updated = current.copy(
+        update={
+            "mode": body.mode if body.mode is not None else current.mode,
+            "llm_temperature": (body.llm_temperature if body.llm_temperature is not None else current.llm_temperature),
+            "validation_passes": (
+                body.validation_passes if body.validation_passes is not None else current.validation_passes
+            ),
+            "max_parallel_tools": (
+                body.max_parallel_tools if body.max_parallel_tools is not None else current.max_parallel_tools
+            ),
+        }
+    )
 
     saved = mode_repo.set_project_settings(updated)
 

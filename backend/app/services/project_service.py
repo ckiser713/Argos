@@ -7,7 +7,6 @@ from fastapi import HTTPException, status
 from app.domain.common import PaginatedResponse
 from app.domain.project import (
     CortexProject,
-    CortexProjectStatus,
     CreateProjectRequest,
     DeleteProjectResponse,
     ProjectFactory,

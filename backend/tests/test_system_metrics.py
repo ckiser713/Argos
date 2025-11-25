@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Optional
 
 import pytest
-
 from app.domain.system_metrics import (
     ContextMetrics,
     CpuMetrics,
