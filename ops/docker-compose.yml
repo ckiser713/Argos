@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  inference-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.vllm
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+    ports:
+      - "11434:8000" # Maps to standard OpenAI port internally
+    shm_size: '16gb'
+    volumes:
+      - ./models:/root/.cache/huggingface

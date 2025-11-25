@@ -1,0 +1,16 @@
+FROM rocm/pytorch:rocm6.1_ubuntu22.04_py3.10_pytorch_2.1.2
+
+# Install build deps
+RUN apt-get update && apt-get install -y git build-essential
+
+# Install vLLM from source (optimized for ROCm)
+RUN pip uninstall -y torch torchvision
+RUN pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1
+RUN pip install vllm==0.4.2 --no-build-isolation
+
+# Environment for AMD
+ENV HIP_VISIBLE_DEVICES=0
+ENV HSA_OVERRIDE_GFX_VERSION=11.0.0 
+
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--model", "casperhansen/llama-3-70b-instruct-awq", "--gpu-memory-utilization", "0.85", "--port", "8000"]
