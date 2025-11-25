@@ -1,6 +1,18 @@
 # tests/conftest.py
+from pathlib import Path
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
+
+
+# Ensure the backend package is importable when tests are executed from the
+# repository root. This keeps the FastAPI app import stable without relying on
+# external installation steps.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
 
 from app.main import app  # assumes your FastAPI instance is named `app` here
 

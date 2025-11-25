@@ -1,4 +1,4 @@
-import pytest
+import asyncio
 
 from app.domain.gap_analysis import GapStatus
 from app.services.gap_analysis_service import (
@@ -42,8 +42,7 @@ class FakeCoderLLMClient(CoderLLMClient):
         return f"{status} for {ticket.id} with {len(code_chunks)} matches"
 
 
-@pytest.mark.asyncio
-async def test_generate_gap_report_unmapped():
+def test_generate_gap_report_unmapped():
     ticket = FakeTicket(id="T1", project_id="P1", title="A feature", description="Do something")
     ticket_provider = FakeTicketProvider([ticket])
     search_backend = FakeCodeSearchBackend(matches_by_ticket_id={})
@@ -56,7 +55,7 @@ async def test_generate_gap_report_unmapped():
         config=GapAnalysisConfig(implemented_threshold=0.8, partial_threshold=0.4),
     )
 
-    report = await service.generate_gap_report("P1")
+    report = asyncio.run(service.generate_gap_report("P1"))
     assert report.project_id == "P1"
     assert len(report.suggestions) == 1
     suggestion = report.suggestions[0]
@@ -67,8 +66,7 @@ async def test_generate_gap_report_unmapped():
     assert suggestion.notes == "unmapped for T1 with 0 matches"
 
 
-@pytest.mark.asyncio
-async def test_generate_gap_report_implemented():
+def test_generate_gap_report_implemented():
     ticket = FakeTicket(id="T2", project_id="P1", title="Implemented feature", description="Do X")
     ticket_provider = FakeTicketProvider([ticket])
 
@@ -92,7 +90,7 @@ async def test_generate_gap_report_implemented():
         ),
     )
 
-    report = await service.generate_gap_report("P1")
+    report = asyncio.run(service.generate_gap_report("P1"))
     suggestion = report.suggestions[0]
     assert suggestion.status == "implemented"
     # Both a.py and b.py should be surfaced in related_files.
@@ -104,8 +102,7 @@ async def test_generate_gap_report_implemented():
     assert suggestion.notes == "implemented for T2 with 3 matches" # CoderLLMClient receives all chunks
 
 
-@pytest.mark.asyncio
-async def test_generate_gap_report_partially_implemented():
+def test_generate_gap_report_partially_implemented():
     ticket = FakeTicket(id="T3", project_id="P1", title="Partial feature", description="Do Y")
     ticket_provider = FakeTicketProvider([ticket])
 
@@ -128,7 +125,7 @@ async def test_generate_gap_report_partially_implemented():
         ),
     )
 
-    report = await service.generate_gap_report("P1")
+    report = asyncio.run(service.generate_gap_report("P1"))
     suggestion = report.suggestions[0]
     assert suggestion.status == "partially_implemented"
     assert "partial.py" in suggestion.related_files
