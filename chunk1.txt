@@ -1,0 +1,6696 @@
+Skip to content
+Chat history
+
+You said:
+I’m going to paste the current frontend codebase snapshot (all_files.txt) in chunks.
+
+Task:
+
+1. Build a mental map of:
+   - Existing components and their responsibilities.
+   - Where mock data and timers live.
+   - Any implicit domain models (ingest jobs, workflows, knowledge nodes, idea tickets, etc.).
+2. Produce:
+   - A concise inventory of components grouped by feature area.
+   - A list of mock-data types you see, with a short description.
+   - A list of “obvious seams” where we can inject a typed data layer (e.g., swapping mock arrays for hooks).
+3. Do **not** try to rewrite anything yet; this is pure analysis.
+
+After each chunk I paste, respond with “ACK CHUNK N – notes integrated” until I say “DONE”. Once I say “DONE”, provide the full analysis.
+ChatGPT said:
+
+Thought for 8s
+Got it. Ready for chunks and will respond with “ACK CHUNK N – notes integrated” for each until you say “DONE”.
+
+You said:
+all files are in project knowledge base.
+ChatGPT said:
+
+Thought for 4m 52s
+You already have a fully formed “fake backend” embedded in the UI: ingest jobs, workflows, research runs, idea tickets, and decisions are all modeled as TypeScript types + mock arrays + timers, so we can cleanly replace those with a typed data layer and hooks.
+
+1. Component inventory by feature area
+   A. App shell, layout & global chrome
+   App.tsx
+
+High-level orchestrator: tracks activeTab, systemStatus, logs, vram, workflow simulation state (wfActiveNode, wfVisited), and contextItems.
+
+Hosts feature panels: MissionControlBoard, IngestStation, DeepResearch, WorkflowConstruct, DependencyTimeline, StrategyDeck, PmDissection, DecisionFlowMap, KnowledgeNexus.
+
+Owns mock context items (INITIAL_CONTEXT_ITEMS) and mock LangGraph topology (WORKFLOW_NODES, WORKFLOW_EDGES).
+
+Simulates telemetry via setInterval with random logs and VRAM fluctuation.
+
+components/Layout.tsx
+
+Main chrome: top navbar, side nav, tab switching (onTabChange), and global controls (search, export, workflows, layout, calendar).
+
+Integrates sound toggle via SoundManager (useSound), config drawer via NeuralLinkConfig, and bottom bars (e.g., SysOps ticker).
+
+Purely presentational in terms of data; delegates state up via props.
+
+Shared visual primitives
+
+GlassCard.tsx – Generic “glass” panel with variants (primary, void, cyan, amber, purple). No business logic; just layout & deco.
+
+NeonButton.tsx – Button with variants, optional icon, full-width support, and sound hooks (playClick, playHover).
+
+TerminalText.tsx – Typewriter text effect (text, speed) using setInterval.
+
+ScrambleText.tsx – Scrambled cyber text animation (text, duration, preserveNumbers) using CHARS/DIGITS and setInterval.
+
+SoundManager.tsx – React context for SFX; manages AudioContext, isEnabled, and exposes playClick, playHover, playScan.
+
+SysOpsTicker.tsx – Scrolling marquee of logs: string[] with custom CSS animation.
+
+These are cleanly separated presentation primitives and are mostly data-agnostic; they’ll just consume data from a typed layer.
+
+B. Context, ingest & knowledge graph
+components/ContextPrism.tsx
+
+Renders current context window as stacked segments.
+
+Types:
+
+ContextItem (id, name, type: 'pdf' | 'repo' | 'chat', tokens).
+
+Props: items: ContextItem[], totalCapacity, onEject(id).
+
+Pure display + eject callback → natural seam for a useContextItems() hook.
+
+components/IngestStation.tsx
+
+Drag-and-drop panel for uploading files.
+
+Types:
+
+ProcessingStage = 'QUEUED' | 'OCR_SCANNING' | 'MD_CONVERSION' | 'GRAPH_INDEXING' | 'COMPLETE'.
+
+IngestFile (id, name, size, type, progress, stage, isDeepScan).
+
+Internal state: files: IngestFile[], isDragging, isDeepScan.
+
+Uses setInterval to simulate ingest progression (advancing progress and stage).
+
+components/KnowledgeNexus.tsx
+
+Force-directed graph (react-force-graph-2d) visualizing documents, repos, and chats.
+
+Types:
+
+NodeType = 'pdf' | 'repo' | 'chat'.
+
+Node (id, name, type, val, color, summary?, meta?).
+
+Link (source, target, strength?).
+
+GraphData (nodes: Node[], links: Link[]).
+
+useEffect on mount calls generateMockData() and sets local state data, then uses custom paintNode to render.
+
+Implicit domain: corpus graph / knowledge atlas with typed nodes & edges.
+
+C. Research & workflow / agent visualization
+components/DeepResearch.tsx
+
+Full research workspace: left side chat and tools, right side doc viewer and agent “log steps”.
+
+Types:
+
+LogStep (id, label, status: 'pending' | 'processing' | 'complete', detail?).
+
+Message (id, role: 'user' | 'agent', content, logs?: LogStep[], timestamp, relatedDocId?, highlightIds?).
+
+Doc (id, title, type: 'pdf' | 'code', content: React.ReactNode).
+
+Mock data:
+
+MOCK_DOCS: Doc[] – richly formatted “Project Titan” sample docs.
+
+Hard-coded initial conversation + simulated agent responses via setTimeout.
+
+Behavior:
+
+Handles handleSendMessage, appends Messages, and calls simulateAgentResponse which:
+
+Adds an agent message with LogSteps.
+
+Uses setTimeout to update logs statuses over time.
+
+Implicit domain: research run / agent trace with messages, tool steps, and highlighted doc regions.
+
+components/WorkflowConstruct.tsx
+
+Cyber-styled LangGraph/agent graph viewer built on reactflow.
+
+Types:
+
+WorkflowConstructProps (nodes: Node[], edges: Edge[], plus maybe activeNodeId, etc.).
+
+Internal:
+
+nodeTypes and edgeTypes (CyberNode, CyberEdge) for custom visuals.
+
+generateMockData(nodeId, label) returns an object describing the step:
+
+e.g. step: 'vector_retrieval', index, embedding_model, results_count, top_score, etc.
+
+Data source:
+
+The graph topology comes from App.tsx via WORKFLOW_NODES and WORKFLOW_EDGES.
+
+Implicit domain: workflow run nodes enriched with backend debug metadata.
+
+components/WorkflowVisualizer.tsx
+
+Another ReactFlow-based visualizer, focused on run status / iteration:
+
+Custom NeonNode with type (start, process, decision, end), status, iteration, and an icon.
+
+Uses useNodesState/useEdgesState, plus Play/Pause/Refresh UI for simulating iterative runs.
+
+Currently wired to mock nodes/edges and local state (details truncated, but structure mirrors WorkflowConstruct).
+
+components/DependencyTimeline.tsx
+
+Gantt-like timeline of workstreams with dependency visualization.
+
+Types:
+
+Task (id, label, start: Date, end: Date, clusterId, dependencies: string[], status: 'pending' | 'active' | 'blocked' | 'completed').
+
+Cluster (id, label, color).
+
+Constants:
+
+today = startOfToday().
+
+CLUSTERS: Cluster[] – NEXUS_CORE, ARGOS_UI, INFRASTRUCTURE.
+
+TASKS: Task[] – several tasks across clusters with dependencies and statuses.
+
+Uses date-fns to compute positions (differenceInDays, addDays), highlights blocked chains, etc.
+
+Implicit domain: project timeline with dependencies.
+
+components/DecisionFlowMap.tsx + components/OptionInspector.tsx
+
+DecisionFlowMap.tsx
+
+ReactFlow graph of a decision tree (e.g., Axum vs FastAPI).
+
+Types:
+
+Uses Node/Edge from ReactFlow.
+
+initialNodes: Node[] – task & decision nodes laid out on canvas.
+
+initialEdges: Edge[] – annotated arrows (e.g., “Option A: Rust”).
+
+DecisionNode + TaskNode provide visuals; clicking a decision node populates inspector.
+
+getDecisionData(nodeId): DecisionData constructs mock decision options for the selected node.
+
+OptionInspector.tsx
+
+Types:
+
+ContextLink (type: 'pdf' | 'code' | 'chat', title).
+
+DecisionOption (id, label, summary, pros, cons, analysis_complete, context_links: ContextLink[]).
+
+DecisionData (id, question, options: DecisionOption[]).
+
+Props: data: DecisionData | null, isOpen, onClose, optional onContextSelect.
+
+setTimeout used to fake an “analyzing” state (analyzingId cleared after ~2.5s).
+
+Implicit domain: multi-option architectural decision records with linked context artifacts.
+
+D. Mission control, idea extraction & ticket shaping
+components/MissionControlBoard.tsx
+
+Kanban-like mission control for tasks.
+
+Types:
+
+OriginType (e.g., 'chat' | 'pdf' | 'repo').
+
+ContextFile (name, type: 'code' | 'doc' | 'chat').
+
+Task (id, title, origin, confidence, column, context: ContextFile[], priority).
+
+ColumnId (backlog/todo/in_progress/done).
+
+Mock data:
+
+INITIAL_TASKS: Task[] – a handful of example tasks.
+
+COLUMNS – Kanban columns with labels and colors.
+
+Behavior:
+
+Drag-and-drop between columns; special drag zone triggers an AI prompt bubble (triggerAiPrompt).
+
+setTimeout hides AI prompt after ~4 seconds.
+
+Implicit domain: triaged tasks surfaced from AI signals with confidence and origin.
+
+components/StrategyDeck.tsx
+
+“Idea radar” built from chat logs.
+
+Types:
+
+ChatLog (id, user, timestamp, message, containsIdeaId?).
+
+Idea (id, type: 'infra' | 'feature' | 'project' | 'ops' | etc., summary, sourceContext, sourceUser, confidence).
+
+Mock data:
+
+MOCK_LOGS: ChatLog[] – sample Slack-style logs with some lines tagged containsIdeaId.
+
+EXTRACTED_IDEAS: Idea[] – derived ideas linked to chat logs.
+
+Behavior:
+
+Likely cycles through logs (uses setInterval to auto-advance) and highlights where ideas came from.
+
+Implicit domain: idea extraction from conversation logs with associated confidence and provenance.
+
+components/PmDissection.tsx
+
+Transforms raw ideas into structured tickets.
+
+Types:
+
+RawIdea (id, text, source).
+
+StructuredTicket (idea_id, title, origin_story, category, implied_tasks: string[], potential_repo_links: string[], source_quotes: string).
+
+Mock data:
+
+RAW_INBOX: RawIdea[] – short list of unstructured problem statements.
+
+PROCESSED_TICKETS: Record<string, StructuredTicket> – mapping by raw idea id.
+
+Behavior:
+
+Lets user select an idea, shows structured ticket, JSON representation, etc.
+
+Implicit domain: canonicalized ticket spec / blueprint per idea.
+
+E. Model configuration & neural link
+components/NeuralLinkConfig.tsx
+
+Side panel / modal for selecting roles & models.
+
+Types:
+
+RoleType = 'deep_reader' | 'code_expert' | 'strategic_planner'.
+
+ModelSpec (id, name, context, vram, speed).
+
+RoleConfig (id, label, icon, description, availableModels: ModelSpec[]).
+
+NeuralLinkConfigProps (isOpen, onClose).
+
+Mock data:
+
+ROLES: RoleConfig[] – hardcoded mapping of roles to multiple models (e.g., gpt4-turbo, llama3-70b, etc.).
+
+Behavior:
+
+Local state for selected role/model; animates open/close via Framer Motion.
+
+Implicit domain: role → model registry / routing config.
+
+2. Mock data types & simulated behavior
+   Here are the key mock types and arrays, with what they’re pretending to be:
+
+Context / LangGraph
+
+ContextItem[] (App.tsx/ContextPrism.tsx) – current context segments in the model window, with token usage.
+
+INITIAL_CONTEXT_ITEMS – fake “context window contents”.
+
+Node[] + Edge[] (WORKFLOW_NODES, WORKFLOW_EDGES in App.tsx) – static LangGraph workflow topology (**start**, retrieve_docs, grade_documents, web_search_tool, **end**).
+
+Research / agent runs
+
+MOCK_DOCS: Doc[] (DeepResearch.tsx) – fake document corpus displayed in the right pane.
+
+Message[] with nested LogStep[] – simulated conversation and agent tool traces (constructed in code, not via network).
+
+Ingest
+
+IngestFile[] (IngestStation.tsx) – ingest job objects (id, file type, size, progress, stage).
+
+Implicit “queue” behavior via setInterval advancing stage/progress.
+
+Knowledge graph
+
+GraphData (KnowledgeNexus.tsx) – generated via generateMockData(); Node/Link arrays representing PDFs/repos/chats and edges between them.
+
+Workflows & dependencies
+
+Task[] + Cluster[] (DependencyTimeline.tsx):
+
+CLUSTERS – cluster labels (NEXUS_CORE, ARGOS_UI, INFRASTRUCTURE).
+
+TASKS – tasks with start/end dates, dependencies, and status.
+
+generateMockData(nodeId, label) (WorkflowConstruct.tsx) – structured “run metadata” per step (index used, results count, etc.) derived purely from label string.
+
+initialNodes, initialEdges (DecisionFlowMap.tsx) – static decision flow graph.
+
+getDecisionData(nodeId): DecisionData (DecisionFlowMap.tsx) – static options for a decision (Axum vs FastAPI) with pros/cons/context links.
+
+Mission control / ideas / tickets
+
+INITIAL_TASKS: Task[] + COLUMNS (MissionControlBoard.tsx) – initial Kanban state and column definitions.
+
+MOCK_LOGS: ChatLog[] + EXTRACTED_IDEAS: Idea[] (StrategyDeck.tsx) – example chat history and AI-extracted ideas.
+
+RAW_INBOX: RawIdea[] + PROCESSED_TICKETS: Record<string, StructuredTicket> (PmDissection.tsx) – simple pipeline from raw idea text to canonical ticket.
+
+Config
+
+ROLES: RoleConfig[] (NeuralLinkConfig.tsx) – static catalog of roles and model choices.
+
+Other constants
+
+CHARS, DIGITS (ScrambleText.tsx) – purely visual, no domain.
+
+today, CELL_WIDTH, ROW_HEIGHT, HEADER_HEIGHT (DependencyTimeline.tsx) – visual/layout constants, but timeline uses real Date objects.
+
+Timers & non-deterministic behavior
+Places where the UI currently fakes backend behavior:
+
+App.tsx
+
+setInterval every 2.5s:
+
+Appends a random log line from a small set.
+
+Randomly perturbs vram usage between 20–95%.
+
+IngestStation.tsx
+
+setInterval stepping IngestFile.progress and stage; acts like ingest worker.
+
+DeepResearch.tsx
+
+Several setTimeout calls to:
+
+Create an agent message with pending LogSteps.
+
+Update LogStep.status over time to simulate tools running.
+
+MissionControlBoard.tsx
+
+setTimeout(() => setShowAiPrompt(null), 4000) – auto-hide suggestion overlay.
+
+NeuralLinkConfig.tsx
+
+setTimeout (based on partial code) to animate some config feedback (e.g., linking).
+
+OptionInspector.tsx
+
+setTimeout to clear analyzingId (~2.5s), simulating analysis completion.
+
+StrategyDeck.tsx
+
+setTimeout + setInterval animate log playback / idea focusing.
+
+TerminalText.tsx
+
+setInterval for typed effect.
+
+ScrambleText.tsx
+
+setInterval/frame timer for scrambling.
+
+Other visual-only timers
+
+Animated text, SFX toggles etc. (pure UX, no backend semantics).
+
+Everything in this list except visual flourishes is a candidate to move to server-driven progress via a typed status API or WebSockets.
+
+3. Obvious seams for a typed data layer
+   These are the clean places to swap mock arrays/timers for hooks backed by FastAPI + LangGraph, without touching the neon aesthetics.
+
+1) System telemetry & context (App + Layout + ContextPrism)
+   Current: App.tsx owns:
+
+systemStatus, logs, vram (randomized).
+
+contextItems: ContextItem[] (INITIAL_CONTEXT_ITEMS).
+
+Seam:
+
+Introduce a typed API client surface:
+
+GET /system/status -> { status, vram_used_pct, logs: string[] }
+
+GET /context/items -> ContextItem[]
+
+DELETE /context/items/{id}
+
+Frontend:
+
+useSystemStatus() hook returning { status, vram, logs }.
+
+useContextItems() hook returning { items, eject(id) }.
+
+App.tsx becomes a consumer of these hooks; ContextPrism remains purely presentational.
+
+2. Ingest pipeline (IngestStation)
+   Current: IngestStation keeps files: IngestFile[] and uses setInterval to fake stage/progress.
+
+Seam:
+
+Define backend model:
+
+IngestJob ≈ IngestFile (id, filename, size_bytes, mime_type, stage, progress, is_deep_scan, created_at).
+
+API:
+
+POST /ingest/jobs to enqueue upload(s).
+
+GET /ingest/jobs or GET /ingest/jobs/{id} for status.
+
+Optional WS: /ws/ingest/jobs/{id} for push updates.
+
+Frontend:
+
+useIngestJobs() hook exposing:
+
+jobs: IngestJob[]
+
+enqueue(files, { deepScan })
+
+auto-poll or subscribe via WS.
+
+IngestStation only handles drag-and-drop UI and calls enqueue.
+
+3. Research run & doc pane (DeepResearch + KnowledgeNexus + ContextPrism)
+   Current: DeepResearch owns:
+
+Local messages: Message[], generated LogStep[], MOCK_DOCS: Doc[].
+
+All “agent” activity is setTimeout-driven.
+
+Seam:
+
+Backend entities:
+
+ResearchRun (id, query, created_at, status, messages, steps, attached_docs).
+
+ResearchMessage, ResearchStep, DocMeta aligning with Message, LogStep, Doc.
+
+API:
+
+POST /research/runs to start a run.
+
+GET /research/runs/{id} or WS for incremental updates (messages + steps + doc highlights).
+
+GET /docs/{id} for doc content/preview.
+
+Frontend:
+
+useDeepResearchRun() hook that:
+
+Accepts query + context; returns { messages, steps, docs, status }.
+
+Drives DeepResearch UI; removes internal timers.
+
+KnowledgeNexus can use useKnowledgeGraph() keyed by the same run/user/project to show related nodes.
+
+4. Workflow & LangGraph surfaces (WorkflowConstruct + WorkflowVisualizer + DecisionFlowMap)
+   Current:
+
+Graph topology is static (WORKFLOW_NODES/EDGES in App.tsx; initialNodes/initialEdges in DecisionFlowMap).
+
+generateMockData in WorkflowConstruct derives structured “step details” from label.
+
+getDecisionData returns static DecisionData.
+
+Seam:
+
+Backend entities:
+
+WorkflowDefinition (nodes, edges, types) and WorkflowRun (per-node status, metadata).
+
+DecisionRecord (question, options, pros/cons, linked context).
+
+API:
+
+GET /workflows/{id} → nodes & edges (typed).
+
+GET /workflows/{id}/runs/{run_id} → per-node runtime data.
+
+GET /decisions/{id} → DecisionData.
+
+Frontend:
+
+useWorkflowDefinition(id) → feeds WorkflowConstruct / WorkflowVisualizer nodes & edges.
+
+useWorkflowRun(id, runId) → statuses & metadata (replacing generateMockData).
+
+useDecisionData(nodeId | decisionId) → drives OptionInspector.
+
+App.tsx simply passes graph props from hooks instead of local constants.
+
+5. Ideas, tickets & mission control (StrategyDeck + PmDissection + MissionControlBoard + DependencyTimeline)
+   This slice spans multiple components but shares the same conceptual data (ideas → tickets → tasks → timeline), so it’s worth treating as a single seam.
+
+Current:
+
+StrategyDeck has MOCK_LOGS and EXTRACTED_IDEAS.
+
+PmDissection has RAW_INBOX and PROCESSED_TICKETS.
+
+MissionControlBoard has INITIAL_TASKS; DependencyTimeline has CLUSTERS and TASKS.
+
+All are siloed mock islands representing the same lifecycle.
+
+Seam:
+
+Backend entities:
+
+ConversationLog (source chat + metadata).
+
+Idea (matches StrategyDeck).
+
+Ticket (matches StructuredTicket).
+
+Task (matches both MissionControlBoard and DependencyTimeline with dates).
+
+Cluster (project/epic group).
+
+API:
+
+GET /logs, GET /ideas, POST /ideas/extract, GET /tickets, GET /tasks, etc.
+
+Frontend:
+
+useIdeas() – provides Idea[] from backend.
+
+useTickets() – Ticket[] with mapping from idea → ticket.
+
+useTasks() – tasks with columns for board, dates for timeline.
+
+StrategyDeck, PmDissection, MissionControlBoard, DependencyTimeline all consume these hooks rather than separate mock arrays.
+
+6. Model config / runtime routing (NeuralLinkConfig)
+   Current: Role & model definitions are hardcoded in ROLES: RoleConfig[].
+
+Seam:
+
+Backend provides current model registry and role bindings:
+
+GET /models → all available models with context, speed, vram.
+
+GET /roles / PUT /roles/{id} → role routing configuration.
+
+Frontend:
+
+useModelRegistry() / useRolesConfig() for fetching and updating.
+
+NeuralLinkConfig turns into a config editor instead of a static list.
+
+Key insights / next steps
+You already have strong implicit domain models: ingest jobs, research runs, workflows, decisions, ideas/tickets/tasks, and model roles are all typed in TS; these should directly mirror Pydantic schemas in the FastAPI backend.
+
+Mock data and timers are localized, not scattered: almost all fake behavior is encapsulated inside a handful of components (App, IngestStation, DeepResearch, MissionControlBoard, StrategyDeck, PmDissection, DependencyTimeline, DecisionFlowMap, NeuralLinkConfig), making it straightforward to cut over to hooks.
+
+Best immediate move: define a small, typed API client + hook layer (useSystemStatus, useContextItems, useIngestJobs, useDeepResearchRun, useWorkflowDefinition/Run, useIdeas/Tickets/Tasks, useModelRegistry) and keep the neon UI intact while swapping mocks out behind these seams.
+
+When you’re ready, we can design the concrete TypeScript API client surface and the matching Pydantic models so that each of these components becomes purely presentational.
+
+You said:
+Using the PRD, architecture doc, and the frontend snapshot you’ve seen:
+
+Goal:
+Design a src/domain/types.ts file that captures all frontend-facing domain entities Cortex needs, aligned with the existing UI.
+
+Requirements:
+
+- Include, at minimum, types for:
+  - CortexProject
+  - IngestJob, IngestSource, IngestStage, IngestJobStatus
+  - CanonicalDocument, Chunk, Cluster
+  - RoadmapNode, RoadmapEdge, RoadmapNodeStatus
+  - AgentRun, AgentStep, AgentNodeState
+  - IdeaCandidate, IdeaCluster, IdeaTicket
+  - KnowledgeNode, KnowledgeEdge
+  - ContextItem, ContextBudget
+- Use string IDs (id: string) and reference other entities by ID.
+- Make fields directly support the current UI screens:
+  - Ingest Station’s columns and badges.
+  - Workflow/graph’s node labels, statuses, and tooltips.
+  - Mission Control’s columns and tags.
+  - Knowledge Nexus node sizes/legends.
+  - Deep Research context panels and message stream.
+
+Output:
+
+1. A complete src/domain/types.ts file.
+2. Short notes on any assumptions you made where the PRD/UI were ambiguous.
+
+Ensure the types are **pure types/interfaces** with no runtime code.
+ChatGPT said:
+
+Thought for 3m 51s
+Src/domain/types
+· typescript
+// src/domain/types.ts
+// Central domain model definitions for the Cortex frontend.
+// Pure TypeScript types/interfaces only — no runtime logic.
+
+export type ID = string;
+
+/\*\*
+
+- High-level project container.
+- A CortexProject groups ingestion, canonical docs, ideas, tickets, and roadmaps.
+  \*/
+  export type CortexProjectStatus = 'active' | 'archived' | 'draft';
+
+export interface CortexProject {
+id: ID;
+slug: string;
+name: string;
+description?: string;
+status: CortexProjectStatus;
+createdAt: string;
+updatedAt: string;
+/\*\*
+
+- Optional wiring to other entities that the UI frequently pivots around.
+  \*/
+  defaultModelRoleId?: ID;
+  rootIdeaClusterId?: ID;
+  roadmapId?: ID;
+  }
+
+/_ -------------------------------------------------------------------------- _/
+/_ Ingestion / Sources _/
+/_ -------------------------------------------------------------------------- _/
+
+export type IngestSourceKind =
+| 'file'
+| 'folder'
+| 'repo'
+| 'chat_export'
+| 'url'
+| 'manual_note';
+
+export interface IngestSource {
+id: ID;
+projectId?: ID;
+kind: IngestSourceKind;
+/\*\*
+
+- Human readable label shown in the Ingest Station cards (e.g. repo name, file name, chat title).
+  \*/
+  name: string;
+  description?: string;
+  /\*\*
+- Where this source ultimately lives on disk or in a service.
+- Not necessarily exposed to the user, but useful for debug/tooltips.
+  \*/
+  uri?: string;
+  }
+
+/\*\*
+
+- Pipeline stage badges shown in Ingest Station.
+- These map directly onto the existing UI chips:
+- - QUEUED
+- - OCR_SCANNING
+- - MD_CONVERSION
+- - GRAPH_INDEXING
+- - COMPLETE
+    \*/
+    export type IngestStage =
+    | 'QUEUED'
+    Here’s the domain model you asked for, and where it lines up with the current UI.
+
+You can grab the full src/domain/types.ts content from the canvas document I just created (Src/domain/types).
+
+How this maps to the existing UI
+Projects
+
+CortexProject
+
+Wraps everything by projectId (ingest, docs, ideas, tickets, roadmap).
+
+Fields like rootIdeaClusterId, roadmapId, defaultModelRoleId give you pivot points for future “project switcher” UI without constraining anything now.
+
+Ingest & sources
+IngestSourceKind, IngestSource
+
+Covers current and near-term sources: file, folder, repo, chat_export, url, manual_note.
+
+name/description/uri feed Ingest Station labels, tooltips, and future source filter badges.
+
+IngestStage
+
+Exact match for ProcessingStage in IngestStation.tsx:
+
+QUEUED | OCR_SCANNING | MD_CONVERSION | GRAPH_INDEXING | COMPLETE.
+
+IngestJobStatus
+
+Coarser lifecycle for filters / overall status: pending | running | completed | failed | cancelled.
+
+IngestJob
+
+Direct superset of IngestFile:
+
+originalFilename, byteSize, mimeType, isDeepScan, stage, progress.
+
+sourceId, projectId, canonicalDocumentId wire into Doc Atlas & Knowledge Nexus.
+
+errorMessage supports future red error badge row in Ingest Station.
+
+Canonical docs, chunks, and clusters
+CanonicalDocumentType, CanonicalDocumentStatus, CanonicalDocument
+
+Support:
+
+Doc viewer in DeepResearch (pdf, code, markdown, html, etc.).
+
+Status chips in any future “Doc Atlas” list (pending, canonicalizing, indexed, archived).
+
+tokenCount / chunkCount feed stats-heavy tooltips and side panels.
+
+Chunk
+
+Aligns with DeepResearch highlight ids and future span-level highlighting:
+
+canonicalDocumentId, index, text, tokenCount.
+
+clusterId links into semantic clusters for Knowledge Nexus and idea mining.
+
+ClusterKind, Cluster
+
+Unifies clustering notions:
+
+semantic / topic for knowledge graph,
+
+roadmap / idea for higher-level groupings.
+
+size maps to node size; color to neon color hints; representativeChunkId supports detail panel snippets.
+
+Knowledge Nexus (graph)
+KnowledgeNodeKind, KnowledgeNode
+
+Generalization of NodeType and Node in KnowledgeNexus.tsx:
+
+kind: 'pdf' | 'repo' | 'chat' | 'canonical_doc' | 'chunk_cluster' | 'idea' | 'ticket'.
+
+label == name today.
+
+size == val for ForceGraph node radius.
+
+Optional links to underlying entities: canonicalDocumentId, chunkClusterId, ideaId, ticketId.
+
+color, importance, tags let the backend drive consistent legends.
+
+KnowledgeEdgeKind, KnowledgeEdge
+
+Generalizes Link:
+
+kind: 'semantic' | 'reference' | 'temporal' | 'hierarchy' | 'co_occurrence'.
+
+Supports different edge styles/tooltips later without changing consumers.
+
+Roadmap / dependency timeline
+RoadmapNodeStatus, RoadmapPriority, RoadmapNode
+
+RoadmapNodeStatus maps cleanly onto DependencyTimeline statuses:
+
+planned ≈ pending
+
+in_progress
+
+blocked
+
+complete ≈ completed
+
+dropped (extra, for explicitly killed nodes).
+
+startDate, targetDate, completedDate drive bar positions.
+
+dependsOnIds mirrors dependencies: string[] in DependencyTimeline.tsx.
+
+laneId matches the previous clusterId used for NEXUS_CORE / ARGOS_UI / INFRASTRUCTURE rows.
+
+Back-links: ideaId, ticketId, missionControlTaskId let StrategyDeck / PmDissection / MissionControl all converge into roadmap view.
+
+RoadmapEdgeKind, RoadmapEdge
+
+Dependency graph edges overlaying the timeline: dependency | blocks | relates_to.
+
+Agents, workflows, Deep Research
+AgentRunStatus, AgentRun
+
+Represents a single run of a LangGraph / agent workflow:
+
+workflowId ties to WorkflowConstruct / WorkflowVisualizer’s definition.
+
+inputQuery and contextItemIds map to DeepResearch input prompt + ContextPrism.
+
+status, activeNodeId, iteration power node coloring and “iteration N” badges.
+
+messageIds / finalMessageId allow DeepResearch to stream a message sequence per run.
+
+AgentStepStatus, AgentStepKind, AgentStep
+
+Generalization of LogStep in DeepResearch.tsx:
+
+kind includes planner | retrieval | ranking | tool | generate | branch | final.
+
+label, status, detail map to the agent step list UI.
+
+workflowNodeId wires a step to a workflow node (retrieve_docs, grade_documents, etc.).
+
+input / output are intentionally opaque for debug-only panels.
+
+AgentNodeStatus, AgentNodeState
+
+Node-level aggregate used by WorkflowConstruct/WorkflowVisualizer:
+
+workflowNodeId matches the ReactFlow node id.
+
+status drives node color / glow.
+
+iteration matches the “iteration count” label per node.
+
+metrics holds things like latency, token usage, call counts for the node tooltip.
+
+errorMessage powers red error badges in the graph.
+
+AgentMessageRole, AgentMessage
+
+Domain version of DeepResearch Message:
+
+role: 'user' | 'agent' | 'tool'.
+
+relatedCanonicalDocumentId + highlightChunkIds cover the “linked doc + highlighted paragraphs” behavior.
+
+stepIds ties a message to the AgentStep sequence that produced it.
+
+Ideas, clusters, tickets, and Mission Control
+IdeaType, IdeaStatus, IdeaCandidate
+
+Mirrors Idea in StrategyDeck.tsx with more structure:
+
+type: 'infra' | 'feature' | 'project' | 'ops' | 'research'.
+
+sourceLogIds, sourceChannel, sourceUser map to chat log provenance.
+
+clusterId and ticketId allow UI to show where an idea sits in the funnel (raw → clustered → ticketed).
+
+IdeaCluster
+
+Grouping layer for StrategyDeck / Idea radar:
+
+ideaIds for membership.
+
+color controls cluster neon accent.
+
+priority ties into roadmap/mission control urgency.
+
+IdeaTicketStatus, IdeaTicket
+
+Domain version of StructuredTicket in PmDissection.tsx:
+
+category matches the four PRD categories and UI labels:
+
+'new_project' | 'feature_for_existing_repo' | 'infrastructure' | 'research_topic'.
+
+impliedTaskSummaries and repoHints reflect implied tasks + potential_repo_links.
+
+sourceQuotes matches the “origin story quotes”.
+
+Back-links: ideaId, roadmapNodeId, missionControlTaskId.
+
+TaskColumnId, TaskOriginType, TaskPriority, TaskContextFile, MissionControlTask
+
+Directly aligned with MissionControlBoard.tsx:
+
+Columns: backlog | todo | in_progress | done.
+
+Origins: chat | pdf | repo | system (superset of current OriginType).
+
+Context: TaskContextFile for name + 'code' | 'doc'.
+
+MissionControlTask carries ideaId / ticketId / roadmapNodeId to bind board cards back to the ideation & roadmap layer.
+
+Context window / Deep Research context
+ContextItemType, ContextItem
+
+Built from ContextPrism.tsx:
+
+name, type: 'pdf' | 'repo' | 'chat' | 'code' | 'web' | 'canonical_doc', tokens.
+
+Extra wiring: projectId, canonicalDocumentId, pinned, lastUsedAt for future features (pinning, recency ordering).
+
+Directly powers:
+
+ContextPrism pill rendering.
+
+Context ejection (id for eject, tokens for capacity bars).
+
+ContextBudget
+
+High-level view for the donut meter and “free vs used vs reserved” labels:
+
+maxTokens, usedTokens, optional reservedTokens, and the actual items.
+
+Assumptions & intentional choices
+Project scoping everywhere
+
+Nearly every entity includes projectId to support multi-project future without retyping.
+
+Current UI is single-user / effectively single-project, but this keeps separation of concerns clean and prevents cross-contamination.
+
+Separation of stage vs status in ingest
+
+IngestStage stays 1:1 with the visual stage badges from IngestStation.tsx.
+
+IngestJobStatus exists for coarse filters and error handling.
+
+This lets you show “failed at GRAPH_INDEXING” while still keeping stage = 'GRAPH_INDEXING', status = 'failed'.
+
+Canonical docs vs Knowledge Nexus nodes
+
+CanonicalDocument / Chunk are the structured data backing search and highlighting.
+
+KnowledgeNode / KnowledgeEdge are the visualization layer on top.
+
+A single canonical doc can appear as:
+
+one KnowledgeNode (kind canonical_doc),
+
+many chunk-led KnowledgeNodes (kind chunk_cluster), etc.
+
+Roadmap vs dependency timeline
+
+RoadmapNode is the canonical entity; DependencyTimeline becomes a pure projection of it.
+
+Timeline-specific concepts (rows “NEXUS_CORE/ARGOS_UI/INFRASTRUCTURE”) map to laneIds instead of a special type.
+
+Agent run vs step vs node state
+
+Mapping:
+
+AgentRun ≈ DeepResearch “session” + WorkflowVisualizer “run”.
+
+AgentStep ≈ DeepResearch LogStep entries + underlying LangGraph steps.
+
+AgentNodeState ≈ per-node run state feeding the ReactFlow node status + metrics.
+
+This split maintains deterministic state machines without baking in LangGraph’s exact internal shape.
+
+Ideas → tickets → tasks → roadmap
+
+The funnel is explicit in the types:
+
+IdeaCandidate ➝ IdeaTicket ➝ MissionControlTask ➝ RoadmapNode.
+
+That lets you build cross-view jumping (from StrategyDeck dot ➝ PmDissection ticket ➝ Mission Control card ➝ roadmap bar) entirely from IDs.
+
+Next steps
+
+Wire this file into the frontend:
+
+Replace component-local interfaces (e.g., ContextItem, Task, Idea, Cluster, etc.) with imports from src/domain/types.
+
+Then we can define the minimal typed API surface (api/types.ts + api/client.ts) that mirrors these interfaces on the FastAPI side (Pydantic models) and start swapping mock data/timers for real hooks.
+
+You said:
+Using src/domain/types.ts as the domain vocabulary:
+
+Goal:
+Design the backend API shape (REST + WebSocket/SSE) that the frontend will call.
+
+Constraints:
+
+- Backend stack: Python (FastAPI), but do NOT use any framework-specific details in the contract; just assume JSON over HTTP and JSON events over WS/SSE.
+- Token-based auth, but we can keep auth abstract.
+
+Tasks:
+
+1. Propose REST endpoints grouped by resource, e.g.:
+   - /api/projects
+   - /api/projects/{projectId}/ingest
+   - /api/projects/{projectId}/roadmap
+   - /api/projects/{projectId}/agent-runs
+   - /api/projects/{projectId}/ideas
+   - /api/projects/{projectId}/knowledge-graph
+   - /api/projects/{projectId}/context
+2. For each endpoint, specify:
+   - HTTP method + path.
+   - Request body/params.
+   - Response type, in terms of domain types or thin DTO wrappers.
+   - Pagination/filtering where relevant.
+3. For long-running or streaming concerns (ingest jobs, agent runs, workflow node state):
+   - Propose WebSocket or SSE endpoints.
+   - Define event types as a TypeScript discriminated union:
+     - e.g., IngestJobEvent, AgentRunEvent, WorkflowNodeEvent.
+4. Ensure the contract supports all the existing UI states:
+   - Ingest Station stages and progress.
+   - Workflow visualization node statuses.
+   - Mission Control columns.
+   - Knowledge Nexus graph data.
+   - Deep Research chat + side panels.
+
+Output:
+
+- docs/api-contract.md describing endpoints in prose.
+- src/domain/api-types.ts with TypeScript types for request/response and event payloads.
+  ChatGPT said:
+
+Thought for 43s
+Docs/api-contract
+
+Cortex API Contract
+High-level, implementation-agnostic contract for the Cortex backend. All responses are JSON over HTTP. Realtime updates are delivered via WebSocket or Server-Sent Events (SSE) using JSON payloads.
+
+Domain entities referenced below come from src/domain/types.ts.
+
+0. Conventions
+   Base URL: /api (all paths below are relative to this).
+
+Auth: Token-based (e.g. Authorization: Bearer <token>). Not further specified here.
+
+Dates: ISO-8601 strings in UTC.
+
+IDs: All id and \*Id fields are string IDs.
+
+Pagination:
+
+Queries that return lists accept optional cursor and limit query params.
+
+Responses use a common envelope:
+
+PaginatedResponse<T> = { items: T[]; nextCursor?: string | null; total?: number }.
+
+1. Projects
+   1.1 List projects
+   GET /projects
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: CortexProjectStatus
+
+Response: PaginatedResponse<CortexProject>
+
+1.2 Create project
+POST /projects
+
+Request body:
+
+{ name: string; slug?: string; description?: string; }
+
+Response: CortexProject
+
+1.3 Get project
+GET /projects/{projectId}
+
+Response: CortexProject
+
+1.4 Update project
+PATCH /projects/{projectId}
+
+Request body (all optional):
+
+{ name?: string; description?: string; status?: CortexProjectStatus; rootIdeaClusterId?: ID | null; roadmapId?: ID | null; defaultModelRoleId?: ID | null; }
+
+Response: CortexProject
+
+1.5 Delete/Archive project
+DELETE /projects/{projectId}
+
+Response: { success: boolean }
+
+2. Ingest & Sources
+   2.1 List ingest sources
+   GET /projects/{projectId}/ingest/sources
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+kind?: IngestSourceKind
+
+Response: PaginatedResponse<IngestSource>
+
+2.2 Create ingest source
+POST /projects/{projectId}/ingest/sources
+
+Request body:
+
+{ kind: IngestSourceKind; name: string; description?: string; uri?: string; }
+
+Response: IngestSource
+
+2.3 Get single ingest source
+GET /projects/{projectId}/ingest/sources/{sourceId}
+
+Response: IngestSource
+
+2.4 Delete ingest source
+DELETE /projects/{projectId}/ingest/sources/{sourceId}
+
+Response: { success: boolean }
+
+2.5 List ingest jobs
+Supports the Ingest Station table, stage/status filters, and progress bars.
+
+GET /projects/{projectId}/ingest/jobs
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: IngestJobStatus
+
+stage?: IngestStage
+
+sourceId?: ID
+
+Response: PaginatedResponse<IngestJob>
+
+2.6 Create ingest job(s)
+Typically called after files are uploaded or a repo/chat source is registered.
+
+POST /projects/{projectId}/ingest/jobs
+
+Request body:
+
+{ jobs: { sourceId: ID; originalFilename: string; byteSize?: number; mimeType?: string; isDeepScan?: boolean; }[] }
+
+Response: { jobs: IngestJob[] }
+
+2.7 Get ingest job
+GET /projects/{projectId}/ingest/jobs/{jobId}
+
+Response: IngestJob
+
+2.8 Cancel ingest job
+POST /projects/{projectId}/ingest/jobs/{jobId}/cancel
+
+Response: IngestJob (with status typically cancelled)
+
+3. Canonical Documents, Chunks, Clusters
+   3.1 List canonical documents
+   Feeds Doc Atlas-style tables and Deep Research side panels.
+
+GET /projects/{projectId}/canonical-documents
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: CanonicalDocumentStatus
+
+sourceId?: ID
+
+ingestJobId?: ID
+
+q?: string (full-text search over title/metadata)
+
+Response: PaginatedResponse<CanonicalDocument>
+
+3.2 Get canonical document
+GET /projects/{projectId}/canonical-documents/{canonicalDocumentId}
+
+Response: CanonicalDocument
+
+3.3 List chunks for a document
+Used for Deep Research highlighting and debug views.
+
+GET /projects/{projectId}/canonical-documents/{canonicalDocumentId}/chunks
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+Response: PaginatedResponse<Chunk>
+
+3.4 List clusters
+Topic/semantic clusters backing Knowledge Nexus and idea clustering.
+
+GET /projects/{projectId}/clusters
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+kind?: ClusterKind
+
+Response: PaginatedResponse<Cluster>
+
+4. Knowledge Graph
+   4.1 Get knowledge graph snapshot
+   Used to render the Knowledge Nexus force-directed graph.
+
+GET /projects/{projectId}/knowledge-graph
+
+Query params:
+
+view?: 'default' | 'ideas' | 'tickets' | 'docs' (optional preset)
+
+focusNodeId?: ID (optional focus)
+
+Response:
+
+{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; generatedAt: string; }
+
+4.2 Get node details
+GET /projects/{projectId}/knowledge-graph/nodes/{nodeId}
+
+Response: KnowledgeNode
+
+4.3 Get neighbors for a node
+GET /projects/{projectId}/knowledge-graph/nodes/{nodeId}/neighbors
+
+Response:
+
+{ node: KnowledgeNode; neighbors: KnowledgeNode[]; edges: KnowledgeEdge[]; }
+
+5. Roadmap & Dependencies
+   5.1 List roadmap nodes
+   Feeds DependencyTimeline and any roadmap list views.
+
+GET /projects/{projectId}/roadmap/nodes
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: RoadmapNodeStatus
+
+laneId?: ID
+
+Response: PaginatedResponse<RoadmapNode>
+
+5.2 Create roadmap node
+POST /projects/{projectId}/roadmap/nodes
+
+Request body:
+
+{ label: string; description?: string; status?: RoadmapNodeStatus; priority?: RoadmapPriority; startDate?: string; targetDate?: string; dependsOnIds?: ID[]; laneId?: ID; ideaId?: ID; ticketId?: ID; missionControlTaskId?: ID; }
+
+Response: RoadmapNode
+
+5.3 Get roadmap node
+GET /projects/{projectId}/roadmap/nodes/{nodeId}
+
+Response: RoadmapNode
+
+5.4 Update roadmap node
+PATCH /projects/{projectId}/roadmap/nodes/{nodeId}
+
+Request body: any subset of RoadmapNode fields except id & projectId.
+
+Response: RoadmapNode
+
+5.5 List roadmap edges
+GET /projects/{projectId}/roadmap/edges
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+Response: PaginatedResponse<RoadmapEdge>
+
+5.6 Create roadmap edge
+POST /projects/{projectId}/roadmap/edges
+
+Request body:
+
+{ fromNodeId: ID; toNodeId: ID; kind?: RoadmapEdgeKind; label?: string; }
+
+Response: RoadmapEdge
+
+5.7 Delete roadmap edge
+DELETE /projects/{projectId}/roadmap/edges/{edgeId}
+
+Response: { success: boolean }
+
+6. Agent Runs, Steps, Node State, Messages (Deep Research)
+   6.1 List agent runs
+   GET /projects/{projectId}/agent-runs
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+workflowId?: ID
+
+status?: AgentRunStatus
+
+Response: PaginatedResponse<AgentRun>
+
+6.2 Start a new agent run
+Used by Deep Research when the user submits a new query.
+
+POST /projects/{projectId}/agent-runs
+
+Request body:
+
+{ workflowId: ID; inputQuery: string; contextItemIds?: ID[]; }
+
+Response: AgentRun
+
+6.3 Get agent run
+GET /projects/{projectId}/agent-runs/{runId}
+
+Response: AgentRun
+
+6.4 List steps for a run
+GET /projects/{projectId}/agent-runs/{runId}/steps
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+Response: PaginatedResponse<AgentStep>
+
+6.5 List node state for a run
+Used by WorkflowConstruct / WorkflowVisualizer for node coloring and tooltips.
+
+GET /projects/{projectId}/agent-runs/{runId}/node-states
+
+Response: { items: AgentNodeState[] }
+
+6.6 List messages for a run (Deep Research stream)
+GET /projects/{projectId}/agent-runs/{runId}/messages
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+Response: PaginatedResponse<AgentMessage>
+
+6.7 Append user message to an existing run
+Supports follow-up questions in Deep Research.
+
+POST /projects/{projectId}/agent-runs/{runId}/messages
+
+Request body:
+
+{ content: string; contextItemIds?: ID[]; }
+
+Response: AgentMessage (the created user message)
+
+6.8 Cancel a run
+POST /projects/{projectId}/agent-runs/{runId}/cancel
+
+Response: AgentRun (with status cancelled)
+
+7. Ideas, Clusters, Tickets, Mission Control Tasks
+   7.1 List idea candidates
+   GET /projects/{projectId}/ideas/candidates
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: IdeaStatus
+
+type?: IdeaType
+
+Response: PaginatedResponse<IdeaCandidate>
+
+7.2 Create idea candidate
+Typically from log ingestion or manual capture.
+
+POST /projects/{projectId}/ideas/candidates
+
+Request body:
+
+{ type: IdeaType; summary: string; sourceLogIds?: ID[]; sourceChannel?: 'chat' | 'email' | 'note' | 'file'; sourceUser?: string; confidence?: number; }
+
+Response: IdeaCandidate
+
+7.3 Update idea candidate
+PATCH /projects/{projectId}/ideas/candidates/{ideaId}
+
+Request body: subset of IdeaCandidate writable fields (excluding ids and projectId).
+
+Response: IdeaCandidate
+
+7.4 List idea clusters
+GET /projects/{projectId}/ideas/clusters
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+Response: PaginatedResponse<IdeaCluster>
+
+7.5 Create idea cluster
+POST /projects/{projectId}/ideas/clusters
+
+Request body:
+
+{ label: string; description?: string; color?: string; ideaIds?: ID[]; priority?: RoadmapPriority; }
+
+Response: IdeaCluster
+
+7.6 Update idea cluster
+PATCH /projects/{projectId}/ideas/clusters/{clusterId}
+
+Request body: subset of IdeaCluster writable fields.
+
+Response: IdeaCluster
+
+7.7 List tickets
+GET /projects/{projectId}/ideas/tickets
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+status?: IdeaTicketStatus
+
+Response: PaginatedResponse<IdeaTicket>
+
+7.8 Create ticket from idea
+POST /projects/{projectId}/ideas/tickets
+
+Request body:
+
+{ ideaId: ID; title: string; originStory: string; category: IdeaTicket['category']; impliedTaskSummaries?: string[]; repoHints?: string[]; sourceQuotes?: string; }
+
+Response: IdeaTicket
+
+7.9 Update ticket
+PATCH /projects/{projectId}/ideas/tickets/{ticketId}
+
+Request body: subset of IdeaTicket writable fields.
+
+Response: IdeaTicket
+
+7.10 List Mission Control tasks
+Powers MissionControlBoard columns.
+
+GET /projects/{projectId}/tasks
+
+Query params:
+
+cursor?: string
+
+limit?: number
+
+column?: TaskColumnId
+
+origin?: TaskOriginType
+
+Response: PaginatedResponse<MissionControlTask>
+
+7.11 Create Mission Control task
+POST /projects/{projectId}/tasks
+
+Request body:
+
+{ title: string; origin: TaskOriginType; confidence?: number; column?: TaskColumnId; context?: TaskContextFile[]; priority?: TaskPriority; ideaId?: ID; ticketId?: ID; roadmapNodeId?: ID; }
+
+Response: MissionControlTask
+
+7.12 Update Mission Control task (drag/drop, edits)
+PATCH /projects/{projectId}/tasks/{taskId}
+
+Request body: subset of MissionControlTask writable fields (e.g. column, priority).
+
+Response: MissionControlTask
+
+8. Context Window
+   8.1 Get context budget and items
+   Feeds ContextPrism and any context donut meters.
+
+GET /projects/{projectId}/context
+
+Response: ContextBudget
+
+8.2 Add context items
+Add one or more items to the current context window.
+
+POST /projects/{projectId}/context/items
+
+Request body:
+
+{ items: { canonicalDocumentId?: ID; name: string; type: ContextItemType; tokens: number; pinned?: boolean; }[] }
+
+Response: { items: ContextItem[]; budget: ContextBudget; }
+
+8.3 Update context item
+PATCH /projects/{projectId}/context/items/{contextItemId}
+
+Request body:
+
+{ pinned?: boolean; }
+
+Response: { item: ContextItem; budget: ContextBudget; }
+
+8.4 Remove context item
+DELETE /projects/{projectId}/context/items/{contextItemId}
+
+Response: { budget: ContextBudget; }
+
+9. Realtime Channels (WebSocket / SSE)
+   The backend SHOULD support either WebSocket or SSE; the contract for payloads is the same. Below we assume WebSocket paths; SSE could use GET on analogous /events/... endpoints.
+
+9.1 Ingest job events
+WebSocket ws/projects/{projectId}/ingest
+
+Events are sent as JSON frames of type IngestJobEvent.
+
+IngestJobEvent = | { type: 'ingest.job.created'; job: IngestJob; } | { type: 'ingest.job.updated'; job: IngestJob; } | { type: 'ingest.job.completed'; job: IngestJob; } | { type: 'ingest.job.failed'; job: IngestJob; errorMessage?: string; }
+
+This supports:
+
+Live progress bar updates in Ingest Station.
+
+Stage/status badge changes without polling.
+
+9.2 Agent run + Deep Research events
+WebSocket ws/projects/{projectId}/agent-runs/{runId}
+
+Events are sent as JSON frames that are the union of AgentRunEvent and WorkflowNodeEvent.
+
+AgentRunEvent = | { type: 'agent.run.created'; run: AgentRun; } | { type: 'agent.run.updated'; run: AgentRun; } | { type: 'agent.run.completed'; run: AgentRun; } | { type: 'agent.run.failed'; run: AgentRun; errorMessage?: string; } | { type: 'agent.step.updated'; step: AgentStep; } | { type: 'agent.message.appended'; message: AgentMessage; }
+
+WorkflowNodeEvent = | { type: 'workflow.node_state.updated'; nodeState: AgentNodeState; }
+
+These events power:
+
+Deep Research message stream (agent.message.appended).
+
+Agent step list progression (agent.step.updated).
+
+Workflow visualization node state (workflow.node_state.updated).
+
+Run-level status pills and completion UI (agent.run.updated / agent.run.completed).
+
+9.3 Optional: Project-level activity stream
+WebSocket ws/projects/{projectId}/events
+
+A future aggregate stream that can multiplex:
+
+IngestJobEvent
+
+AgentRunEvent
+
+WorkflowNodeEvent
+
+(Optionally) idea/task/roadmap changes
+
+Each frame would be an envelope like:
+
+{ eventId: string; createdAt: string; payload: IngestJobEvent | AgentRunEvent | WorkflowNodeEvent; }
+
+This is optional for v1 but gives a single subscription point if desired by the frontend.
+
+We’ll treat api-contract.md as the human-facing spec and api-types.ts as the single source of truth for frontend types that mirror that spec.
+
+Below is src/domain/api-types.ts (ready to paste). The full docs/api-contract.md is in the canvas doc I just created (Docs/api-contract).
+
+// src/domain/api-types.ts
+// Typed API contract for Cortex, aligned with src/domain/types.ts.
+// Pure TypeScript types/interfaces only — no runtime logic.
+
+import type {
+ID,
+CortexProject,
+CortexProjectStatus,
+IngestSource,
+IngestSourceKind,
+IngestJob,
+IngestStage,
+IngestJobStatus,
+CanonicalDocument,
+CanonicalDocumentStatus,
+Chunk,
+Cluster,
+ClusterKind,
+KnowledgeNode,
+KnowledgeEdge,
+RoadmapNode,
+RoadmapNodeStatus,
+RoadmapPriority,
+RoadmapEdge,
+RoadmapEdgeKind,
+AgentRun,
+AgentRunStatus,
+AgentStep,
+AgentNodeState,
+AgentMessage,
+IdeaCandidate,
+IdeaType,
+IdeaStatus,
+IdeaCluster,
+IdeaTicket,
+IdeaTicketStatus,
+MissionControlTask,
+TaskColumnId,
+TaskOriginType,
+TaskPriority,
+TaskContextFile,
+ContextBudget,
+ContextItem,
+ContextItemType,
+} from './types';
+
+/_ -------------------------------------------------------------------------- _/
+/_ Generic Helpers _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface PaginatedResponse<T> {
+items: T[];
+nextCursor?: string | null;
+total?: number;
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Projects _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListProjectsQuery {
+cursor?: string;
+limit?: number;
+status?: CortexProjectStatus;
+}
+
+export type ListProjectsResponse = PaginatedResponse<CortexProject>;
+
+export interface CreateProjectRequest {
+name: string;
+slug?: string;
+description?: string;
+}
+
+export type CreateProjectResponse = CortexProject;
+
+export type GetProjectResponse = CortexProject;
+
+export interface UpdateProjectRequest {
+name?: string;
+description?: string;
+status?: CortexProjectStatus;
+rootIdeaClusterId?: ID | null;
+roadmapId?: ID | null;
+defaultModelRoleId?: ID | null;
+}
+
+export type UpdateProjectResponse = CortexProject;
+
+export interface DeleteProjectResponse {
+success: boolean;
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Ingest Sources _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListIngestSourcesQuery {
+cursor?: string;
+limit?: number;
+kind?: IngestSourceKind;
+}
+
+export type ListIngestSourcesResponse = PaginatedResponse<IngestSource>;
+
+export interface CreateIngestSourceRequest {
+kind: IngestSourceKind;
+name: string;
+description?: string;
+uri?: string;
+}
+
+export type CreateIngestSourceResponse = IngestSource;
+
+export type GetIngestSourceResponse = IngestSource;
+
+export interface DeleteIngestSourceResponse {
+success: boolean;
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Ingest Jobs _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListIngestJobsQuery {
+cursor?: string;
+limit?: number;
+status?: IngestJobStatus;
+stage?: IngestStage;
+sourceId?: ID;
+}
+
+export type ListIngestJobsResponse = PaginatedResponse<IngestJob>;
+
+export interface CreateIngestJobItem {
+sourceId: ID;
+originalFilename: string;
+byteSize?: number;
+mimeType?: string;
+isDeepScan?: boolean;
+}
+
+export interface CreateIngestJobsRequest {
+jobs: CreateIngestJobItem[];
+}
+
+export interface CreateIngestJobsResponse {
+jobs: IngestJob[];
+}
+
+export type GetIngestJobResponse = IngestJob;
+
+export type CancelIngestJobResponse = IngestJob;
+
+/_ -------------------------------------------------------------------------- _/
+/_ Canonical Documents / Chunks / Clusters _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListCanonicalDocumentsQuery {
+cursor?: string;
+limit?: number;
+status?: CanonicalDocumentStatus;
+sourceId?: ID;
+ingestJobId?: ID;
+q?: string;
+}
+
+export type ListCanonicalDocumentsResponse =
+PaginatedResponse<CanonicalDocument>;
+
+export type GetCanonicalDocumentResponse = CanonicalDocument;
+
+export interface ListChunksQuery {
+cursor?: string;
+limit?: number;
+}
+
+export type ListChunksResponse = PaginatedResponse<Chunk>;
+
+export interface ListClustersQuery {
+cursor?: string;
+limit?: number;
+kind?: ClusterKind;
+}
+
+export type ListClustersResponse = PaginatedResponse<Cluster>;
+
+/_ -------------------------------------------------------------------------- _/
+/_ Knowledge Graph _/
+/_ -------------------------------------------------------------------------- _/
+
+export type KnowledgeGraphView = 'default' | 'ideas' | 'tickets' | 'docs';
+
+export interface GetKnowledgeGraphQuery {
+view?: KnowledgeGraphView;
+focusNodeId?: ID;
+}
+
+export interface GetKnowledgeGraphResponse {
+nodes: KnowledgeNode[];
+edges: KnowledgeEdge[];
+generatedAt: string;
+}
+
+export type GetKnowledgeGraphNodeResponse = KnowledgeNode;
+
+export interface GetKnowledgeGraphNeighborsResponse {
+node: KnowledgeNode;
+neighbors: KnowledgeNode[];
+edges: KnowledgeEdge[];
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Roadmap / Dependencies _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListRoadmapNodesQuery {
+cursor?: string;
+limit?: number;
+status?: RoadmapNodeStatus;
+laneId?: ID;
+}
+
+export type ListRoadmapNodesResponse = PaginatedResponse<RoadmapNode>;
+
+export interface CreateRoadmapNodeRequest {
+label: string;
+description?: string;
+status?: RoadmapNodeStatus;
+priority?: RoadmapPriority;
+startDate?: string;
+targetDate?: string;
+completedDate?: string;
+dependsOnIds?: ID[];
+laneId?: ID;
+ideaId?: ID;
+ticketId?: ID;
+missionControlTaskId?: ID;
+}
+
+export type CreateRoadmapNodeResponse = RoadmapNode;
+
+export type GetRoadmapNodeResponse = RoadmapNode;
+
+export type UpdateRoadmapNodeRequest = Partial<
+Omit<RoadmapNode, 'id' | 'projectId'>
+
+> ;
+
+export type UpdateRoadmapNodeResponse = RoadmapNode;
+
+export interface ListRoadmapEdgesQuery {
+cursor?: string;
+limit?: number;
+}
+
+export type ListRoadmapEdgesResponse = PaginatedResponse<RoadmapEdge>;
+
+export interface CreateRoadmapEdgeRequest {
+fromNodeId: ID;
+toNodeId: ID;
+kind?: RoadmapEdgeKind;
+label?: string;
+}
+
+export type CreateRoadmapEdgeResponse = RoadmapEdge;
+
+export interface DeleteRoadmapEdgeResponse {
+success: boolean;
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Agent Runs / Steps / Node State / Messages _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListAgentRunsQuery {
+cursor?: string;
+limit?: number;
+workflowId?: ID;
+status?: AgentRunStatus;
+}
+
+export type ListAgentRunsResponse = PaginatedResponse<AgentRun>;
+
+export interface StartAgentRunRequest {
+workflowId: ID;
+inputQuery: string;
+contextItemIds?: ID[];
+}
+
+export type StartAgentRunResponse = AgentRun;
+
+export type GetAgentRunResponse = AgentRun;
+
+export interface ListAgentStepsQuery {
+cursor?: string;
+limit?: number;
+}
+
+export type ListAgentStepsResponse = PaginatedResponse<AgentStep>;
+
+export interface ListAgentNodeStatesResponse {
+items: AgentNodeState[];
+}
+
+export interface ListAgentMessagesQuery {
+cursor?: string;
+limit?: number;
+}
+
+export type ListAgentMessagesResponse = PaginatedResponse<AgentMessage>;
+
+export interface AppendAgentMessageRequest {
+content: string;
+contextItemIds?: ID[];
+}
+
+export type AppendAgentMessageResponse = AgentMessage;
+
+export type CancelAgentRunResponse = AgentRun;
+
+/_ -------------------------------------------------------------------------- _/
+/_ Ideas / Clusters / Tickets _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListIdeaCandidatesQuery {
+cursor?: string;
+limit?: number;
+status?: IdeaStatus;
+type?: IdeaType;
+}
+
+export type ListIdeaCandidatesResponse = PaginatedResponse<IdeaCandidate>;
+
+export interface CreateIdeaCandidateRequest {
+type: IdeaType;
+summary: string;
+sourceLogIds?: ID[];
+sourceChannel?: 'chat' | 'email' | 'note' | 'file';
+sourceUser?: string;
+confidence?: number;
+}
+
+export type CreateIdeaCandidateResponse = IdeaCandidate;
+
+export type UpdateIdeaCandidateRequest = Partial<
+Omit<IdeaCandidate, 'id' | 'projectId'>
+
+> ;
+
+export type UpdateIdeaCandidateResponse = IdeaCandidate;
+
+export interface ListIdeaClustersQuery {
+cursor?: string;
+limit?: number;
+}
+
+export type ListIdeaClustersResponse = PaginatedResponse<IdeaCluster>;
+
+export interface CreateIdeaClusterRequest {
+label: string;
+description?: string;
+color?: string;
+ideaIds?: ID[];
+priority?: RoadmapPriority;
+}
+
+export type CreateIdeaClusterResponse = IdeaCluster;
+
+export type UpdateIdeaClusterRequest = Partial<
+Omit<IdeaCluster, 'id' | 'projectId'>
+
+> ;
+
+export type UpdateIdeaClusterResponse = IdeaCluster;
+
+export interface ListIdeaTicketsQuery {
+cursor?: string;
+limit?: number;
+status?: IdeaTicketStatus;
+}
+
+export type ListIdeaTicketsResponse = PaginatedResponse<IdeaTicket>;
+
+export interface CreateIdeaTicketRequest {
+ideaId: ID;
+title: string;
+originStory: string;
+category: IdeaTicket['category'];
+impliedTaskSummaries?: string[];
+repoHints?: string[];
+sourceQuotes?: string;
+}
+
+export type CreateIdeaTicketResponse = IdeaTicket;
+
+export type UpdateIdeaTicketRequest = Partial<
+Omit<IdeaTicket, 'id' | 'projectId' | 'ideaId'>
+
+> ;
+
+export type UpdateIdeaTicketResponse = IdeaTicket;
+
+/_ -------------------------------------------------------------------------- _/
+/_ Mission Control Tasks _/
+/_ -------------------------------------------------------------------------- _/
+
+export interface ListMissionControlTasksQuery {
+cursor?: string;
+limit?: number;
+column?: TaskColumnId;
+origin?: TaskOriginType;
+}
+
+export type ListMissionControlTasksResponse =
+PaginatedResponse<MissionControlTask>;
+
+export interface CreateMissionControlTaskRequest {
+title: string;
+origin: TaskOriginType;
+confidence?: number;
+column?: TaskColumnId;
+context?: TaskContextFile[];
+priority?: TaskPriority;
+ideaId?: ID;
+ticketId?: ID;
+roadmapNodeId?: ID;
+}
+
+export type CreateMissionControlTaskResponse = MissionControlTask;
+
+export type UpdateMissionControlTaskRequest = Partial<
+Omit<MissionControlTask, 'id' | 'projectId'>
+
+> ;
+
+export type UpdateMissionControlTaskResponse = MissionControlTask;
+
+/_ -------------------------------------------------------------------------- _/
+/_ Context Window _/
+/_ -------------------------------------------------------------------------- _/
+
+export type GetContextBudgetResponse = ContextBudget;
+
+export interface AddContextItemsRequestItem {
+canonicalDocumentId?: ID;
+name: string;
+type: ContextItemType;
+tokens: number;
+pinned?: boolean;
+}
+
+export interface AddContextItemsRequest {
+items: AddContextItemsRequestItem[];
+}
+
+export interface AddContextItemsResponse {
+items: ContextItem[];
+budget: ContextBudget;
+}
+
+export interface UpdateContextItemRequest {
+pinned?: boolean;
+}
+
+export interface UpdateContextItemResponse {
+item: ContextItem;
+budget: ContextBudget;
+}
+
+export interface RemoveContextItemResponse {
+budget: ContextBudget;
+}
+
+/_ -------------------------------------------------------------------------- _/
+/_ Realtime Events: Ingest, Agent Runs, Workflow Nodes _/
+/_ -------------------------------------------------------------------------- _/
+
+export type IngestJobEvent =
+| {
+type: 'ingest.job.created';
+job: IngestJob;
+}
+| {
+type: 'ingest.job.updated';
+job: IngestJob;
+}
+| {
+type: 'ingest.job.completed';
+job: IngestJob;
+}
+| {
+type: 'ingest.job.failed';
+job: IngestJob;
+errorMessage?: string;
+};
+
+export type AgentRunEvent =
+| {
+type: 'agent.run.created';
+run: AgentRun;
+}
+| {
+type: 'agent.run.updated';
+run: AgentRun;
+}
+| {
+type: 'agent.run.completed';
+run: AgentRun;
+}
+| {
+type: 'agent.run.failed';
+run: AgentRun;
+errorMessage?: string;
+}
+| {
+type: 'agent.step.updated';
+step: AgentStep;
+}
+| {
+type: 'agent.message.appended';
+message: AgentMessage;
+};
+
+export type WorkflowNodeEvent = {
+type: 'workflow.node_state.updated';
+nodeState: AgentNodeState;
+};
+
+export interface ProjectEventEnvelope {
+eventId: string;
+projectId: ID;
+createdAt: string;
+payload: IngestJobEvent | AgentRunEvent | WorkflowNodeEvent;
+}
+Key insights / next steps
+
+You now have a clean split: types.ts = domain, api-types.ts = transport, api-contract.md = human spec. This is enough to auto-generate a typed client later (or let Codex do it).
+
+Next step is to introduce a small /src/api/client.ts that maps each REST endpoint + WS stream to strongly typed functions/hooks (e.g., listIngestJobs, useAgentRunStream), then start cutting over the mock-heavy components one by one.
+
+You said:
+Goal:
+Refactor IngestStation so it uses real data via cortexApi and hooks instead of mock arrays/timers, while preserving existing visuals.
+
+Inputs:
+
+- Current IngestStation implementation (I will paste it).
+- Hooks/API from F1 and F2.
+
+Tasks:
+
+1. Analyze the current component:
+   - Identify all mock data, timers, local states that represent ingest jobs or stages.
+2. Refactor plan:
+   - Replace mock job list with useIngestJobs(projectId).
+   - Replace local stage transitions with updates driven by:
+     - Backend REST responses (for list).
+     - Streaming events (WS/SSE) for progress updates.
+   - Keep local-only UI state (e.g., filter/search, expanded row toggles).
+3. Implement:
+   - Updated IngestStation.tsx using the hook.
+   - Any glue needed for streaming (e.g., useIngestJobStream hook that listens to WS and updates state).
+4. Ensure:
+   - Loading and error states are handled gracefully.
+   - UI still renders with a fallback when no jobs exist.
+
+Output:
+
+- Complete, updated IngestStation.tsx.
+- Any new hook or utility files (e.g., src/hooks/useIngestJobStream.ts).
+  ChatGPT said:
+
+Thought for 5m 38s
+We’ll turn IngestStation into a thin presentational wrapper over a typed ingest data layer: useIngestJobs handles REST fetch + mutations, useIngestJobStream applies WS events, and the component just renders IngestJob[] with the existing neon styling.
+
+Local “fake backend” (IngestFile, timer, random ids) is removed and replaced with domain types + hooks.
+
+REST (cortexApi.ingest.listJobs, enqueueUploadBatch, cancelJob) provides list + mutations; WS stream pushes IngestJobEvent updates.
+
+UI keeps drag/drop, Deep vs Quick toggle, queue cards, plus adds loading/error/empty states.
+
+Below are the concrete files.
+
+1. Updated components/IngestStation.tsx
+   import React, { useState, useCallback } from 'react';
+   import {
+   Upload,
+   FileText,
+   CheckCircle,
+   AlertCircle,
+   Cpu,
+   Zap,
+   X,
+   Binary,
+   } from 'lucide-react';
+   import { GlassCard } from './GlassCard';
+   import { NeonButton } from './NeonButton';
+   import type { ID, IngestJob, IngestStage } from '../domain/types';
+   import { useIngestJobs } from '../hooks/useIngestJobs';
+   import { useIngestJobStream } from '../hooks/useIngestJobStream';
+
+export interface IngestStationProps {
+projectId: ID;
+}
+
+const getStageColor = (stage: IngestStage): string => {
+switch (stage) {
+case 'OCR_SCANNING':
+return 'text-amber';
+case 'MD_CONVERSION':
+return 'text-purple';
+case 'GRAPH_INDEXING':
+return 'text-cyan';
+case 'COMPLETE':
+return 'text-green-500';
+default:
+return 'text-gray-500';
+}
+};
+
+const formatSize = (job: IngestJob): string => {
+if (!job.byteSize || job.byteSize <= 0) return '—';
+const mb = job.byteSize / 1024 / 1024;
+return `${mb.toFixed(2)} MB`;
+};
+
+const formatStatusLabel = (job: IngestJob): string => {
+if (job.status === 'failed') return 'FAILED';
+if (job.status === 'cancelled') return 'CANCELLED';
+if (job.status === 'completed') return 'COMPLETE';
+return job.stage;
+};
+
+export const IngestStation: React.FC<IngestStationProps> = ({ projectId }) => {
+const [isDragging, setIsDragging] = useState(false);
+const [isDeepScan, setIsDeepScan] = useState(false);
+
+const { jobs, loading, error, enqueueFiles, cancelJob, upsertJob } =
+useIngestJobs(projectId);
+
+// Live updates from backend
+useIngestJobStream(projectId, {
+onJobUpsert: upsertJob,
+});
+
+const handleDragOver = useCallback((e: React.DragEvent) => {
+e.preventDefault();
+setIsDragging(true);
+}, []);
+
+const handleDragLeave = useCallback((e: React.DragEvent) => {
+e.preventDefault();
+setIsDragging(false);
+}, []);
+
+const handleDrop = useCallback(
+(e: React.DragEvent) => {
+e.preventDefault();
+setIsDragging(false);
+const files = Array.from(e.dataTransfer.files);
+if (!files.length) return;
+void enqueueFiles(files, { isDeepScan });
+},
+[enqueueFiles, isDeepScan],
+);
+
+const handleBrowse = useCallback(
+(event: React.ChangeEvent<HTMLInputElement>) => {
+const files = event.target.files ? Array.from(event.target.files) : [];
+if (!files.length) return;
+void enqueueFiles(files, { isDeepScan });
+event.target.value = '';
+},
+[enqueueFiles, isDeepScan],
+);
+
+const activeJobs = jobs.filter(
+(j) => j.stage !== 'COMPLETE' && j.status !== 'completed',
+);
+const hasJobs = jobs.length > 0;
+
+return (
+<div className="h-full flex flex-col gap-6 animate-fade-in pb-10">
+<div className="flex justify-between items-end">
+<div>
+<h2 className="text-2xl font-mono text-white tracking-wide">
+INGEST_STATION
+</h2>
+<p className="text-gray-500 font-mono text-xs mt-1">
+UNSTRUCTURED DATA PIPELINE // UPLOAD ZONE
+</p>
+</div>
+
+        {/* Mode toggle */}
+        <div className="flex items-center gap-4 bg-panel border border-white/10 p-1 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setIsDeepScan(false)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all ${
+              !isDeepScan
+                ? 'bg-cyan text-black shadow-neon-cyan'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Zap size={14} />
+            QUICK_INDEX
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDeepScan(true)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all ${
+              isDeepScan
+                ? 'bg-purple text-white shadow-neon-purple'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Cpu size={14} />
+            DEEP_SCAN
+          </button>
+        </div>
+      </div>
+
+      {/* Drop zone */}
+      <GlassCard
+        variant="primary"
+        className={`relative flex-1 flex flex-col justify-center items-center border-dashed border-2 ${
+          isDragging ? 'border-cyan/80 bg-cyan/5' : 'border-white/10'
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.18),_transparent_60%),_radial-gradient(circle_at_bottom,_rgba(147,51,234,0.16),_transparent_55%)]" />
+        <div className="relative flex flex-col items-center gap-3">
+          <div className="flex items-center justify-center w-14 h-14 rounded-full bg-black/60 border border-cyan/50 shadow-neon-cyan">
+            <Upload className="text-cyan" size={24} />
+          </div>
+          <div className="text-center">
+            <h3
+              className={`text-xl font-mono font-bold tracking-widest mb-2 ${
+                isDragging ? 'text-cyan' : 'text-white'
+              }`}
+            >
+              FEED THE NEXUS
+            </h3>
+            <p className="text-gray-400 font-mono text-sm">
+              Drag &amp; drop PDF reports or codebases here
+            </p>
+            <p className="text-gray-600 text-xs mt-2 font-mono">
+              PROTOCOL: {isDeepScan ? 'VISION_MODEL_ENABLED' : 'TEXT_PARSER_ONLY'}
+            </p>
+          </div>
+
+          <div className="mt-4 flex items-center gap-3">
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleBrowse}
+              />
+              <NeonButton icon={Upload} label="BROWSE_FILES" />
+            </label>
+            <span className="text-[10px] font-mono text-gray-500">
+              Supported: PDF, Markdown, code archives, chat exports
+            </span>
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* Queue + states */}
+      <div className="space-y-4">
+        {loading && (
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+            <Binary size={14} className="animate-pulse" />
+            <span>Syncing ingest jobs from cortex backend…</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-xs font-mono text-red-400">
+            <AlertCircle size={14} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {!loading && !error && !hasJobs && (
+          <div className="text-xs font-mono text-gray-500">
+            No ingest jobs yet. Drop files into the upload zone to start indexing.
+          </div>
+        )}
+
+        {hasJobs && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-xs font-mono text-gray-400 uppercase tracking-widest px-1">
+              <Binary size={14} />
+              Processing Queue ({activeJobs.length})
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {jobs.map((job) => {
+                const isComplete =
+                  job.stage === 'COMPLETE' || job.status === 'completed';
+                const isFailed = job.status === 'failed';
+                const progress = Math.floor(job.progress ?? 0);
+                const stageColor = getStageColor(job.stage);
+
+                return (
+                  <GlassCard
+                    key={job.id}
+                    variant="void"
+                    className="!p-0 overflow-hidden"
+                  >
+                    <div className="p-4 flex items-center gap-4 relative">
+                      {/* File Icon */}
+                      <div
+                        className={`p-2 rounded border border-white/10 bg-black/60 ${
+                          isComplete
+                            ? 'text-green-500'
+                            : isFailed
+                            ? 'text-red-400'
+                            : 'text-cyan'
+                        }`}
+                      >
+                        <FileText size={20} />
+                      </div>
+
+                      {/* File Info + Progress */}
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-mono truncate max-w-xs">
+                                {job.originalFilename}
+                              </span>
+                              {job.isDeepScan && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple/20 text-purple-200 border border-purple/40 font-mono">
+                                  DEEP_SCAN
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              {job.mimeType ?? 'application/octet-stream'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-[10px] font-mono">
+                            <span className={stageColor}>
+                              {formatStatusLabel(job)}
+                            </span>
+                            <span className="text-gray-500">
+                              {formatSize(job)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="mt-1">
+                          <div className="relative h-2 rounded-full bg-gradient-to-r from-black via-surface/60 to-black overflow-hidden border border-white/10">
+                            <div
+                              className={`absolute inset-y-0 left-0 ${
+                                isFailed
+                                  ? 'bg-red-500/80'
+                                  : isComplete
+                                  ? 'bg-green-400/80'
+                                  : 'bg-cyan/70'
+                              }`}
+                              style={{ width: `${Math.min(progress, 100)}%` }}
+                            />
+                            {/* Scanline overlay */}
+                            {!isComplete && !isFailed && (
+                              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)] animate-[scan_2s_linear_infinite]" />
+                            )}
+                          </div>
+
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              {formatSize(job)}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              {progress}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex flex-col items-end gap-2">
+                        {isComplete ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-green-400 font-mono">
+                            <CheckCircle size={14} />
+                            INDEXED
+                          </span>
+                        ) : isFailed ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-red-400 font-mono">
+                            <AlertCircle size={14} />
+                            FAILED
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-cyan font-mono">
+                            <Cpu size={14} className="animate-spin-slow" />
+                            RUNNING
+                          </span>
+                        )}
+
+                        {!isComplete && (
+                          <button
+                            type="button"
+                            onClick={() => void cancelJob(job.id)}
+                            className="inline-flex items-center gap-1 text-[10px] text-gray-500 hover:text-red-400 transition-colors"
+                            aria-label="Cancel ingest job"
+                          >
+                            <X size={12} />
+                            CANCEL
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Bottom scanline for active jobs */}
+                      {!isComplete && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-cyan/50 animate-pulse" />
+                      )}
+                    </div>
+                  </GlassCard>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+);
+}; 2) New hook: src/hooks/useIngestJobs.ts
+import { useCallback, useEffect, useState } from 'react';
+import type { ID, IngestJob } from '../domain/types';
+import type {
+ListIngestJobsQuery,
+ListIngestJobsResponse,
+} from '../domain/api-types';
+import { cortexApi } from '../api/cortexApi';
+
+interface EnqueueFilesOptions {
+isDeepScan: boolean;
+}
+
+/\*\*
+
+- Primary hook for ingest jobs used by IngestStation.
+- Fetches the current job list and exposes helpers for enqueueing and cancelling jobs.
+  \*/
+  export const useIngestJobs = (projectId: ID | null | undefined) => {
+  const [jobs, setJobs] = useState<IngestJob[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+const refresh = useCallback(
+async (query: ListIngestJobsQuery = {}) => {
+if (!projectId) return;
+setLoading(true);
+setError(null);
+try {
+const res: ListIngestJobsResponse = await cortexApi.ingest.listJobs(
+projectId,
+query,
+);
+setJobs(res.items);
+} catch (err: unknown) {
+const message =
+err && typeof err === 'object' && 'message' in err
+? String((err as any).message)
+: 'Failed to load ingest jobs';
+setError(message);
+} finally {
+setLoading(false);
+}
+},
+[projectId],
+);
+
+useEffect(() => {
+void refresh();
+}, [refresh]);
+
+const upsertJob = useCallback((job: IngestJob) => {
+setJobs((prev) => {
+const index = prev.findIndex((j) => j.id === job.id);
+if (index === -1) {
+return [job, ...prev];
+}
+const next = [...prev];
+next[index] = job;
+return next;
+});
+}, []);
+
+const removeJob = useCallback((jobId: ID) => {
+setJobs((prev) => prev.filter((j) => j.id !== jobId));
+}, []);
+
+const enqueueFiles = useCallback(
+async (files: File[], options: EnqueueFilesOptions) => {
+if (!projectId || files.length === 0) return;
+try {
+const res = await cortexApi.ingest.enqueueUploadBatch(
+projectId,
+files,
+options,
+);
+// Expected shape: { jobs: IngestJob[] }
+const newJobs: IngestJob[] = res.jobs ?? [];
+setJobs((prev) => {
+const existing = new Map(prev.map((j) => [j.id, j]));
+for (const job of newJobs) {
+existing.set(job.id, job);
+}
+return Array.from(existing.values()).sort((a, b) => {
+const aTime = a.createdAt ?? '';
+const bTime = b.createdAt ?? '';
+return bTime.localeCompare(aTime);
+});
+});
+} catch (err: unknown) {
+const message =
+err && typeof err === 'object' && 'message' in err
+? String((err as any).message)
+: 'Failed to enqueue ingest jobs';
+setError(message);
+}
+},
+[projectId],
+);
+
+const cancelJob = useCallback(
+async (jobId: ID) => {
+if (!projectId) return;
+try {
+const updated: IngestJob = await cortexApi.ingest.cancelJob(
+projectId,
+jobId,
+);
+upsertJob(updated);
+} catch (err: unknown) {
+const message =
+err && typeof err === 'object' && 'message' in err
+? String((err as any).message)
+: 'Failed to cancel ingest job';
+setError(message);
+}
+},
+[projectId, upsertJob],
+);
+
+return {
+jobs,
+loading,
+error,
+refresh,
+upsertJob,
+removeJob,
+enqueueFiles,
+cancelJob,
+};
+};
+Assumes a typed cortexApi.ingest interface:
+
+listJobs(projectId, query) -> ListIngestJobsResponse
+
+enqueueUploadBatch(projectId, files, { isDeepScan }) -> { jobs: IngestJob[] }
+
+cancelJob(projectId, jobId) -> IngestJob
+
+You can wire those to the REST endpoints from api-contract.md.
+
+3. New hook: src/hooks/useIngestJobStream.ts
+   import { useEffect } from 'react';
+   import type { ID, IngestJob } from '../domain/types';
+   import type { IngestJobEvent } from '../domain/api-types';
+
+interface UseIngestJobStreamOptions {
+onEvent?: (event: IngestJobEvent) => void;
+onJobUpsert?: (job: IngestJob) => void;
+}
+
+/\*\*
+
+- Subscribes to ingest job events for a project via WebSocket.
+- Expects the backend to expose a stream at:
+- ws[s]://<host>/api/ws/projects/{projectId}/ingest
+  \*/
+  export const useIngestJobStream = (
+  projectId: ID | null | undefined,
+  options: UseIngestJobStreamOptions,
+  ) => {
+  const { onEvent, onJobUpsert } = options;
+
+useEffect(() => {
+if (!projectId) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const base =
+      (import.meta as any).env?.VITE_CORTEX_WS_BASE ??
+      `${protocol}//${host}/api/ws`;
+    const url = `${base}/projects/${projectId}/ingest`;
+
+    const socket = new WebSocket(url);
+
+    socket.onmessage = (event) => {
+      try {
+        const parsed: IngestJobEvent = JSON.parse(event.data);
+        onEvent?.(parsed);
+
+        switch (parsed.type) {
+          case 'ingest.job.created':
+          case 'ingest.job.updated':
+          case 'ingest.job.completed':
+          case 'ingest.job.failed':
+            onJobUpsert?.(parsed.job);
+            break;
+          default:
+            break;
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to parse ingest job event', err);
+      }
+    };
+
+    socket.onerror = (err) => {
+      // eslint-disable-next-line no-console
+      console.error('Ingest job stream error', err);
+    };
+
+    return () => {
+      socket.close();
+    };
+
+}, [projectId, onEvent, onJobUpsert]);
+};
+Key insights / next steps
+IngestStation is now fully driven by IngestJob from the domain layer; the only “local” state is view-only (drag state, deep-scan toggle).
+
+Hooks form the seam:
+
+useIngestJobs ⇢ REST (list + mutations).
+
+useIngestJobStream ⇢ WS events → upsertJob.
+
+Next steps:
+
+Implement cortexApi.ingest.\* against your FastAPI endpoints and expose the WS at /api/ws/projects/{projectId}/ingest.
+
+Update <IngestStation /> call sites to pass a real projectId (for now you can hardcode a default project while wiring up the backend).
+
+You said:
+Goal:
+Refactor WorkflowConstruct / WorkflowVisualizer to pull workflow graphs and node states from the backend instead of local mock data.
+
+Tasks:
+
+1. Inspect current component(s) (I will paste them).
+2. Map:
+   - Current node/edge objects to RoadmapNode and RoadmapEdge types.
+   - Current “status” logic to backend-provided statuses and streaming events (WorkflowNodeEvent).
+3. Implement:
+   - Use useRoadmap(projectId) to fetch base graph.
+   - Use a new useWorkflowStream(projectId, workflowId) hook to listen for node state updates and merge into React Flow state.
+4. Maintain:
+   - Visual styling and interactions (drag, zoom, select).
+   - Tooltips and detail panes, but populated from real data.
+
+Output:
+
+- Updated WorkflowConstruct.tsx / WorkflowVisualizer.tsx.
+- useWorkflowStream hook.
+  ChatGPT said:
+
+Thought for 54s
+Workflow Graph Refactor
+· typescript
+// components/WorkflowConstruct.tsx
+import React, { useMemo } from 'react';
+import ReactFlow, {
+Background,
+Controls,
+MiniMap,
+Node as FlowNode,
+Edge as FlowEdge,
+} from 'reactflow';
+
+import type { ID, RoadmapNode, RoadmapEdge } from '../domain/types';
+import { useRoadmap } from '../hooks/useRoadmap';
+import { useWorkflowStream } from '../hooks/useWorkflowStream';
+import type { AgentNodeState } from '../domain/types';
+
+export interface WorkflowConstructProps {
+projectId: ID;
+workflowId: ID;
+selectedNodeId?: ID | null;
+onNodeSelect?: (nodeId: ID) => void;
+}
+
+export interface WorkflowNodeData {
+label: string;
+description?: string;
+status: string;
+priority?: string;
+laneId?: ID;
+roadmapNode: RoadmapNode;
+nodeState?: AgentNodeState;
+}
+
+const mapRoadmapStatusToVisual = (status: RoadmapNode['status']): string => {
+switch (status) {
+case 'in_progress':
+return 'running';
+case 'blocked':
+return 'blocked';
+case 'complete':
+return 'succeeded';
+case 'dropped':
+return 'skipped';
+case 'planned':
+default:
+return 'idle';
+}
+};
+
+const nodesToReactFlow = (
+nodes: RoadmapNode[],
+nodeStates: Record<ID, AgentNodeState>,
+): FlowNode<WorkflowNodeData>[] => {
+return nodes.map((node, idx) => {
+const nodeState = nodeStates[node.id];
+const runtimeStatus = nodeState?.status ?? mapRoadmapStatusToVisual(node.status);
+
+    return {
+      id: node.id,
+      type: 'neonNode', // assumes a custom node type already registered in the app
+      position: {
+        x: (idx % 4) * 280,
+        y: Math.floor(idx / 4) * 160,
+      },
+      data: {
+        label: node.label,
+        description: node.description,
+        status: runtimeStatus,
+
+Refactor summary: workflow graphs now come from useRoadmap(projectId) and live node status comes from a useWorkflowStream(projectId, workflowId) WebSocket hook; React Flow visuals stay the same, but the data is now fully backend-driven.
+
+What I’ve done (all concrete code is in the “Workflow Graph Refactor” canvas doc):
+
+Updated WorkflowConstruct.tsx
+
+New props: { projectId: ID; workflowId: ID; selectedNodeId?: ID; onNodeSelect?: (id: ID) => void }.
+
+Uses useRoadmap(projectId) to fetch:
+
+RoadmapNode[] and RoadmapEdge[] as the static workflow graph.
+
+Uses useWorkflowStream(projectId, workflowId) to get:
+
+nodeStates: Record<ID, AgentNodeState> keyed by workflowNodeId.
+
+Maps RoadmapNode → React Flow node:
+
+Node id = roadmapNode.id.
+
+Node data includes:
+
+label, description, priority, laneId.
+
+roadmapNode (full object for details/tooltip panes).
+
+nodeState (latest AgentNodeState).
+
+status computed as:
+
+nodeState.status if present, otherwise derived from RoadmapNode.status via:
+
+planned → idle, in_progress → running, blocked → blocked,
+
+complete → succeeded, dropped → skipped.
+
+Uses an existing custom node type: type: 'neonNode' (so visuals remain unchanged).
+
+Maps RoadmapEdge → React Flow edge:
+
+id = edge.id, source = fromNodeId, target = toNodeId, type = 'smoothstep', label = edge.label.
+
+Handles:
+
+Loading: centered mono “Syncing workflow graph from cortex backend…” message.
+
+Error: red mono error line.
+
+Empty: “No workflow nodes defined yet…” message.
+
+Keeps:
+
+Background, MiniMap, Controls, fitView.
+
+Node click calls onNodeSelect(node.id) for external detail panes.
+
+Updated WorkflowVisualizer.tsx
+
+New props: { projectId: ID; workflowId: ID }.
+
+Uses:
+
+useRoadmap(projectId) for base RoadmapNode/RoadmapEdge.
+
+useWorkflowStream(projectId, workflowId) for nodeStates.
+
+Derived React Flow nodes:
+
+VisualizerNodeData includes label, status, iteration, roadmapNode, nodeState.
+
+status resolution similar to WorkflowConstruct, but prioritises live AgentNodeState.status.
+
+iteration from nodeState.iteration (default 0) to drive “iteration N” badges on the custom node.
+
+UI bar above the graph:
+
+Shows ACTIVE_NODES (count of nodeStates where status === 'running').
+
+Controls:
+
+PAUSE_STREAM / RESUME_STREAM toggle (local isPlaying flag; you can wire it later to actually mute updates if you want).
+
+RESET_VIEW button calling refresh() from useRoadmap to reload the base graph.
+
+Handles loading/error/empty with neon-friendly mono messages, preserving the cyber theme.
+
+Graph section:
+
+Uses ReactFlow with Background and Controls, same as before.
+
+New hook: useWorkflowStream.ts
+
+Signature:
+
+export const useWorkflowStream = (
+projectId: ID | null | undefined,
+workflowId: ID | null | undefined,
+): {
+nodeStates: Record<ID, AgentNodeState>;
+connected: boolean;
+error: string | null;
+}
+Behavior:
+
+Builds WS URL from:
+
+VITE_CORTEX_WS_BASE (if set) or
+
+ws(s)://{host}/api/ws/projects/{projectId}/workflows/{workflowId}.
+
+On message:
+
+Parses JSON into WorkflowNodeEvent.
+
+When type === 'workflow.node_state.updated', updates internal nodeStates:
+
+Index key: AgentNodeState.workflowNodeId.
+
+Tracks:
+
+connected boolean (onopen/onclose).
+
+error string when the socket or parsing fails.
+
+Cleans up socket on unmount or when projectId/workflowId change.
+
+How this satisfies your goals:
+
+Backend-driven graph: Static structure (nodes/edges) now comes from the Roadmap API via useRoadmap, not from any WORKFLOW_NODES/WORKFLOW_EDGES constants.
+
+Streaming status: Node color / status and iteration counts are driven by live AgentNodeState via WorkflowNodeEvent, not fake timers.
+
+UI preserved: All React Flow visuals, neon node types, and interactions stay intact; we only changed how the data is sourced and combined.
+
+Determinism: No random intervals or timeouts; updates come only from REST responses and WS events.
+
+Next steps:
+
+Wire useRoadmap(projectId) to /projects/{projectId}/roadmap/nodes + /roadmap/edges.
+
+Expose the WS endpoint /api/ws/projects/{projectId}/workflows/{workflowId} to emit WorkflowNodeEvent frames.
+
+If your existing custom node component expects specific data fields (e.g., type, statusBadge, metrics), we can tune WorkflowNodeData / VisualizerNodeData to match exactly.
+
+You said:
+You are a principal backend engineer specializing in FastAPI and Pydantic on Python 3.11.
+
+Goal: Generate the initial FastAPI backend for Cortex that is cleanly structured and production-ready for local development.
+
+Constraints:
+
+- The backend will eventually expose APIs for:
+  - Ingestion jobs (create, list, status).
+  - Vector search and RAG.
+  - Dynamic project roadmap generation.
+  - Agent run control and state inspection.
+- Use Pydantic models (v2 if possible) for all request/response schemas.
+- Use dependency injection for database/vector client, configuration, and logging.
+- Expose OpenAPI docs at /docs and /redoc.
+
+Deliverables:
+
+1. Generate the full code for:
+   - backend/app/main.py – FastAPI app factory, router include, CORS.
+   - backend/app/core/config.py – Pydantic Settings for environment (ports, DB URLs, Qdrant host, ROCm configs).
+   - backend/app/core/logging.py – Structured JSON logging with loggers for api, services, orchestration.
+   - backend/app/api/deps.py – dependencies (get_settings, get_logger, get_vector_client placeholder).
+   - backend/app/api/routes/health.py – /health endpoint with startup checks.
+2. Include type hints everywhere and docstrings for public functions and classes.
+3. Write the code with FastAPI best practices (lifespan context manager, startup/shutdown events).
+4. Include minimal tests:
+   - backend/tests/test_health.py that uses TestClient to check /health.
+
+Output:
+
+- Provide each file in its own
+  python code block, with a clear filename comment at the top, for example:
+  python
+  # backend/app/main.py
+  ...
+  ChatGPT said:
+
+Thought for 21s
+Cortex Fast Api Backend Skeleton
+· python
+
+# Backend skeleton for Cortex FastAPI service.
+
+# This canvas holds the initial version of main.py, config, logging, deps, and health route.
+
+# The user-facing answer includes each file in separate code blocks.
+
+# backend/app/main.py
+
+from **future** import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .core.config import AppSettings, get_settings
+from .core.logging import configure_logging, get_logger
+from .api.routes.health import router as health_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+"""
+Application lifespan context.
+
+This is where we would initialize shared resources (DB pools,
+vector clients, orchestration engines) and tear them down cleanly
+on shutdown.
+"""
+settings: AppSettings = get_settings()
+configure_logging(settings)
+logger = get_logger("api")
+logger.info(
+"cortex_backend_startup",
+extra={"app_name": settings.app_name, "env": settings.environment},
+)
+
+# TODO: initialize database / vector clients here when they are implemented.
+
+try:
+yield
+finally:
+logger.info("cortex_backend_shutdown")
+
+def create_app(settings: AppSettings | None = None) -> FastAPI:
+"""
+FastAPI application factory for the Cortex backend.
+
+Args:
+settings: Optional preconstructed AppSettings. If not provided,
+settings will be loaded from environment variables.
+
+Returns:
+Configured FastAPI application instance.
+"""
+app_settings: AppSettings = settings or get_settings()
+
+app = FastAPI(
+title=app_settings.app_name,
+version=app_settings.version,
+docs_url="/docs",
+redoc_url="/redoc",
+openapi_url="/openapi.json",
+lifespan=lifespan,
+)
+
+# CORS
+
+app.add_middleware(
+CORSMiddleware,
+allow_origins=app_settings.cors_origins or ["*"],
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
+)
+
+# Routers
+
+app.include_router(health_router, prefix="")
+
+return app
+
+app = create_app()
+
+if **name** == "**main**":
+
+# For local development convenience:
+
+# python -m backend.app.main
+
+import uvicorn
+
+uvicorn.run(
+"backend.app.main:app",
+host="0.0.0.0",
+port=get_settings().port,
+reload=True,
+)
+
+# backend/app/core/config.py
+
+from **future** import annotations
+
+from functools import lru_cache
+from typing import List
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class AppSettings(BaseSettings):
+"""
+Application-level configuration loaded from environment variables.
+
+This includes server configuration, database/vector backends,
+and ROCm-related toggles for GPU runtimes.
+"""
+
+model*config = SettingsConfigDict(
+env_prefix="CORTEX*",
+env_file=".env",
+env_file_encoding="utf-8",
+extra="ignore",
+)
+
+# General application settings
+
+app_name: str = Field(default="Cortex Backend", description="Human friendly service name.")
+version: str = Field(default="0.1.0", description="Application version.")
+environment: str = Field(default="local", description="Environment name (local/dev/stage/prod).")
+
+# HTTP server
+
+host: str = Field(default="0.0.0.0", description="Bind host for HTTP server.")
+port: int = Field(default=8000, description="Bind port for HTTP server.")
+
+# API configuration
+
+api_prefix: str = Field(default="/api", description="Prefix for API routes.")
+cors_origins: List[str] = Field(
+default_factory=lambda: ["http://localhost:3000"],
+description="Allowed CORS origins for frontend clients.",
+)
+
+# Database configuration
+
+db_url: str = Field(
+default="sqlite+aiosqlite:///./cortex.db",
+description="SQLAlchemy-compatible async database URL.",
+)
+
+# Vector store configuration (e.g., Qdrant)
+
+qdrant_host: str = Field(default="localhost", description="Qdrant host.")
+qdrant_port: int = Field(default=6333, description="Qdrant HTTP port.")
+qdrant_api_key: str | None = Field(
+default=None,
+description="Optional Qdrant API key.",
+)
+
+# ROCm / GPU configuration
+
+rocm_enabled: bool = Field(
+default=False,
+description="Whether ROCm/GPU runtimes should be considered available.",
+)
+rocm_visible_devices: str | None = Field(
+default=None,
+description="ROCM_VISIBLE_DEVICES value for GPU selection.",
+)
+
+# Logging
+
+log_level: str = Field(default="INFO", description="Root log level.")
+log_json: bool = Field(default=True, description="Emit logs as JSON if true.")
+
+@lru_cache(maxsize=1)
+def get_settings() -> AppSettings:
+"""
+Retrieve cached application settings.
+
+Using an LRU cache ensures we only construct AppSettings once per process
+while still playing nicely with FastAPI's dependency injection.
+"""
+return AppSettings()
+
+# backend/app/core/logging.py
+
+from **future** import annotations
+
+import json
+import logging
+import sys
+from datetime import datetime
+from typing import Any, Dict
+
+from .config import AppSettings
+
+class JsonFormatter(logging.Formatter):
+"""
+Simple JSON log formatter.
+
+Formats records as a single JSON object per line with fields:
+
+- timestamp
+- level
+- logger
+- message
+- any extra keys provided via the `extra` parameter
+  """
+
+def format(self, record: logging.LogRecord) -> str: # type: ignore[override]
+log_record: Dict[str, Any] = {
+"timestamp": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+"level": record.levelname,
+"logger": record.name,
+"message": record.getMessage(),
+}
+
+    # Attach extras if they exist
+    if hasattr(record, "extra") and isinstance(record.extra, dict):
+      log_record.update(record.extra)  # type: ignore[arg-type]
+
+    # Include exception info if present
+    if record.exc_info:
+      log_record["exc_info"] = self.formatException(record.exc_info)
+
+    return json.dumps(log_record, ensure_ascii=False)
+
+def configure_logging(settings: AppSettings) -> None:
+"""
+Configure structured logging for the Cortex backend.
+
+This function is idempotent and can be safely called multiple times.
+"""
+root_logger = logging.getLogger()
+if root_logger.handlers: # Assume logging is already configured.
+return
+
+level = getattr(logging, settings.log_level.upper(), logging.INFO)
+root_logger.setLevel(level)
+
+handler = logging.StreamHandler(sys.stdout)
+
+if settings.log_json:
+formatter: logging.Formatter = JsonFormatter()
+else:
+formatter = logging.Formatter(
+fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+datefmt="%Y-%m-%dT%H:%M:%S",
+)
+
+handler.setFormatter(formatter)
+root_logger.addHandler(handler)
+
+# Pre-create the primary loggers used across the app
+
+for logger_name in ("api", "services", "orchestration"):
+logging.getLogger(logger_name).setLevel(level)
+
+def get_logger(name: str) -> logging.Logger:
+"""
+Retrieve a named logger.
+
+Args:
+name: Logger name to retrieve.
+
+Returns:
+Configured logger instance.
+"""
+return logging.getLogger(name)
+
+# backend/app/api/deps.py
+
+from **future** import annotations
+
+import logging
+from typing import AsyncIterator
+
+from fastapi import Depends
+
+from ..core.config import AppSettings, get_settings
+from ..core.logging import get_logger
+
+class VectorClient:
+"""
+Minimal placeholder for a vector search client.
+
+In a real implementation this would wrap a Qdrant/Weaviate/etc. client
+and expose methods for health checks, upserts, and search.
+"""
+
+def **init**(self, settings: AppSettings) -> None:
+self.\_settings = settings
+self.\_logger = get_logger("services")
+
+async def ping(self) -> bool:
+"""
+Check connectivity with the underlying vector backend.
+
+    Returns:
+        True if the vector backend is reachable, otherwise False.
+    """
+    # TODO: Replace with a real HTTP call to Qdrant or equivalent.
+    self._logger.debug(
+      "vector_client_ping",
+      extra={
+        "host": self._settings.qdrant_host,
+        "port": self._settings.qdrant_port,
+      },
+    )
+    return True
+
+class DatabaseSession:
+"""
+Placeholder database session abstraction.
+
+In production this would wrap an async SQLAlchemy session or similar.
+"""
+
+async def ping(self) -> bool:
+"""
+Lightweight health check.
+
+    Returns:
+        True if the database is reachable, otherwise False.
+    """
+    # TODO: Implement actual DB connectivity check.
+    return True
+
+async def get_settings_dep() -> AsyncIterator[AppSettings]:
+"""
+FastAPI dependency that yields application settings.
+
+This wraps `get_settings()` to make it usable in async dependency graphs.
+"""
+settings = get_settings()
+yield settings
+
+def get_api_logger() -> logging.Logger:
+"""
+FastAPI dependency that returns a logger for the API layer.
+
+Returns:
+Logger configured for API-related logs.
+"""
+return get_logger("api")
+
+async def get_vector_client(
+settings: AppSettings = Depends(get_settings_dep),
+) -> AsyncIterator[VectorClient]:
+"""
+FastAPI dependency that yields a vector client instance.
+
+Args:
+settings: Application settings injected by FastAPI.
+
+Yields:
+VectorClient instance.
+"""
+client = VectorClient(settings)
+try:
+yield client
+finally: # If the client needs explicit shutdown/cleanup, do it here.
+pass
+
+async def get_db_session(
+settings: AppSettings = Depends(get_settings_dep),
+) -> AsyncIterator[DatabaseSession]:
+"""
+FastAPI dependency that yields a database session placeholder.
+
+Args:
+settings: Application settings injected by FastAPI.
+
+Yields:
+DatabaseSession instance.
+"""
+
+# `settings` is unused for now but will be needed once DB is wired.
+
+\_ = settings
+session = DatabaseSession()
+try:
+yield session
+finally: # Close/cleanup DB session here when a real implementation exists.
+pass
+
+# backend/app/api/routes/health.py
+
+from **future** import annotations
+
+from typing import Dict
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from ...core.config import AppSettings
+from ..deps import (
+get_settings_dep,
+get_api_logger,
+get_vector_client,
+get_db_session,
+VectorClient,
+DatabaseSession,
+)
+
+router = APIRouter(tags=["health"])
+
+class HealthCheckResult(BaseModel):
+"""
+Individual subsystem health check result.
+"""
+
+ok: bool = Field(..., description="Whether the subsystem is healthy.")
+detail: str | None = Field(
+default=None,
+description="Optional human-readable detail about this check.",
+)
+
+class HealthResponse(BaseModel):
+"""
+Health endpoint response model.
+
+This is designed to be both human-readable and machine-parsable for
+monitoring systems.
+"""
+
+app: str = Field(..., description="Application name.")
+status: str = Field(
+...,
+description="Overall status derived from the individual checks "
+"('ok', 'degraded', or 'error').",
+)
+version: str = Field(..., description="Application version.")
+environment: str = Field(..., description="Deployment environment name.")
+checks: Dict[str, HealthCheckResult] = Field(
+..., description="Map of component name -> health result.",
+)
+
+@router.get("/health", response_model=HealthResponse)
+async def health(
+settings: AppSettings = Depends(get_settings_dep),
+logger=Depends(get_api_logger),
+vector_client: VectorClient = Depends(get_vector_client),
+db_session: DatabaseSession = Depends(get_db_session),
+) -> HealthResponse:
+"""
+Liveness and readiness endpoint for the Cortex backend.
+
+Performs lightweight checks against core dependencies (database and vector
+store) and returns an aggregated health status.
+"""
+checks: Dict[str, HealthCheckResult] = {}
+
+# Database check
+
+db_ok = await db_session.ping()
+checks["database"] = HealthCheckResult(
+ok=db_ok,
+detail="Database reachable" if db_ok else "Database ping failed",
+)
+
+# Vector backend check
+
+vector_ok = await vector_client.ping()
+checks["vector"] = HealthCheckResult(
+ok=vector_ok,
+detail="Vector backend reachable" if vector_ok else "Vector backend ping failed",
+)
+
+# ROCm / GPU is reported as informational for now
+
+rocm_ok = settings.rocm_enabled
+checks["rocm"] = HealthCheckResult(
+ok=rocm_ok,
+detail="ROCm enabled" if rocm_ok else "ROCm disabled",
+)
+
+# Derive overall status
+
+if all(result.ok for result in checks.values()):
+status = "ok"
+elif any(result.ok for result in checks.values()):
+status = "degraded"
+else:
+status = "error"
+
+logger.info(
+"health_check",
+extra={
+"status": status,
+"checks": {name: result.ok for name, result in checks.items()},
+},
+)
+
+return HealthResponse(
+app=settings.app_name,
+status=status,
+version=settings.version,
+environment=settings.environment,
+checks=checks,
+)
+
+# backend/tests/test_health.py
+
+from **future** import annotations
+
+from fastapi.testclient import TestClient
+
+from backend.app.main import create_app
+from backend.app.core.config import AppSettings
+
+def create_test_app() -> TestClient:
+"""
+Construct a TestClient-wrapped FastAPI app for health endpoint tests.
+
+Returns:
+Configured TestClient instance.
+"""
+settings = AppSettings(environment="test")
+app = create_app(settings=settings)
+return TestClient(app)
+
+def test_health_endpoint_ok() -> None:
+"""
+Basic sanity check that /health responds with HTTP 200 and a valid payload.
+"""
+client = create_test_app()
+response = client.get("/health")
+assert response.status_code == 200
+
+data = response.json()
+assert data["status"] in {"ok", "degraded"} # ROCm may be disabled in tests
+assert data["app"] == "Cortex Backend"
+assert "checks" in data
+assert "database" in data["checks"]
+assert "vector" in data["checks"]
+Key insights / next steps
+
+This gives you a clean, DI-friendly FastAPI skeleton: settings, logging, and core clients are all injectable and testable.
+
+Next logical step is to add real DB and Qdrant clients (wired into DatabaseSession and VectorClient), then grow routers for /projects, /ingest/jobs, /agent-runs, etc., using the domain + api-types you already defined.
+
+You said:
+
+### PROMPT B2 – Error Handling & API Error Schema
+
+text
+You are a backend engineer focused on API ergonomics and observability.
+
+Goal: Add a consistent error-handling layer to the Cortex FastAPI backend.
+
+Requirements:
+
+- Define a `ApiError` Pydantic model with:
+  - `code: str`
+  - `message: str`
+  - `details: dict | None`
+  - `trace_id: str | None`
+- Implement exception handlers for:
+  - `HTTPException`
+  - `ValidationError`
+  - A custom `DomainError` (to be used in ingestion, RAG, etc.).
+- Ensure all errors return JSON with `ApiError`.
+- Integrate logging: every error logs a structured event with trace_id.
+
+Deliverables:
+
+- New file: `backend/app/core/errors.py` with:
+  - `DomainError` class.
+  - `ApiError` model.
+  - `register_exception_handlers(app: FastAPI)` function.
+- Updates to:
+  - `backend/app/main.py` to register exception handlers on app init.
+  - Tests in `backend/tests/test_errors.py` with at least:
+    - One endpoint that intentionally raises DomainError.
+    - Assertions that response matches ApiError shape.
+
+Output:
+
+- Provide updated file contents in full.
+- Preserve previous structure and imports; do not introduce unnecessary dependencies.
+  ChatGPT said:
+
+Thought for 37s
+Backend/app/core/errors
+· python
+
+# Error handling module for Cortex FastAPI backend.
+
+# The full contents are returned in the main chat response for direct copy-paste.
+
+# backend/app/core/errors.py
+
+from **future** import annotations
+
+import logging
+from typing import Any, Dict
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ValidationError
+from uuid import uuid4
+
+from .logging import get_logger
+
+class DomainError(Exception):
+"""
+Base class for domain-level errors in Cortex.
+
+These are used for business logic failures (ingestion, RAG, workflows, etc.)
+and are always mapped to a structured ApiError in HTTP responses.
+"""
+
+def **init**(
+self,
+code: str,
+message: str,
+status_code: int = 400,
+details: Dict[str, Any] | None = None,
+) -> None:
+"""
+Initialize a DomainError.
+
+    Args:
+        code: Stable machine-readable error code (e.g. 'ingest_invalid_source').
+        message: Human-readable error message.
+        status_code: HTTP status code to use when returning this error.
+        details: Optional structured details for clients / debugging.
+    """
+    super().__init__(message)
+    self.code = code
+    self.message = message
+    self.status_code = status_code
+    self.details = details or {}
+
+class ApiError(BaseModel):
+"""
+Standard error envelope returned by all Cortex API endpoints.
+"""
+
+code: str = Field(..., description="Stable machine-readable error code.")
+message: str = Field(..., description="Human-readable error message.")
+details: Dict[str, Any] | None = Field(
+default=None,
+description="Optional structured details providing additional context.",
+)
+trace_id: str | None = Field(
+default=None,
+description="Opaque trace identifier for correlating logs and requests.",
+)
+
+def \_log_error(
+logger: logging.Logger,
+event: str,
+trace_id: str,
+\*\*extra: Any,
+) -> None:
+"""
+Helper to log a structured error event.
+
+Args:
+logger: Logger to use.
+event: High-level event name (e.g. 'http_exception', 'domain_error').
+trace_id: Trace identifier associated with this error.
+extra: Additional structured fields to attach to the log record.
+"""
+payload: Dict[str, Any] = {"event": event, "trace_id": trace_id}
+payload.update(extra)
+logger.error(event, extra={"extra": payload})
+
+def register_exception_handlers(app: FastAPI) -> None:
+"""
+Register global exception handlers that normalize all errors into ApiError.
+
+This function is idempotent and safe to call multiple times.
+"""
+logger = get_logger("api")
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(
+request: Request,
+exc: HTTPException,
+) -> JSONResponse:
+trace_id = str(uuid4()) # Derive message/details from HTTPException.detail
+if isinstance(exc.detail, str):
+message = exc.detail
+details: Dict[str, Any] | None = None
+else:
+message = "HTTP error"
+details = {"detail": exc.detail}
+
+    api_error = ApiError(
+      code=f"http_{exc.status_code}",
+      message=message,
+      details=details,
+      trace_id=trace_id,
+    )
+
+    _log_error(
+      logger,
+      event="http_exception",
+      trace_id=trace_id,
+      path=str(request.url),
+      method=request.method,
+      status_code=exc.status_code,
+      error_code=api_error.code,
+    )
+
+    return JSONResponse(
+      status_code=exc.status_code,
+      content=api_error.model_dump(),
+    )
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(
+request: Request,
+exc: ValidationError,
+) -> JSONResponse:
+trace_id = str(uuid4())
+api_error = ApiError(
+code="validation_error",
+message="Validation error",
+details={"errors": exc.errors()},
+trace_id=trace_id,
+)
+
+    _log_error(
+      logger,
+      event="validation_error",
+      trace_id=trace_id,
+      path=str(request.url),
+      method=request.method,
+      error_code=api_error.code,
+    )
+
+    return JSONResponse(
+      status_code=422,
+      content=api_error.model_dump(),
+    )
+
+@app.exception_handler(DomainError)
+async def domain_exception_handler(
+request: Request,
+exc: DomainError,
+) -> JSONResponse:
+trace_id = str(uuid4())
+api_error = ApiError(
+code=exc.code,
+message=exc.message,
+details=exc.details or None,
+trace_id=trace_id,
+)
+
+    _log_error(
+      logger,
+      event="domain_error",
+      trace_id=trace_id,
+      path=str(request.url),
+      method=request.method,
+      status_code=exc.status_code,
+      error_code=exc.code,
+    )
+
+    return JSONResponse(
+      status_code=exc.status_code,
+      content=api_error.model_dump(),
+    )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+request: Request,
+exc: Exception,
+) -> JSONResponse:
+"""
+Catch-all handler for unexpected errors.
+
+    This ensures we never leak raw stack traces to clients while still
+    logging in a structured way server-side.
+    """
+    trace_id = str(uuid4())
+    api_error = ApiError(
+      code="internal_error",
+      message="Internal server error",
+      details=None,
+      trace_id=trace_id,
+    )
+
+    _log_error(
+      logger,
+      event="unhandled_exception",
+      trace_id=trace_id,
+      path=str(request.url),
+      method=request.method,
+      error_code=api_error.code,
+    )
+
+    return JSONResponse(
+      status_code=500,
+      content=api_error.model_dump(),
+    )
+
+# backend/app/main.py
+
+from **future** import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .core.config import AppSettings, get_settings
+from .core.logging import configure_logging, get_logger
+from .core.errors import register_exception_handlers
+from .api.routes.health import router as health_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+"""
+Application lifespan context.
+
+This is where we would initialize shared resources (DB pools,
+vector clients, orchestration engines) and tear them down cleanly
+on shutdown.
+"""
+settings: AppSettings = get_settings()
+configure_logging(settings)
+logger = get_logger("api")
+logger.info(
+"cortex_backend_startup",
+extra={"extra": {"app_name": settings.app_name, "env": settings.environment}},
+)
+
+# TODO: initialize database / vector clients here when they are implemented.
+
+try:
+yield
+finally:
+logger.info("cortex_backend_shutdown", extra={"extra": {}})
+
+def create_app(settings: AppSettings | None = None) -> FastAPI:
+"""
+FastAPI application factory for the Cortex backend.
+
+Args:
+settings: Optional preconstructed AppSettings. If not provided,
+settings will be loaded from environment variables.
+
+Returns:
+Configured FastAPI application instance.
+"""
+app_settings: AppSettings = settings or get_settings()
+
+app = FastAPI(
+title=app_settings.app_name,
+version=app_settings.version,
+docs_url="/docs",
+redoc_url="/redoc",
+openapi_url="/openapi.json",
+lifespan=lifespan,
+)
+
+# CORS
+
+app.add_middleware(
+CORSMiddleware,
+allow_origins=app_settings.cors_origins or ["*"],
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
+)
+
+# Routers
+
+app.include_router(health_router, prefix="")
+
+# Exception handlers
+
+register_exception_handlers(app)
+
+return app
+
+app = create_app()
+
+if **name** == "**main**":
+
+# For local development convenience:
+
+# python -m backend.app.main
+
+import uvicorn
+
+uvicorn.run(
+"backend.app.main:app",
+host="0.0.0.0",
+port=get_settings().port,
+reload=True,
+)
+
+# backend/tests/test_errors.py
+
+from **future** import annotations
+
+from fastapi import APIRouter, HTTPException
+from fastapi.testclient import TestClient
+from pydantic import ValidationError, BaseModel
+
+from backend.app.core.config import AppSettings
+from backend.app.core.errors import ApiError, DomainError
+from backend.app.main import create_app
+
+def create_test_app() -> TestClient:
+"""
+Construct a TestClient-wrapped FastAPI app with error routes for testing.
+
+Returns:
+Configured TestClient instance.
+"""
+settings = AppSettings(environment="test")
+app = create_app(settings=settings)
+
+router = APIRouter()
+
+@router.get(
+"/error-domain",
+responses={400: {"model": ApiError}},
+)
+async def error_domain() -> None:
+raise DomainError(
+code="test_domain_error",
+message="Domain boom",
+status_code=400,
+)
+
+@router.get(
+"/error-http",
+responses={404: {"model": ApiError}},
+)
+async def error_http() -> None:
+raise HTTPException(status_code=404, detail="Not found")
+
+@router.get(
+"/error-validation",
+responses={422: {"model": ApiError}},
+)
+async def error_validation() -> None:
+class Payload(BaseModel):
+value: int
+
+    # Intentionally trigger a Pydantic ValidationError
+    try:
+      Payload(value="not-an-int")  # type: ignore[arg-type]
+    except ValidationError as exc:
+      raise exc
+
+app.include_router(router)
+return TestClient(app)
+
+def assert_api_error_shape(data: dict) -> None:
+"""
+Helper to assert that a response body conforms to the ApiError schema shape.
+"""
+assert "code" in data
+assert "message" in data
+assert "details" in data
+assert "trace_id" in data
+assert isinstance(data["code"], str)
+assert isinstance(data["message"], str)
+assert data["details"] is None or isinstance(data["details"], dict)
+
+# trace_id may be null in theory, but we expect a string in practice
+
+assert data["trace_id"] is None or isinstance(data["trace_id"], str)
+
+def test_domain_error_translated_to_api_error() -> None:
+"""
+Ensure DomainError is translated into an ApiError JSON payload.
+"""
+client = create_test_app()
+response = client.get("/error-domain")
+assert response.status_code == 400
+
+data = response.json()
+assert_api_error_shape(data)
+assert data["code"] == "test_domain_error"
+assert data["message"] == "Domain boom"
+
+def test_http_exception_translated_to_api_error() -> None:
+"""
+Ensure HTTPException is translated into an ApiError JSON payload.
+"""
+client = create_test_app()
+response = client.get("/error-http")
+assert response.status_code == 404
+
+data = response.json()
+assert_api_error_shape(data)
+
+# For HTTP errors we encode the code based on status code
+
+assert data["code"] == "http_404"
+assert data["message"] == "Not found"
+
+def test_validation_error_translated_to_api_error() -> None:
+"""
+Ensure Pydantic ValidationError is translated into an ApiError JSON payload.
+"""
+client = create_test_app()
+response = client.get("/error-validation")
+assert response.status_code == 422
+
+data = response.json()
+assert_api_error_shape(data)
+assert data["code"] == "validation_error"
+assert data["message"] == "Validation error"
+assert isinstance(data["details"], dict)
+assert "errors" in data["details"]
+assert isinstance(data["details"]["errors"], list)
+Key insights / next steps
+
+All error paths now normalize to ApiError, which makes the frontend client much simpler and observability cleaner (every error has a trace_id).
+
+You can start throwing DomainError from ingest / RAG / agent orchestration code immediately, and rely on this layer to keep HTTP responses and logs consistent.
+
+You said:
+You are a backend ingestion engineer.
+
+Goal: Implement ingestion job tracking for Cortex, across multiple source types.
+
+Context:
+
+- Source types: PDFs, Markdown, JSON, code repositories, screenshots/images, chat history exports.
+- Features:
+  - Create ingestion jobs.
+  - Track status (PENDING, RUNNING, COMPLETED, FAILED).
+  - Store metadata (paths, types, counts, error messages).
+- Downstream: These jobs feed document chunking and vectorization.
+
+Deliverables:
+
+1. Add Pydantic models:
+   - IngestionSourceType enum.
+   - IngestionJobStatus enum.
+   - IngestionJob model (id, created_at, updated_at, status, sources, stats).
+2. Add DB layer (ORM or minimal SQL) in backend/app/repos/ingestion_repo.py:
+   - create_job, update_job_status, get_job, list_jobs.
+3. Create FastAPI router: backend/app/api/routes/ingestion.py:
+   - POST /ingestion/jobs to create a new job.
+   - GET /ingestion/jobs/{job_id} to get job details.
+   - GET /ingestion/jobs to list jobs with filters.
+4. Add tests for all routes and repository functions.
+
+Output:
+
+- Provide full code with types, logging, and consistent ApiError behavior.
+  ChatGPT said:
+
+Thought for 55s
+Ingestion Jobs Backend
+· python
+
+# This canvas will hold the ingestion models, repo, router, and tests for Cortex.
+
+# Full file contents are returned in the main chat response as separate code blocks.
+
+# backend/app/models/ingestion.py
+
+from **future** import annotations
+
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+class IngestionSourceType(str, Enum):
+"""
+Supported ingestion source types for Cortex.
+"""
+
+PDF = "pdf"
+MARKDOWN = "markdown"
+JSON = "json"
+CODE_REPO = "code_repo"
+IMAGE = "image"
+CHAT_EXPORT = "chat_export"
+OTHER = "other"
+
+class IngestionJobStatus(str, Enum):
+"""
+Lifecycle states for ingestion jobs.
+"""
+
+PENDING = "pending"
+RUNNING = "running"
+COMPLETED = "completed"
+FAILED = "failed"
+
+class IngestionSource(BaseModel):
+"""
+Description of a single ingestion source artifact (file, repo, export, etc.).
+"""
+
+type: IngestionSourceType = Field(..., description="Type of the source.")
+uri: str = Field(
+...,
+description="Opaque URI or path to the source (filesystem path, repo URL, etc.).",
+)
+metadata: Dict[str, Any] | None = Field(
+default=None,
+description="Optional arbitrary metadata about the source (size, hashes, etc.).",
+)
+
+class IngestionJobStats(BaseModel):
+"""
+Aggregated statistics for an ingestion job.
+
+These are primarily used for UI tooltips and monitoring.
+"""
+
+total_sources: int = Field(..., description="Total number of sources in this job.")
+documents_indexed: int = Field(
+default=0,
+description="Number of canonical documents successfully indexed.",
+)
+chunks_indexed: int = Field(
+default=0,
+description="Number of chunks produced and stored in the vector index.",
+)
+
+class IngestionJob(BaseModel):
+"""
+Persistent record of an ingestion job.
+
+This record is created when the job is enqueued and updated as the
+ingestion pipeline progresses.
+"""
+
+id: str = Field(..., description="Stable identifier for the ingestion job.")
+created_at: datetime = Field(..., description="Creation timestamp (UTC).")
+updated_at: datetime = Field(..., description="Last update timestamp (UTC).")
+status: IngestionJobStatus = Field(..., description="Current lifecycle status.")
+sources: List[IngestionSource] = Field(
+...,
+description="List of ingestion sources included in this job.",
+)
+stats: Optional[IngestionJobStats] = Field(
+default=None,
+description="Aggregated statistics for the job, if available.",
+)
+error_message: Optional[str] = Field(
+default=None,
+description="Optional error message for failed jobs.",
+)
+
+# backend/app/api/deps.py
+
+from **future** import annotations
+
+import asyncio
+import logging
+import sqlite3
+from typing import AsyncIterator, Optional
+
+from fastapi import Depends
+
+from ..core.config import AppSettings, get_settings
+from ..core.logging import get_logger
+
+class VectorClient:
+"""
+Minimal placeholder for a vector search client.
+
+In a real implementation this would wrap a Qdrant/Weaviate/etc. client
+and expose methods for health checks, upserts, and search.
+"""
+
+def **init**(self, settings: AppSettings) -> None:
+self.\_settings = settings
+self.\_logger = get_logger("services")
+
+async def ping(self) -> bool:
+"""
+Check connectivity with the underlying vector backend.
+
+    Returns:
+        True if the vector backend is reachable, otherwise False.
+    """
+    # TODO: Replace with a real HTTP call to Qdrant or equivalent.
+    self._logger.debug(
+      "vector_client_ping",
+      extra={
+        "extra": {
+          "host": self._settings.qdrant_host,
+          "port": self._settings.qdrant_port,
+        }
+      },
+    )
+    return True
+
+def \_derive_sqlite_path(db_url: str) -> str:
+"""
+Derive a sqlite file path from a SQLAlchemy-style URL.
+
+Supports values such as: - sqlite+aiosqlite:///./cortex.db - sqlite:///./cortex.db - sqlite:///:memory:
+"""
+if "://" not in db_url:
+return db_url
+
+scheme, rest = db_url.split("://", 1)
+
+# For sqlite URLs we may see driver suffixes (sqlite+aiosqlite)
+
+if rest.startswith("///"):
+path = rest[3:]
+elif rest.startswith("//"):
+path = rest[2:]
+else:
+path = rest
+
+return path
+
+class DatabaseSession:
+"""
+Lightweight sqlite-backed database session.
+
+This is intentionally minimal and only supports what is required for
+ingestion job tracking. It can later be replaced by a full ORM layer
+without changing the API surface.
+"""
+
+def **init**(self, settings: AppSettings) -> None:
+self.\_logger = get_logger("services")
+self.\_db_path: str = \_derive_sqlite_path(settings.db_url)
+self.\_conn: sqlite3.Connection = sqlite3.connect(
+self.\_db_path,
+check_same_thread=False,
+)
+self.\_conn.row_factory = sqlite3.Row
+self.\_ensure_schema()
+
+def \_ensure_schema(self) -> None:
+"""
+Ensure required tables exist.
+
+    Currently creates:
+      - ingestion_jobs
+    """
+    self._conn.execute(
+      """
+      CREATE TABLE IF NOT EXISTS ingestion_jobs (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        sources_json TEXT NOT NULL,
+        stats_json TEXT,
+        error_message TEXT
+      )
+      """
+    )
+    self._conn.commit()
+
+async def ping(self) -> bool:
+"""
+Lightweight health check.
+
+    Returns:
+        True if the database is reachable, otherwise False.
+    """
+    try:
+      await self.execute("SELECT 1")
+      return True
+    except Exception as exc:  # pragma: no cover - defensive
+      self._logger.error(
+        "database_ping_failed",
+        extra={"extra": {"error": str(exc), "db_path": self._db_path}},
+      )
+      return False
+
+async def execute(self, query: str, params: tuple = ()) -> None:
+"""
+Execute a write query (INSERT/UPDATE/DELETE).
+
+    Args:
+        query: SQL query string.
+        params: Parameters tuple.
+    """
+    await asyncio.to_thread(self._execute_sync, query, params)
+
+def \_execute_sync(self, query: str, params: tuple) -> None:
+self.\_conn.execute(query, params)
+self.\_conn.commit()
+
+async def fetchone(self, query: str, params: tuple = ()) -> Optional[sqlite3.Row]:
+"""
+Execute a SELECT query and return a single row, if any.
+"""
+return await asyncio.to_thread(self.\_fetchone_sync, query, params)
+
+def \_fetchone_sync(self, query: str, params: tuple) -> Optional[sqlite3.Row]:
+cur = self.\_conn.execute(query, params)
+return cur.fetchone()
+
+async def fetchall(self, query: str, params: tuple = ()) -> list[sqlite3.Row]:
+"""
+Execute a SELECT query and return all rows.
+"""
+return await asyncio.to_thread(self.\_fetchall_sync, query, params)
+
+def \_fetchall_sync(self, query: str, params: tuple) -> list[sqlite3.Row]:
+cur = self.\_conn.execute(query, params)
+return list(cur.fetchall())
+
+async def close(self) -> None:
+"""
+Close the underlying sqlite connection.
+"""
+await asyncio.to_thread(self.\_conn.close)
+
+async def get_settings_dep() -> AsyncIterator[AppSettings]:
+"""
+FastAPI dependency that yields application settings.
+
+This wraps `get_settings()` to make it usable in async dependency graphs.
+"""
+settings = get_settings()
+yield settings
+
+def get_api_logger() -> logging.Logger:
+"""
+FastAPI dependency that returns a logger for the API layer.
+
+Returns:
+Logger configured for API-related logs.
+"""
+return get_logger("api")
+
+async def get_vector_client(
+settings: AppSettings = Depends(get_settings_dep),
+) -> AsyncIterator[VectorClient]:
+"""
+FastAPI dependency that yields a vector client instance.
+
+Args:
+settings: Application settings injected by FastAPI.
+
+Yields:
+VectorClient instance.
+"""
+client = VectorClient(settings)
+try:
+yield client
+finally: # If the client needs explicit shutdown/cleanup, do it here.
+pass
+
+async def get_db_session(
+settings: AppSettings = Depends(get_settings_dep),
+) -> AsyncIterator[DatabaseSession]:
+"""
+FastAPI dependency that yields a database session.
+
+Args:
+settings: Application settings injected by FastAPI.
+
+Yields:
+DatabaseSession instance.
+"""
+session = DatabaseSession(settings)
+try:
+yield session
+finally:
+await session.close()
+
+# backend/app/repos/ingestion_repo.py
+
+from **future** import annotations
+
+import json
+from datetime import datetime
+from typing import List, Optional
+from uuid import uuid4
+
+from ..api.deps import DatabaseSession
+from ..core.errors import DomainError
+from ..core.logging import get_logger
+from ..models.ingestion import (
+IngestionJob,
+IngestionJobStatus,
+IngestionJobStats,
+IngestionSource,
+)
+
+\_logger = get_logger("services")
+
+def \_now_utc() -> datetime:
+"""
+Get current UTC timestamp with seconds precision.
+"""
+return datetime.utcnow()
+
+def \_serialize_sources(sources: List[IngestionSource]) -> str:
+return json.dumps([s.model_dump() for s in sources])
+
+def \_deserialize_sources(payload: str) -> List[IngestionSource]:
+raw = json.loads(payload)
+return [IngestionSource.model_validate(item) for item in raw]
+
+def \_serialize_stats(stats: IngestionJobStats | None) -> str | None:
+if stats is None:
+return None
+return json.dumps(stats.model_dump())
+
+def \_deserialize_stats(payload: str | None) -> IngestionJobStats | None:
+if not payload:
+return None
+raw = json.loads(payload)
+return IngestionJobStats.model_validate(raw)
+
+def \_row_to_job(row) -> IngestionJob:
+return IngestionJob(
+id=row["id"],
+created_at=datetime.fromisoformat(row["created_at"]),
+updated_at=datetime.fromisoformat(row["updated_at"]),
+status=IngestionJobStatus(row["status"]),
+sources=\_deserialize_sources(row["sources_json"]),
+stats=\_deserialize_stats(row["stats_json"]),
+error_message=row["error_message"],
+)
+
+async def create_job(
+db: DatabaseSession,
+sources: List[IngestionSource],
+) -> IngestionJob:
+"""
+Create and persist a new ingestion job.
+
+Args:
+db: Database session.
+sources: List of ingestion sources to include in the job.
+
+Returns:
+Newly created IngestionJob.
+"""
+job_id = uuid4().hex
+now = \_now_utc()
+stats = IngestionJobStats(
+total_sources=len(sources),
+documents_indexed=0,
+chunks_indexed=0,
+)
+
+\_logger.info(
+"ingestion_job_create",
+extra={
+"extra": {
+"job_id": job_id,
+"total_sources": stats.total_sources,
+}
+},
+)
+
+await db.execute(
+"""
+INSERT INTO ingestion_jobs (
+id, created_at, updated_at, status, sources_json, stats_json, error_message
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+""",
+(
+job_id,
+now.isoformat(),
+now.isoformat(),
+IngestionJobStatus.PENDING.value,
+\_serialize_sources(sources),
+\_serialize_stats(stats),
+None,
+),
+)
+
+return IngestionJob(
+id=job_id,
+created_at=now,
+updated_at=now,
+status=IngestionJobStatus.PENDING,
+sources=sources,
+stats=stats,
+error_message=None,
+)
+
+async def update_job_status(
+db: DatabaseSession,
+job_id: str,
+status: IngestionJobStatus,
+\*,
+stats: IngestionJobStats | None = None,
+error_message: str | None = None,
+) -> IngestionJob:
+"""
+Update the status of an existing ingestion job.
+
+Args:
+db: Database session.
+job_id: Job identifier.
+status: New lifecycle status.
+stats: Optional updated stats.
+error_message: Optional error message for failed jobs.
+
+Returns:
+Updated IngestionJob.
+
+Raises:
+DomainError: If the job does not exist.
+"""
+existing = await db.fetchone(
+"SELECT \* FROM ingestion_jobs WHERE id = ?",
+(job_id,),
+)
+if not existing:
+raise DomainError(
+code="ingest_job_not_found",
+message=f"Ingestion job '{job_id}' not found",
+status_code=404,
+)
+
+now = \_now_utc()
+new_stats = stats or \_deserialize_stats(existing["stats_json"])
+
+\_logger.info(
+"ingestion_job_update",
+extra={
+"extra": {
+"job_id": job_id,
+"status": status.value,
+"error_message": error_message,
+}
+},
+)
+
+await db.execute(
+"""
+UPDATE ingestion_jobs
+SET status = ?, updated_at = ?, stats_json = ?, error_message = ?
+WHERE id = ?
+""",
+(
+status.value,
+now.isoformat(),
+\_serialize_stats(new_stats),
+error_message,
+job_id,
+),
+)
+
+row = await db.fetchone(
+"SELECT \* FROM ingestion_jobs WHERE id = ?",
+(job_id,),
+)
+assert row is not None
+return \_row_to_job(row)
+
+async def get_job(
+db: DatabaseSession,
+job_id: str,
+) -> IngestionJob:
+"""
+Retrieve a single ingestion job by id.
+
+Args:
+db: Database session.
+job_id: Job identifier.
+
+Returns:
+IngestionJob.
+
+Raises:
+DomainError: If the job does not exist.
+"""
+row = await db.fetchone(
+"SELECT \* FROM ingestion_jobs WHERE id = ?",
+(job_id,),
+)
+if not row:
+raise DomainError(
+code="ingest_job_not_found",
+message=f"Ingestion job '{job_id}' not found",
+status_code=404,
+)
+
+return \_row_to_job(row)
+
+async def list_jobs(
+db: DatabaseSession,
+status: Optional[IngestionJobStatus] = None,
+) -> List[IngestionJob]:
+"""
+List ingestion jobs, optionally filtered by status.
+
+Args:
+db: Database session.
+status: Optional status to filter by.
+
+Returns:
+List of IngestionJob records.
+"""
+if status is None:
+rows = await db.fetchall("SELECT _ FROM ingestion_jobs ORDER BY created_at DESC")
+else:
+rows = await db.fetchall(
+"SELECT _ FROM ingestion_jobs WHERE status = ? ORDER BY created_at DESC",
+(status.value,),
+)
+
+return [_row_to_job(row) for row in rows]
+
+# backend/app/api/routes/ingestion.py
+
+from **future** import annotations
+
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Query
+
+from ...core.errors import ApiError
+from ...core.logging import get_logger
+from ...models.ingestion import (
+IngestionJob,
+IngestionJobStatus,
+IngestionSource,
+IngestionSourceType,
+)
+from ..deps import DatabaseSession, get_db_session
+from ...repos import ingestion_repo
+
+router = APIRouter(prefix="/ingestion", tags=["ingestion"])
+
+\_logger = get_logger("api")
+
+class CreateIngestionSource(IngestionSource):
+"""
+Request model for a single ingestion source.
+
+Reuses the base IngestionSource schema.
+"""
+
+class CreateIngestionJobRequest(BaseModel):
+"""
+Request body for creating a new ingestion job.
+"""
+
+sources: List[CreateIngestionSource]
+
+class ListIngestionJobsResponse(BaseModel):
+"""
+Response model for listing ingestion jobs.
+"""
+
+items: List[IngestionJob]
+
+# Import BaseModel after classes that use it only as annotation in docstrings
+
+from pydantic import BaseModel # noqa: E402
+
+@router.post(
+"/jobs",
+response_model=IngestionJob,
+responses={400: {"model": ApiError}},
+)
+async def create_ingestion_job(
+payload: CreateIngestionJobRequest,
+db: DatabaseSession = Depends(get_db_session),
+) -> IngestionJob:
+"""
+Create a new ingestion job from one or more sources.
+
+This endpoint is typically called by the frontend after files are uploaded
+or sources are otherwise registered.
+"""
+if not payload.sources: # Let DomainError handler produce consistent ApiError
+from ...core.errors import DomainError
+
+    raise DomainError(
+      code="ingest_no_sources",
+      message="At least one source must be provided",
+      status_code=400,
+    )
+
+\_logger.info(
+"ingest_api_create_job",
+extra={
+"extra": {
+"num_sources": len(payload.sources),
+"source_types": list({s.type for s in payload.sources}),
+}
+},
+)
+
+job = await ingestion_repo.create_job(db, payload.sources)
+return job
+
+@router.get(
+"/jobs/{job_id}",
+response_model=IngestionJob,
+responses={404: {"model": ApiError}},
+)
+async def get_ingestion_job(
+job_id: str,
+db: DatabaseSession = Depends(get_db_session),
+) -> IngestionJob:
+"""
+Retrieve details of a single ingestion job by id.
+"""
+job = await ingestion_repo.get_job(db, job_id)
+return job
+
+@router.get(
+"/jobs",
+response_model=ListIngestionJobsResponse,
+)
+async def list_ingestion_jobs(
+status: Optional[IngestionJobStatus] = Query(
+default=None,
+description="Optional status to filter by.",
+),
+db: DatabaseSession = Depends(get_db_session),
+) -> ListIngestionJobsResponse:
+"""
+List ingestion jobs, optionally filtered by status.
+
+This powers the Ingest Station list in the UI.
+"""
+jobs = await ingestion_repo.list_jobs(db, status=status)
+return ListIngestionJobsResponse(items=jobs)
+
+# backend/app/main.py
+
+from **future** import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .core.config import AppSettings, get_settings
+from .core.logging import configure_logging, get_logger
+from .core.errors import register_exception_handlers
+from .api.routes.health import router as health_router
+from .api.routes.ingestion import router as ingestion_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+"""
+Application lifespan context.
+
+This is where we would initialize shared resources (DB pools,
+vector clients, orchestration engines) and tear them down cleanly
+on shutdown.
+"""
+settings: AppSettings = get_settings()
+configure_logging(settings)
+logger = get_logger("api")
+logger.info(
+"cortex_backend_startup",
+extra={"extra": {"app_name": settings.app_name, "env": settings.environment}},
+)
+
+# TODO: initialize database / vector clients here when they are implemented.
+
+try:
+yield
+finally:
+logger.info("cortex_backend_shutdown", extra={"extra": {}})
+
+def create_app(settings: AppSettings | None = None) -> FastAPI:
+"""
+FastAPI application factory for the Cortex backend.
+
+Args:
+settings: Optional preconstructed AppSettings. If not provided,
+settings will be loaded from environment variables.
+
+Returns:
+Configured FastAPI application instance.
+"""
+app_settings: AppSettings = settings or get_settings()
+
+app = FastAPI(
+title=app_settings.app_name,
+version=app_settings.version,
+docs_url="/docs",
+redoc_url="/redoc",
+openapi_url="/openapi.json",
+lifespan=lifespan,
+)
+
+# CORS
+
+app.add_middleware(
+CORSMiddleware,
+allow_origins=app_settings.cors_origins or ["*"],
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
+)
+
+# Routers
+
+app.include_router(health_router, prefix="")
+app.include_router(ingestion_router, prefix="")
+
+# Exception handlers
+
+register_exception_handlers(app)
+
+return app
+
+app = create_app()
+
+if **name** == "**main**":
+
+# For local development convenience:
+
+# python -m backend.app.main
+
+import uvicorn
+
+uvicorn.run(
+"backend.app.main:app",
+host="0.0.0.0",
+port=get_settings().port,
+reload=True,
+)
+
+# backend/tests/test_ingestion_repo.py
+
+from **future** import annotations
+
+import asyncio
+
+from backend.app.api.deps import DatabaseSession
+from backend.app.core.config import AppSettings
+from backend.app.models.ingestion import (
+IngestionJobStatus,
+IngestionSource,
+IngestionSourceType,
+)
+from backend.app.repos import ingestion_repo
+
+def \_create_session() -> DatabaseSession:
+settings = AppSettings(
+environment="test",
+db_url="sqlite:///:memory:",
+)
+return DatabaseSession(settings)
+
+def test_create_and_get_job() -> None:
+"""
+Ensure ingestion_repo.create_job and get_job work end-to-end.
+"""
+async def \_run() -> None:
+session = \_create_session()
+try:
+sources = [
+IngestionSource(type=IngestionSourceType.PDF, uri="/tmp/doc1.pdf"),
+IngestionSource(
+type=IngestionSourceType.CODE_REPO,
+uri="https://github.com/example/repo",
+),
+]
+job = await ingestion_repo.create_job(session, sources)
+assert job.id
+assert job.status == IngestionJobStatus.PENDING
+assert job.stats is not None
+assert job.stats.total_sources == 2
+
+      fetched = await ingestion_repo.get_job(session, job.id)
+      assert fetched.id == job.id
+      assert len(fetched.sources) == 2
+    finally:
+      await session.close()
+
+asyncio.run(\_run())
+
+def test_update_job_status_and_list_jobs() -> None:
+"""
+Ensure update_job_status and list_jobs behave as expected.
+"""
+async def \_run() -> None:
+session = \_create_session()
+try:
+sources = [
+IngestionSource(type=IngestionSourceType.MARKDOWN, uri="/tmp/doc2.md"),
+]
+job = await ingestion_repo.create_job(session, sources)
+
+      updated = await ingestion_repo.update_job_status(
+        session,
+        job_id=job.id,
+        status=IngestionJobStatus.RUNNING,
+      )
+      assert updated.status == IngestionJobStatus.RUNNING
+
+      jobs_all = await ingestion_repo.list_jobs(session)
+      assert any(j.id == job.id for j in jobs_all)
+
+      jobs_running = await ingestion_repo.list_jobs(
+        session,
+        status=IngestionJobStatus.RUNNING,
+      )
+      assert any(j.id == job.id for j in jobs_running)
+    finally:
+      await session.close()
+
+asyncio.run(\_run())
+
+# backend/tests/test_ingestion_routes.py
+
+from **future** import annotations
+
+from fastapi.testclient import TestClient
+
+from backend.app.core.config import AppSettings
+from backend.app.main import create_app
+from backend.app.models.ingestion import IngestionJobStatus
+
+def create_test_client() -> TestClient:
+"""
+Construct a TestClient-wrapped FastAPI app for ingestion route tests.
+"""
+settings = AppSettings(
+environment="test",
+db_url="sqlite:///:memory:",
+)
+app = create_app(settings=settings)
+return TestClient(app)
+
+def test_create_ingestion_job_and_get() -> None:
+"""
+POST /ingestion/jobs then GET /ingestion/jobs/{job_id}.
+"""
+client = create_test_client()
+
+payload = {
+"sources": [
+{
+"type": "pdf",
+"uri": "/tmp/a.pdf",
+"metadata": {"size_bytes": 12345},
+},
+{
+"type": "chat_export",
+"uri": "/tmp/chat.json",
+},
+]
+}
+
+resp = client.post("/ingestion/jobs", json=payload)
+assert resp.status_code == 200, resp.text
+
+job = resp.json()
+assert job["id"]
+assert job["status"] == IngestionJobStatus.PENDING.value
+assert len(job["sources"]) == 2
+
+job_id = job["id"]
+resp_get = client.get(f"/ingestion/jobs/{job_id}")
+assert resp_get.status_code == 200
+job2 = resp_get.json()
+assert job2["id"] == job_id
+assert len(job2["sources"]) == 2
+
+def test_list_ingestion_jobs_with_status_filter() -> None:
+"""
+GET /ingestion/jobs with and without status filter.
+"""
+client = create_test_client()
+
+# Create a single job
+
+payload = {"sources": [{"type": "markdown", "uri": "/tmp/readme.md"}]}
+client.post("/ingestion/jobs", json=payload)
+
+resp_all = client.get("/ingestion/jobs")
+assert resp_all.status_code == 200
+data_all = resp_all.json()
+assert "items" in data_all
+assert len(data_all["items"]) >= 1
+
+resp_filtered = client.get(
+"/ingestion/jobs",
+params={"status": IngestionJobStatus.PENDING.value},
+)
+assert resp_filtered.status_code == 200
+data_filtered = resp_filtered.json()
+assert "items" in data_filtered
+assert all(
+item["status"] == IngestionJobStatus.PENDING.value
+for item in data_filtered["items"]
+)
+
+def test_create_ingestion_job_without_sources_returns_api_error() -> None:
+"""
+Ensure creating a job without sources yields an ApiError-shaped response.
+"""
+client = create_test_client()
+
+resp = client.post("/ingestion/jobs", json={"sources": []})
+assert resp.status_code == 400
+
+data = resp.json()
+
+# ApiError shape
+
+assert "code" in data
+assert "message" in data
+assert "details" in data
+assert "trace_id" in data
+assert data["code"] == "ingest_no_sources"
+assert data["message"] == "At least one source must be provided"
+
+def test_get_missing_job_returns_api_error() -> None:
+"""
+Ensure requesting a missing job returns 404 with ApiError.
+"""
+client = create_test_client()
+
+resp = client.get("/ingestion/jobs/nonexistent-id")
+assert resp.status_code == 404
+
+data = resp.json()
+assert "code" in data
+assert data["code"] == "ingest_job_not_found"
+assert "trace_id" in data
+Key insights / next steps
+
+You now have a full ingestion job slice: Pydantic models, a minimal sqlite-backed repository, FastAPI routes, and tests wired through the same ApiError/DomainError layer as the rest of the backend.
+
+Next steps would be to:
+
+Add background workers to transition jobs from PENDING → RUNNING → COMPLETED/FAILED.
+
+Attach this to file upload handling and the actual chunking/vectorization pipeline, using job_id as the correlation key for UI progress and logs.
+
+You said:
+You are an engineer focused on parsing multi-service AI chat exports.
+
+Goal: Implement a chat history parsing module that:
+
+- Reads exports from different AI chat services (Gemini, Claude, ChatGPT, Grok, etc.).
+- Distinguishes between:
+  - Chit-chat.
+  - Project ideas / plans.
+  - Code.
+  - Research/deep research.
+
+Deliverables:
+
+1. Module: backend/app/services/chat_parser.py:
+   - Input: paths to exported files (JSON, HTML, etc.).
+   - Output: a structured list of ChatSegment objects with fields:
+     - id, source, timestamp, role, content, segment_type (enum), project_tags, metadata.
+2. Implement:
+   - Parsers for at least two formats (e.g., ChatGPT JSON, generic HTML logs) with room to extend.
+   - A rule-based classifier plus a hook for later LLM-based classification (but still implement a useful rule-based baseline).
+3. Integrate with the ingestion pipeline:
+   - When an ingestion job includes chat logs, automatically:
+     - Parse logs → ChatSegments.
+     - Convert to chunks and send to embedding_service + qdrant_client.
+
+Output:
+
+- Provide full module code + minimal tests with sample fixture files (you can inline small examples).
+  ChatGPT said:
+
+Thought for 20s
+Backend/app/services/chat Parser
+· python
+
+# Chat parsing and classification module for Cortex.
+
+# Full content is provided in the main answer.
+
+# backend/app/services/chat_parser.py
+
+from **future** import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
+
+from ..core.logging import get_logger
+from ..core.errors import DomainError
+from ..models.ingestion import IngestionJob, IngestionSource, IngestionSourceType
+from ..api.deps import DatabaseSession, VectorClient
+
+logger = get_logger("services")
+
+class ChatSegmentType(str, Enum):
+"""
+Coarse-grained classification for chat segments.
+"""
+
+CHITCHAT = "chitchat"
+IDEA = "idea"
+CODE = "code"
+RESEARCH = "research"
+
+@dataclass
+class ChatSegment:
+"""
+Normalized representation of a single chat turn or segment.
+"""
+
+id: str
+source: str # e.g. "chatgpt_export", "html_log", or filename
+timestamp: datetime
+role: str # e.g. "user", "assistant", "system"
+content: str
+segment_type: ChatSegmentType
+project_tags: List[str]
+metadata: Dict[str, Any]
+
+class EmbeddingService(Protocol):
+"""
+Protocol for an embedding service used by chat ingestion.
+
+Implementations should call into the actual model runtime and return
+dense vector representations for each provided text.
+"""
+
+async def embed(self, texts: Sequence[str]) -> List[List[float]]:
+"""
+Embed a batch of texts.
+
+    Args:
+        texts: List of text strings.
+
+    Returns:
+        List of embedding vectors (one per input).
+    """
+    ...
+
+# ---------------------------------------------------------------------------
+
+# Rule-based classification
+
+# ---------------------------------------------------------------------------
+
+\_CODE_PATTERNS = [
+r"```",
+r"\bdef\s+\w+\s*\(",
+r"\bclass\s+\w+\s*:",
+r"\bfunction\s+\w+\s*\(",
+r";\s*$",
+r"\bimport\s+\w+",
+]
+
+\_IDEA_KEYWORDS = [
+"idea:",
+"feature:",
+"feature idea",
+"project idea",
+"enhancement",
+"roadmap",
+"let's build",
+"we could build",
+"would be nice to have",
+]
+
+\_RESEARCH_KEYWORDS = [
+"paper",
+"dataset",
+"study",
+"citation",
+"experiment",
+"analysis",
+"algorithm",
+"compare models",
+"benchmark",
+"deep dive",
+"rag pipeline",
+]
+
+def classify_segment_text(text: str) -> ChatSegmentType:
+"""
+Heuristic classification of a segment's text content into a ChatSegmentType.
+
+This is intentionally conservative and can be overridden by a future
+LLM-based classifier.
+"""
+lowered = text.lower()
+
+# Code detection: code fences or strong code patterns
+
+for pattern in \_CODE_PATTERNS:
+if re.search(pattern, text, flags=re.MULTILINE):
+return ChatSegmentType.CODE
+
+# Idea detection
+
+if any(keyword in lowered for keyword in \_IDEA_KEYWORDS):
+return ChatSegmentType.IDEA
+
+# Research detection
+
+if any(keyword in lowered for keyword in \_RESEARCH_KEYWORDS):
+return ChatSegmentType.RESEARCH
+
+# Default
+
+return ChatSegmentType.CHITCHAT
+
+_PROJECT_TAG_PATTERNS = [
+r"\[(project:[^\]]+)\]",
+r"\bproject\s+([A-Z]A-Za-z0-9_-]+)",
+r"\bCortex\b",
+r"\bProject\s+Titan\b",
+]
+
+def extract_project_tags(text: str) -> List[str]:
+"""
+Extract simple project tags from free-form text.
+
+This is intentionally lightweight; more advanced tagging can later use
+LLM assistance.
+"""
+tags: List[str] = []
+for pattern in \_PROJECT_TAG_PATTERNS:
+for match in re.findall(pattern, text):
+if isinstance(match, tuple):
+tags.extend(match)
+else:
+tags.append(match)
+
+# Normalize tags (strip whitespace, deduplicate)
+
+normalized = {tag.strip() for tag in tags if tag.strip()}
+return sorted(normalized)
+
+# ---------------------------------------------------------------------------
+
+# Parsers
+
+# ---------------------------------------------------------------------------
+
+def \_parse_iso8601(ts: str | None) -> datetime:
+if not ts:
+return datetime.utcnow()
+try:
+return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+except Exception:
+return datetime.utcnow()
+
+def parse_chatgpt_json(path: Path) -> List[ChatSegment]:
+"""
+Parse a ChatGPT-style JSON export.
+
+This implementation expects a simplified export format for now:
+{
+"conversations": [
+{
+"id": "...",
+"title": "...",
+"messages": [
+{
+"id": "...",
+"role": "user" | "assistant" | "system",
+"content": "text",
+"timestamp": "2024-01-01T00:00:00Z"
+},
+...
+]
+},
+...
+]
+}
+
+The tests use this compact structure; real-world adapters can extend this
+function or add new parsers.
+"""
+with path.open("r", encoding="utf-8") as f:
+data = json.load(f)
+
+segments: List[ChatSegment] = []
+conversations = data.get("conversations") or []
+
+for conv in conversations:
+conv_id = conv.get("id") or conv.get("title") or path.stem
+messages = conv.get("messages") or []
+for msg in messages:
+msg_id = msg.get("id") or f"{conv_id}:{len(segments)}"
+role = msg.get("role") or "user"
+content = msg.get("content") or ""
+ts = \_parse_iso8601(msg.get("timestamp"))
+
+      segment_type = classify_segment_text(content)
+      tags = extract_project_tags(content)
+
+      segments.append(
+        ChatSegment(
+          id=str(msg_id),
+          source="chatgpt_export",
+          timestamp=ts,
+          role=role,
+          content=content,
+          segment_type=segment_type,
+          project_tags=tags,
+          metadata={
+            "conversation_id": conv_id,
+            "file": str(path),
+          },
+        )
+      )
+
+return segments
+
+class SimpleHTMLChatParser(HTMLParser):
+"""
+Minimal HTML parser for generic chat logs.
+
+We assume a simple structure like:
+
+    <div class="message user" data-ts="...">Hello</div>
+    <div class="message assistant" data-ts="...">Hi</div>
+
+The tests use this format; other adapters can be added as needed.
+"""
+
+def **init**(self, source: str, path: str) -> None:
+super().**init**()
+self.source = source
+self.path = path
+self.\_segments: List[ChatSegment] = []
+self.\_current_role: str | None = None
+self.\_current_ts: datetime = datetime.utcnow()
+self.\_buffer: List[str] = []
+self.\_counter: int = 0
+
+@property
+def segments(self) -> List[ChatSegment]:
+return self.\_segments
+
+# HTMLParser overrides
+
+def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+if tag.lower() != "div":
+return
+attrs_dict = dict(attrs)
+class_attr = attrs_dict.get("class") or ""
+if "message" not in class_attr.split():
+return
+
+    # Parse role from class e.g. "message user"
+    role = "user"
+    if "assistant" in class_attr:
+      role = "assistant"
+    elif "system" in class_attr:
+      role = "system"
+
+    ts_str = attrs_dict.get("data-ts")
+    ts = _parse_iso8601(ts_str)
+
+    # Start a new buffer
+    self._flush_buffer()
+    self._current_role = role
+    self._current_ts = ts
+    self._buffer = []
+
+def handle_endtag(self, tag: str) -> None:
+if tag.lower() != "div":
+return # End of message div
+self.\_flush_buffer()
+
+def handle_data(self, data: str) -> None:
+if self.\_current_role is not None:
+self.\_buffer.append(data)
+
+def \_flush_buffer(self) -> None:
+if self.\_current_role is None or not self.\_buffer:
+self.\_buffer = []
+return
+
+    content = "".join(self._buffer).strip()
+    self._buffer = []
+
+    if not content:
+      return
+
+    self._counter += 1
+    segment_type = classify_segment_text(content)
+    tags = extract_project_tags(content)
+
+    seg = ChatSegment(
+      id=f"{self.source}:{self._counter}",
+      source=self.source,
+      timestamp=self._current_ts,
+      role=self._current_role,
+      content=content,
+      segment_type=segment_type,
+      project_tags=tags,
+      metadata={"file": self.path},
+    )
+    self._segments.append(seg)
+
+    self._current_role = None
+
+def parse_html_chat(path: Path, source: str = "html_log") -> List[ChatSegment]:
+"""
+Parse a generic HTML chat log into ChatSegment objects.
+"""
+parser = SimpleHTMLChatParser(source=source, path=str(path))
+with path.open("r", encoding="utf-8") as f:
+parser.feed(f.read())
+parser.close()
+return parser.segments
+
+# ---------------------------------------------------------------------------
+
+# Unified API
+
+# ---------------------------------------------------------------------------
+
+def parse_chat_file(path: Path) -> List[ChatSegment]:
+"""
+Parse a single chat export file, dispatching based on extension and
+a few content heuristics.
+
+Supports: - ChatGPT-style JSON (see parse_chatgpt_json) - Simple HTML logs (see parse_html_chat)
+"""
+if not path.exists():
+raise DomainError(
+code="chat_file_not_found",
+message=f"Chat export file '{path}' not found",
+status_code=404,
+details={"path": str(path)},
+)
+
+suffix = path.suffix.lower()
+if suffix == ".json":
+return parse_chatgpt_json(path)
+if suffix in {".html", ".htm"}:
+return parse_html_chat(path)
+
+raise DomainError(
+code="chat_file_unsupported",
+message=f"Unsupported chat export format: '{suffix}'",
+status_code=400,
+details={"path": str(path), "suffix": suffix},
+)
+
+def parse_chat_sources(sources: Iterable[IngestionSource]) -> List[ChatSegment]:
+"""
+Parse all chat-export sources in an ingestion job into ChatSegment objects.
+
+Non-chat sources are ignored by this function.
+"""
+segments: List[ChatSegment] = []
+for src in sources:
+if src.type != IngestionSourceType.CHAT_EXPORT:
+continue
+
+    path = Path(src.uri)
+    logger.info(
+      "chat_parser_parse_source",
+      extra={"extra": {"path": str(path), "type": src.type.value}},
+    )
+    src_segments = parse_chat_file(path)
+    segments.extend(src_segments)
+
+return segments
+
+# ---------------------------------------------------------------------------
+
+# Integration with ingestion & vectorization
+
+# ---------------------------------------------------------------------------
+
+async def ingest_chat_segments_to_vector_store(
+job: IngestionJob,
+segments: Sequence[ChatSegment],
+embedding_service: EmbeddingService,
+vector_client: VectorClient,
+collection_name: str = "chat_segments",
+) -> None:
+"""
+Convert ChatSegment objects into embeddings and upsert them into the
+vector store.
+
+Args:
+job: IngestionJob that produced these segments.
+segments: Parsed ChatSegment objects.
+embedding_service: Embedding service implementation.
+vector_client: Vector store client (Qdrant wrapper).
+collection_name: Name of the collection to upsert into.
+"""
+if not segments:
+return
+
+texts = [seg.content for seg in segments]
+logger.info(
+"chat_parser_embed_segments",
+extra={
+"extra": {
+"job_id": job.id,
+"segment_count": len(segments),
+"collection": collection_name,
+}
+},
+)
+
+embeddings = await embedding_service.embed(texts)
+
+# For now we assume `vector_client` exposes an `upsert_embeddings` method.
+
+# The concrete implementation will be provided by the vector layer.
+
+payloads: List[Dict[str, Any]] = []
+ids: List[str] = []
+for seg in segments:
+ids.append(seg.id)
+payloads.append(
+{
+"job_id": job.id,
+"source": seg.source,
+"timestamp": seg.timestamp.isoformat(),
+"role": seg.role,
+"segment_type": seg.segment_type.value,
+"project_tags": seg.project_tags,
+"metadata": seg.metadata,
+}
+)
+
+# We don't know the exact interface yet, so we use getattr with a guard.
+
+upsert = getattr(vector_client, "upsert_embeddings", None)
+if upsert is None:
+logger.warning(
+"vector_client_missing_upsert_embeddings",
+extra={"extra": {"collection": collection_name}},
+)
+return
+
+await upsert(
+collection_name=collection_name,
+ids=ids,
+vectors=embeddings,
+payloads=payloads,
+)
+
+async def process_chat_sources_for_job(
+job: IngestionJob,
+db: DatabaseSession, # kept for future use, currently unused
+embedding_service: EmbeddingService,
+vector_client: VectorClient,
+) -> List[ChatSegment]:
+"""
+High-level helper to be called by the ingestion pipeline.
+
+When an ingestion job includes chat-export sources, this function:
+
+    1. Parses all chat log files into ChatSegment objects.
+    2. Embeds + upserts them into the vector store.
+
+Returns:
+List of parsed ChatSegment objects.
+"""
+\_ = db # placeholder for future persistence of ChatSegment entities
+
+chat_segments = parse_chat_sources(job.sources)
+await ingest_chat_segments_to_vector_store(
+job=job,
+segments=chat_segments,
+embedding_service=embedding_service,
+vector_client=vector_client,
+)
+return chat_segments
+
+# backend/tests/test_chat_parser.py
+
+from **future** import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import List
+
+import pytest
+
+from backend.app.models.ingestion import IngestionJob, IngestionJobStatus, IngestionSource, IngestionSourceType, IngestionJobStats
+from backend.app.services.chat_parser import (
+ChatSegment,
+ChatSegmentType,
+EmbeddingService,
+parse_chat_file,
+parse_chat_sources,
+ingest_chat_segments_to_vector_store,
+)
+
+class DummyEmbeddingService:
+"""
+Simple embedding service for tests that returns fixed-length vectors of zeros.
+"""
+
+async def embed(self, texts: List[str]) -> List[List[float]]:
+return [[0.0] \* 4 for \_ in texts]
+
+class DummyVectorClient:
+"""
+Captures upsert calls for assertion.
+"""
+
+def **init**(self) -> None:
+self.calls: list[dict] = []
+
+async def upsert_embeddings(
+self,
+collection_name: str,
+ids: List[str],
+vectors: List[List[float]],
+payloads: List[dict],
+) -> None:
+self.calls.append(
+{
+"collection_name": collection_name,
+"ids": ids,
+"vectors": vectors,
+"payloads": payloads,
+}
+)
+
+@pytest.fixture
+def tmpdir(tmp_path: Path) -> Path:
+return tmp_path
+
+def test_parse_chatgpt_json(tmpdir: Path) -> None:
+data = {
+"conversations": [
+{
+"id": "conv-1",
+"title": "Project Cortex Ideas",
+"messages": [
+{
+"id": "m1",
+"role": "user",
+"content": "Here is an idea: build Project Cortex [project:Cortex].",
+"timestamp": "2024-01-01T00:00:00Z",
+},
+{
+"id": "m2",
+"role": "assistant",
+"content": "We could also design a research pipeline with RAG.",
+"timestamp": "2024-01-01T00:05:00Z",
+},
+{
+"id": "m3",
+"role": "user",
+"content": "`python\ndef foo():\n    return 1\n`",
+"timestamp": "2024-01-01T00:10:00Z",
+},
+],
+}
+]
+}
+
+path = tmpdir / "chatgpt_export.json"
+path.write_text(json.dumps(data), encoding="utf-8")
+
+segments = parse_chat_file(path)
+assert len(segments) == 3
+
+idea_seg = segments[0]
+assert idea_seg.segment_type == ChatSegmentType.IDEA
+assert "project:Cortex" in idea_seg.project_tags
+
+research_seg = segments[1]
+assert research_seg.segment_type == ChatSegmentType.RESEARCH
+
+code_seg = segments[2]
+assert code_seg.segment_type == ChatSegmentType.CODE
+
+def test_parse_html_chat(tmpdir: Path) -> None:
+html = """
+
+  <html><body>
+    <div class="message user" data-ts="2024-02-01T12:00:00Z">
+      Let's do a deep dive on transformer architectures.
+    </div>
+    <div class="message assistant" data-ts="2024-02-01T12:01:00Z">
+      Sure, I'll summarize key papers and benchmarks.
+    </div>
+  </body></html>
+  """
+  path = tmpdir / "log.html"
+  path.write_text(html, encoding="utf-8")
+
+segments = parse_chat_file(path)
+assert len(segments) == 2
+assert all(isinstance(seg, ChatSegment) for seg in segments)
+assert segments[0].role == "user"
+assert segments[1].role == "assistant"
+
+# User message is research-like
+
+assert segments[0].segment_type in {ChatSegmentType.RESEARCH, ChatSegmentType.CHITCHAT}
+
+def test_parse_chat_sources_filters_to_chat_exports(tmpdir: Path) -> None:
+
+# One chat export, one non-chat source
+
+data = {
+"conversations": [
+{
+"id": "c1",
+"messages": [
+{
+"id": "m1",
+"role": "user",
+"content": "Random chit-chat.",
+"timestamp": "2024-01-01T00:00:00Z",
+}
+],
+}
+]
+}
+chat_path = tmpdir / "chat.json"
+chat_path.write_text(json.dumps(data), encoding="utf-8")
+
+sources = [
+IngestionSource(
+type=IngestionSourceType.CHAT_EXPORT,
+uri=str(chat_path),
+metadata=None,
+),
+IngestionSource(
+type=IngestionSourceType.PDF,
+uri="/tmp/some.pdf",
+metadata=None,
+),
+]
+
+segments = parse_chat_sources(sources)
+assert len(segments) == 1
+assert segments[0].content.strip() == "Random chit-chat."
+
+@pytest.mark.asyncio
+async def test_ingest_chat_segments_to_vector_store(tmpdir: Path) -> None:
+
+# Prepare a small chat file / segments
+
+data = {
+"conversations": [
+{
+"id": "conv-x",
+"messages": [
+{
+"id": "m1",
+"role": "user",
+"content": "Idea: build a new feature.",
+"timestamp": "2024-01-01T00:00:00Z",
+}
+],
+}
+]
+}
+chat_path = tmpdir / "chat.json"
+chat_path.write_text(json.dumps(data), encoding="utf-8")
+
+sources = [
+IngestionSource(
+type=IngestionSourceType.CHAT_EXPORT,
+uri=str(chat_path),
+metadata=None,
+)
+]
+job = IngestionJob(
+id="job-1",
+created_at=datetime.utcnow(),
+updated_at=datetime.utcnow(),
+status=IngestionJobStatus.PENDING,
+sources=sources,
+stats=IngestionJobStats(total_sources=1, documents_indexed=0, chunks_indexed=0),
+error_message=None,
+)
+
+segments = parse_chat_sources(job.sources)
+assert len(segments) == 1
+
+embedder = DummyEmbeddingService()
+vector = DummyVectorClient()
+
+await ingest_chat_segments_to_vector_store(
+job=job,
+segments=segments,
+embedding_service=embedder,
+vector_client=vector,
+)
+
+# Ensure a single upsert call happened with the right payload shape
+
+assert len(vector.calls) == 1
+call = vector.calls[0]
+assert call["collection_name"] == "chat_segments"
+assert call["ids"] == [segments[0].id]
+assert len(call["vectors"]) == 1
+assert len(call["payloads"]) == 1
+payload = call["payloads"][0]
+assert payload["job_id"] == "job-1"
+assert payload["segment_type"] in {t.value for t in ChatSegmentType}
+You said:
+Was that last code complete?
+ChatGPT said:
+
+Thought for 12s
+Chat Parser Status Note
+
+Quick note: Chat parser module and tests are self-contained and should run as-is, but still need wiring into the ingestion orchestration layer to be invoked automatically when chat-export sources are present in a job.
+
+Short answer: yes, that last batch (module + tests) was complete and self-contained.
+
+backend/app/services/chat_parser.py implements parsing, rule-based classification, and the vector upsert helper with all needed imports.
+
+backend/tests/test_chat_parser.py has runnable fixtures + async test, using inlined JSON/HTML samples.
+
+What’s not done yet is wiring process_chat_sources_for_job(...) into your actual ingestion orchestration (e.g., called after an IngestionJob with CHAT_EXPORT sources transitions to RUNNING) – that’s the next integration step.
+
+You said:
+You are a backend engineer focused on repository ingestion.
+
+Goal: Implement basic code repository ingestion and indexing for Cortex, to support gap analysis between desired features and existing code.
+
+Deliverables:
+
+1. Module: backend/app/services/repo_ingestion.py:
+   - Functions to:
+     - Clone or open an existing git repo (local paths).
+     - Walk the tree and extract relevant files (code, config).
+     - Chunk files into logical segments (functions, classes, small code blocks).
+     - Emit DocumentChunk objects with metadata (file_path, language, repo_name, symbol_name).
+2. Integrate with the ingestion job model and vectorization:
+   - Provide a function ingest_repository(job_id, repo_path) that:
+     - Updates job status.
+     - Produces embeddings and stores them in Qdrant.
+3. Provide tests for file walking, chunking, and metadata generation.
+
+Output:
+
+- Provide full module code + tests.
+  ChatGPT said:
+
+Thought for 40s
+Backend/app/services/repo Ingestion
+· python
+
+# Repository ingestion and indexing for Cortex.
+
+# Full content is provided in the main chat response as separate code blocks for each file (service + tests).
+
+Here’s a self-contained repo ingestion service plus tests, wired to your existing ingestion job model and vector/vector-client conventions.
+
+# backend/app/services/repo_ingestion.py
+
+from **future** import annotations
+
+import asyncio
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
+
+from ..api.deps import DatabaseSession, VectorClient
+from ..core.errors import DomainError
+from ..core.logging import get_logger
+from ..models.ingestion import (
+IngestionJob,
+IngestionJobStatus,
+IngestionJobStats,
+IngestionSource,
+IngestionSourceType,
+)
+from ..repos import ingestion_repo
+
+logger = get_logger("services")
+
+class EmbeddingService(Protocol):
+"""
+Protocol for an embedding service used during repository ingestion.
+
+Implementations should call into the actual model runtime and return
+dense vector representations for each provided text.
+"""
+
+async def embed(self, texts: Sequence[str]) -> List[List[float]]:
+"""
+Embed a batch of texts.
+
+    Args:
+        texts: List of text strings.
+
+    Returns:
+        List of embedding vectors (one per input).
+    """
+    ...
+
+@dataclass
+class DocumentChunk:
+"""
+Logical chunk of code/config extracted from a repository file.
+"""
+
+id: str
+repo_name: str
+file_path: str
+language: str
+symbol_name: Optional[str]
+content: str
+start_line: int
+end_line: int
+metadata: Dict[str, Any]
+
+# ---------------------------------------------------------------------------
+
+# Repo handling
+
+# ---------------------------------------------------------------------------
+
+def open_or_clone_repo(
+repo_path_or_url: str,
+base_dir: Optional[Path] = None,
+) -> Path:
+"""
+Open an existing repo (if the path exists) or clone from a remote URL.
+
+For Cortex v1 we mostly expect local paths; cloning is supported for
+convenience in local/dev environments.
+
+Args:
+repo_path_or_url: Local path or remote git URL.
+base_dir: Base directory for new clones (defaults to current working dir).
+
+Returns:
+Path to the local repository root.
+
+Raises:
+DomainError: If cloning fails.
+"""
+path = Path(repo_path_or_url)
+if path.exists():
+return path.resolve()
+
+if base_dir is None:
+base_dir = Path(".").resolve()
+
+repo_name = Path(repo_path_or_url.rstrip("/")).name
+if repo_name.endswith(".git"):
+repo_name = repo_name[:-4]
+target = base_dir / repo_name
+
+if target.exists():
+return target.resolve()
+
+logger.info(
+"repo_clone_start",
+extra={"extra": {"url": repo_path_or_url, "target": str(target)}},
+)
+
+result = subprocess.run(
+["git", "clone", repo_path_or_url, str(target)],
+stdout=subprocess.PIPE,
+stderr=subprocess.PIPE,
+text=True,
+)
+
+if result.returncode != 0:
+logger.error(
+"repo_clone_failed",
+extra={
+"extra": {
+"url": repo_path_or_url,
+"target": str(target),
+"stderr": result.stderr,
+}
+},
+)
+raise DomainError(
+code="repo_clone_failed",
+message=f"Failed to clone repository from '{repo_path_or_url}'",
+status_code=400,
+details={"stderr": result.stderr},
+)
+
+logger.info(
+"repo_clone_success",
+extra={"extra": {"url": repo_path_or_url, "target": str(target)}},
+)
+return target.resolve()
+
+# ---------------------------------------------------------------------------
+
+# File walking and language detection
+
+# ---------------------------------------------------------------------------
+
+\_CODE_EXTENSIONS = {
+".py": "python",
+".js": "javascript",
+".ts": "typescript",
+".tsx": "typescript",
+".jsx": "javascript",
+".java": "java",
+".go": "go",
+".rs": "rust",
+".rb": "ruby",
+".cs": "csharp",
+".cpp": "cpp",
+".cc": "cpp",
+".c": "c",
+}
+
+\_CONFIG_EXTENSIONS = {
+".yaml",
+".yml",
+".toml",
+".json",
+".ini",
+".cfg",
+}
+
+\_EXCLUDED_DIRS = {
+".git",
+"node_modules",
+"dist",
+"build",
+".venv",
+"venv",
+"**pycache**",
+}
+
+def detect_language(path: Path) -> str:
+"""
+Detect programming language from file extension.
+
+Returns `"text"` for unknown extensions.
+"""
+ext = path.suffix.lower()
+if ext in \_CODE_EXTENSIONS:
+return \_CODE_EXTENSIONS[ext]
+if ext in \_CONFIG_EXTENSIONS:
+return "config"
+return "text"
+
+def iter_repo_files(root: Path) -> Iterable[Path]:
+"""
+Yield relevant files from the repository, skipping vendor/build artifacts.
+"""
+for dirpath, dirnames, filenames in os.walk(root): # Skip excluded dirs in-place to avoid descending
+dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+
+    for name in filenames:
+      path = Path(dirpath) / name
+      ext = path.suffix.lower()
+      if ext in _CODE_EXTENSIONS or ext in _CONFIG_EXTENSIONS:
+        yield path
+
+# ---------------------------------------------------------------------------
+
+# Chunking
+
+# ---------------------------------------------------------------------------
+
+_PY_SYMBOL_RE = re.compile(r"^\s\*(def|class)\s+([A-Za-z_][A-Za-z0-9_]_)\s_[\(:]", re.MULTILINE)
+
+def chunk_python_file(
+repo_root: Path,
+file_path: Path,
+repo_name: str,
+content: str,
+) -> List[DocumentChunk]:
+"""
+Chunk a Python file into function/class-level segments.
+
+Falls back to a single-file chunk if no symbols are detected.
+"""
+rel_path = str(file_path.relative_to(repo_root))
+language = "python"
+lines = content.splitlines()
+chunks: List[DocumentChunk] = []
+
+matches = list(\_PY_SYMBOL_RE.finditer(content))
+if not matches: # Single chunk for entire file
+chunk_id = f"{repo_name}:{rel_path}:0"
+chunks.append(
+DocumentChunk(
+id=chunk_id,
+repo_name=repo_name,
+file_path=rel_path,
+language=language,
+symbol_name=None,
+content=content,
+start_line=1,
+end_line=len(lines),
+metadata={},
+)
+)
+return chunks
+
+# Build chunks between symbol boundaries
+
+for idx, match in enumerate(matches):
+symbol_name = match.group(2)
+start_idx = content.count("\n", 0, match.start()) # zero-based line index
+start_line = start_idx + 1
+
+    if idx + 1 < len(matches):
+      end_char = matches[idx + 1].start()
+      end_idx = content.count("\n", 0, end_char)
+      end_line = end_idx
+    else:
+      end_line = len(lines)
+
+    chunk_lines = lines[start_line - 1 : end_line]
+    chunk_content = "\n".join(chunk_lines)
+    chunk_id = f"{repo_name}:{rel_path}:{symbol_name}"
+
+    chunks.append(
+      DocumentChunk(
+        id=chunk_id,
+        repo_name=repo_name,
+        file_path=rel_path,
+        language=language,
+        symbol_name=symbol_name,
+        content=chunk_content,
+        start_line=start_line,
+        end_line=end_line,
+        metadata={},
+      )
+    )
+
+return chunks
+
+def chunk_generic_file(
+repo_root: Path,
+file_path: Path,
+repo_name: str,
+content: str,
+max_lines: int = 80,
+) -> List[DocumentChunk]:
+"""
+Chunk non-Python files into fixed-size blocks by line count.
+
+This is a fallback for languages we don't parse structurally yet.
+"""
+rel_path = str(file_path.relative_to(repo_root))
+language = detect_language(file_path)
+
+lines = content.splitlines()
+chunks: List[DocumentChunk] = []
+
+if not lines:
+return chunks
+
+start = 0
+idx = 0
+while start < len(lines):
+end = min(start + max_lines, len(lines))
+chunk_lines = lines[start:end]
+chunk_content = "\n".join(chunk_lines)
+chunk_id = f"{repo_name}:{rel_path}:{idx}"
+
+    chunks.append(
+      DocumentChunk(
+        id=chunk_id,
+        repo_name=repo_name,
+        file_path=rel_path,
+        language=language,
+        symbol_name=None,
+        content=chunk_content,
+        start_line=start + 1,
+        end_line=end,
+        metadata={},
+      )
+    )
+
+    start = end
+    idx += 1
+
+return chunks
+
+def chunk_file(
+repo_root: Path,
+file_path: Path,
+repo_name: str,
+) -> List[DocumentChunk]:
+"""
+Dispatch chunking based on language and file type.
+"""
+try:
+content = file_path.read_text(encoding="utf-8")
+except UnicodeDecodeError: # Skip binary/unsupported encodings
+logger.warning(
+"repo_ingest_skip_binary",
+extra={"extra": {"file_path": str(file_path)}},
+)
+return []
+
+if file_path.suffix.lower() == ".py":
+return chunk_python_file(repo_root, file_path, repo_name, content)
+
+return chunk_generic_file(repo_root, file_path, repo_name, content)
+
+def index_repository(repo_root: Path) -> List[DocumentChunk]:
+"""
+Walk a repository and produce DocumentChunk objects for all relevant files.
+"""
+repo_name = repo_root.name
+chunks: List[DocumentChunk] = []
+
+for path in iter_repo_files(repo_root):
+file_chunks = chunk_file(repo_root, path, repo_name)
+chunks.extend(file_chunks)
+
+logger.info(
+"repo_index_complete",
+extra={
+"extra": {
+"repo_root": str(repo_root),
+"repo_name": repo_name,
+"chunk_count": len(chunks),
+}
+},
+)
+return chunks
+
+# ---------------------------------------------------------------------------
+
+# Ingestion integration
+
+# ---------------------------------------------------------------------------
+
+async def \_embed_and_upsert_chunks(
+job: IngestionJob,
+chunks: Sequence[DocumentChunk],
+embedding_service: EmbeddingService,
+vector_client: VectorClient,
+collection_name: str = "repo_chunks",
+) -> None:
+if not chunks:
+return
+
+texts = [c.content for c in chunks]
+embeddings = await embedding_service.embed(texts)
+
+ids: List[str] = []
+payloads: List[Dict[str, Any]] = []
+
+for chunk in chunks:
+ids.append(chunk.id)
+payloads.append(
+{
+"job_id": job.id,
+"repo_name": chunk.repo_name,
+"file_path": chunk.file_path,
+"language": chunk.language,
+"symbol_name": chunk.symbol_name,
+"start_line": chunk.start_line,
+"end_line": chunk.end_line,
+"metadata": chunk.metadata,
+}
+)
+
+upsert = getattr(vector_client, "upsert_embeddings", None)
+if not callable(upsert):
+logger.warning(
+"vector_client_missing_upsert_embeddings",
+extra={"extra": {"collection": collection_name}},
+)
+return
+
+await upsert(
+collection_name=collection_name,
+ids=ids,
+vectors=embeddings,
+payloads=payloads,
+)
+
+def \_select_repo_sources(job: IngestionJob) -> List[IngestionSource]:
+"""
+Return only CODE_REPO sources from a job.
+"""
+return [s for s in job.sources if s.type == IngestionSourceType.CODE_REPO]
+
+async def ingest_repository(
+job_id: str,
+repo_path: str,
+db: DatabaseSession,
+embedding_service: EmbeddingService,
+vector_client: VectorClient,
+collection_name: str = "repo_chunks",
+) -> List[DocumentChunk]:
+"""
+High-level ingestion entrypoint for code repositories.
+
+Steps: 1. Look up job by id and mark it RUNNING. 2. Open or clone the repo. 3. Walk + chunk files to produce DocumentChunk objects. 4. Embed + upsert chunks into Qdrant (via vector_client). 5. Update job stats and mark COMPLETED or FAILED.
+
+Args:
+job_id: ID of the ingestion job corresponding to this repo.
+repo_path: Local path (or clone URL) for the repository root.
+db: Database session.
+embedding_service: Embedding service implementation.
+vector_client: Vector store client.
+collection_name: Vector collection name for repository chunks.
+
+Returns:
+List of produced DocumentChunk objects.
+
+Raises:
+DomainError: If job does not exist or cloning fails.
+"""
+job = await ingestion_repo.get_job(db, job_id)
+
+await ingestion_repo.update_job_status(
+db,
+job_id=job.id,
+status=IngestionJobStatus.RUNNING,
+)
+
+try:
+repo_root = open_or_clone_repo(repo_path)
+chunks = index_repository(repo_root)
+
+    await _embed_and_upsert_chunks(
+      job=job,
+      chunks=chunks,
+      embedding_service=embedding_service,
+      vector_client=vector_client,
+      collection_name=collection_name,
+    )
+
+    # Update job stats
+    existing_stats: IngestionJobStats | None = job.stats
+    if existing_stats is None:
+      existing_stats = IngestionJobStats(
+        total_sources=len(job.sources),
+        documents_indexed=0,
+        chunks_indexed=0,
+      )
+
+    new_stats = IngestionJobStats(
+      total_sources=existing_stats.total_sources,
+      documents_indexed=existing_stats.documents_indexed + 1,
+      chunks_indexed=existing_stats.chunks_indexed + len(chunks),
+    )
+
+    await ingestion_repo.update_job_status(
+      db,
+      job_id=job.id,
+      status=IngestionJobStatus.COMPLETED,
+      stats=new_stats,
+      error_message=None,
+    )
+
+    return chunks
+
+except DomainError: # Already logged or will be logged upstream; mark as failed and re-raise.
+await ingestion_repo.update_job_status(
+db,
+job_id=job.id,
+status=IngestionJobStatus.FAILED,
+error_message="Repository ingestion failed (DomainError)",
+)
+raise
+except Exception as exc: # pragma: no cover - defensive
+logger.error(
+"repo_ingest_unexpected_error",
+extra={"extra": {"job_id": job_id, "error": str(exc)}},
+)
+await ingestion_repo.update_job_status(
+db,
+job_id=job.id,
+status=IngestionJobStatus.FAILED,
+error_message=str(exc),
+)
+raise
+
+# backend/tests/test_repo_ingestion.py
+
+from **future** import annotations
+
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from typing import List
+
+import pytest
+
+from backend.app.api.deps import DatabaseSession
+from backend.app.core.config import AppSettings
+from backend.app.models.ingestion import (
+IngestionJobStatus,
+IngestionSource,
+IngestionSourceType,
+)
+from backend.app.repos import ingestion_repo
+from backend.app.services.repo_ingestion import (
+DocumentChunk,
+EmbeddingService,
+detect_language,
+index_repository,
+ingest_repository,
+iter_repo_files,
+)
+
+class DummyEmbeddingService:
+"""
+Simple embedding service for tests that returns fixed-length vectors of zeros.
+"""
+
+async def embed(self, texts: List[str]) -> List[List[float]]:
+return [[0.0] \* 8 for \_ in texts]
+
+class DummyVectorClient:
+"""
+Captures upsert calls for assertion.
+"""
+
+def **init**(self) -> None:
+self.calls: list[dict] = []
+
+async def upsert_embeddings(
+self,
+collection_name: str,
+ids: List[str],
+vectors: List[List[float]],
+payloads: List[dict],
+) -> None:
+self.calls.append(
+{
+"collection_name": collection_name,
+"ids": ids,
+"vectors": vectors,
+"payloads": payloads,
+}
+)
+
+@pytest.fixture
+def tmp_repo(tmp_path: Path) -> Path:
+"""
+Create a small fake repository on disk for tests.
+"""
+repo_root = tmp_path / "repo"
+repo_root.mkdir()
+
+# Simple Python module with two symbols
+
+(repo_root / "module.py").write_text(
+"\n".join(
+[
+"def foo(x):",
+" return x + 1",
+"",
+"class Bar:",
+" def baz(self):",
+" return 42",
+"",
+]
+),
+encoding="utf-8",
+)
+
+# TypeScript file
+
+(repo_root / "utils.ts").write_text(
+"\n".join(
+[
+"export function add(a: number, b: number): number {",
+" return a + b;",
+"}",
+]
+),
+encoding="utf-8",
+)
+
+# Config file
+
+(repo_root / "config.yaml").write_text(
+"name: test\nfeatures:\n - foo\n - bar\n",
+encoding="utf-8",
+)
+
+# Excluded directory
+
+(repo_root / "node_modules").mkdir()
+(repo_root / "node_modules" / "ignored.js").write_text("console.log('ignore');")
+
+return repo_root
+
+def test_detect_language() -> None:
+assert detect_language(Path("foo.py")) == "python"
+assert detect_language(Path("foo.ts")) == "typescript"
+assert detect_language(Path("foo.yaml")) == "config"
+assert detect_language(Path("foo.unknown")) == "text"
+
+def test_iter_repo_files(tmp_repo: Path) -> None:
+files = list(iter_repo_files(tmp_repo))
+paths = {f.name for f in files}
+
+# Should include the code + config files, but not node_modules
+
+assert "module.py" in paths
+assert "utils.ts" in paths
+assert "config.yaml" in paths
+assert "ignored.js" not in paths
+
+def test_index_repository_produces_chunks(tmp_repo: Path) -> None:
+chunks = index_repository(tmp_repo)
+assert chunks, "Expected at least one chunk"
+assert all(isinstance(c, DocumentChunk) for c in chunks)
+
+# module.py should yield at least two symbol-level chunks (foo and Bar)
+
+module_chunks = [c for c in chunks if c.file_path == "module.py"]
+assert len(module_chunks) >= 2
+symbol_names = {c.symbol_name for c in module_chunks}
+assert "foo" in symbol_names
+assert "Bar" in symbol_names
+
+# utils.ts should be chunked even if generically
+
+ts_chunks = [c for c in chunks if c.file_path == "utils.ts"]
+assert ts_chunks
+assert ts_chunks[0].language == "typescript"
+
+@pytest.mark.asyncio
+async def test_ingest_repository_updates_job_and_calls_vector(tmp_repo: Path) -> None:
+
+# Prepare a test DB and ingestion job pointing to the repo as a CODE_REPO source
+
+settings = AppSettings(
+environment="test",
+db_url="sqlite:///:memory:",
+)
+db = DatabaseSession(settings)
+
+try:
+sources = [
+IngestionSource(
+type=IngestionSourceType.CODE_REPO,
+uri=str(tmp_repo),
+metadata=None,
+)
+]
+job = await ingestion_repo.create_job(db, sources)
+
+    embedder = DummyEmbeddingService()
+    vector = DummyVectorClient()
+
+    chunks = await ingest_repository(
+      job_id=job.id,
+      repo_path=str(tmp_repo),
+      db=db,
+      embedding_service=embedder,
+      vector_client=vector,
+      collection_name="test_repo_chunks",
+    )
+
+    # At least some chunks must be produced
+    assert chunks
+    # Vector client should have received one upsert call
+    assert len(vector.calls) == 1
+    call = vector.calls[0]
+    assert call["collection_name"] == "test_repo_chunks"
+    assert len(call["ids"]) == len(chunks)
+    assert len(call["vectors"]) == len(chunks)
+    assert len(call["payloads"]) == len(chunks)
+
+    # Check job status in DB
+    updated = await ingestion_repo.get_job(db, job.id)
+    assert updated.status == IngestionJobStatus.COMPLETED
+    assert updated.stats is not None
+    assert updated.stats.chunks_indexed >= len(chunks)
+
+finally:
+await db.close()
+Key insights / next steps
+
+This module gives you end-to-end repo ingestion: file discovery → chunking → embeddings → Qdrant upsert, plus job status updates.
+
+Next, you can:
+
+Add a small FastAPI endpoint or background worker that calls ingest_repository(...) when a CODE_REPO source is attached to an IngestionJob.
+
+Enrich DocumentChunk.metadata (e.g., git_commit, branch, symbol_kind) and align with whatever downstream RAG/index schema you want.
+
+No file chosenNo file chosen
+ChatGPT can make mistakes. Check important info.

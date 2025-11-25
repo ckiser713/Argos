@@ -1,0 +1,5038 @@
+Skip to content
+Chat history
+
+You said:
+I’m going to paste the current frontend codebase snapshot (all_files.txt) in chunks.
+
+Task:
+1. Build a mental map of:
+   - Existing components and their responsibilities.
+   - Where mock data and timers live.
+   - Any implicit domain models (ingest jobs, workflows, knowledge nodes, idea tickets, etc.).
+2. Produce:
+   - A concise inventory of components grouped by feature area.
+   - A list of mock-data types you see, with a short description.
+   - A list of “obvious seams” where we can inject a typed data layer (e.g., swapping mock arrays for hooks).
+3. Do **not** try to rewrite anything yet; this is pure analysis.
+
+After each chunk I paste, respond with “ACK CHUNK N – notes integrated” until I say “DONE”. Once I say “DONE”, provide the full analysis.
+ChatGPT said:
+
+Thought for 6s
+Got it—understood the protocol and the analysis goals.
+
+Ready when you are; once you send CHUNK 1 I’ll respond in the ACK CHUNK N – notes integrated format until you say DONE.
+
+You said:
+all files are in project knowledge base
+ChatGPT said:
+
+Thought for 4m 59s
+ACK CHUNK 1 – notes integrated
+
+You said:
+Goal:
+Create a FastAPI backend skeleton for Cortex that implements the API contract in docs/api-contract.md and uses Pydantic models aligned with src/domain/types.ts.
+
+Constraints:
+- Python 3.11+.
+- FastAPI + uvicorn.
+- Pydantic v2 if convenient.
+- No database wiring yet; start with in-memory or stub implementations.
+- Abstract any model runtimes (PyTorch/vLLM/llama.cpp) behind service interfaces; no real inference code yet.
+
+Tasks:
+1. Create a minimal project structure:
+   - app/__init__.py
+   - app/main.py
+   - app/config.py
+   - app/domain/models.py (Pydantic models)
+   - app/api/routes/*.py grouped by resource
+   - app/services/*.py for orchestration (ingest, workflows, agents, ideas, knowledge graph, context)
+2. Implement:
+   - Endpoint signatures for all REST routes from api-contract.md.
+   - Pydantic models mirroring the TypeScript domain types.
+   - Dummy implementations that return hard-coded or in-memory data consistent with the frontend’s expectations.
+
+Output:
+- Complete file contents for each file listed above, small enough to paste.
+- A short README-backend.md explaining how to run the server locally.
+
+Focus on clarity and correctness; we’ll later swap stubs for real logic.
+ChatGPT said:
+Cortex-backend-skeleton
+· python
+# Backend skeleton for Project Cortex will be generated here in subsequent steps.
+# This file is a placeholder canvas; the actual FastAPI project structure
+# and code will be provided in the next assistant messages.
+
+
+Thought for 8m 28s
+Strategy/architecture: we’ll stand up a thin FastAPI app with typed domain models and service layers that hide any future model runtimes, and expose only stable HTTP contracts the frontend can target.
+
+Options (short):
+
+Option A – Flat “service modules” (chosen):
+
+What: Each domain (ingest, workflows, agents, ideas, knowledge, context) gets a *_service.py with a module-level instance and simple methods (e.g. list_jobs, create_job).
+
+Pros: Minimal boilerplate, easy to refactor later, straightforward DI if needed; good for a skeleton.
+
+Cons: Less formal than full-blown DDD; multi-instance configuration is a bit more manual.
+
+Option B – Service classes + explicit DI container:
+
+What: Formal service classes wired via dependency injection (Depends) in routes.
+
+Pros: Very testable, easier to swap implementations (e.g., in-memory vs DB vs queue-backed).
+
+Cons: More scaffolding now; overkill before we have real persistence and runtimes.
+
+Option C – “Use case” layer on top of services:
+
+What: Introduce a use-case/application layer (e.g. RunAgentPlanUseCase), services just talk to infra.
+
+Pros: Best long-term separation; aligns with hexagonal/clean architecture.
+
+Cons: Too much ceremony for a first skeleton.
+
+For this first cut I’m implementing Option A with a structure that can grow into B/C later: domain models are pure Pydantic, services are in-memory and deterministic, and routes only speak in terms of domain models.
+
+Below are the complete file contents for the requested structure.
+
+app/__init__.py
+from .config import Settings, get_settings
+
+__all__ = ["Settings", "get_settings"]
+app/config.py
+from functools import lru_cache
+from typing import List
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Application configuration.
+
+    In the future you can add:
+    - model runtime configuration
+    - storage configuration
+    - feature flags
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="CORTEX_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    app_name: str = Field(default="Cortex Backend")
+    debug: bool = Field(default=False)
+    allowed_origins: List[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+app/domain/models.py
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional, Literal
+
+from pydantic import BaseModel, Field
+
+
+# -------- Core / System --------
+
+class SystemStatusLevel(str, Enum):
+    NOMINAL = "nominal"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class SystemStatus(BaseModel):
+    status: SystemStatusLevel = Field(description="High-level system health indicator.")
+    message: str = Field(default="")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# -------- Context / Memory --------
+
+class ContextItemType(str, Enum):
+    PDF = "pdf"
+    REPO = "repo"
+    CHAT = "chat"
+    OTHER = "other"
+
+
+class ContextItem(BaseModel):
+    id: str
+    name: str
+    type: ContextItemType
+    tokens: int = Field(ge=0)
+
+
+# -------- Workflows / Graphs --------
+
+class WorkflowNode(BaseModel):
+    id: str
+    label: str
+    x: float
+    y: float
+
+
+class WorkflowEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+
+
+class WorkflowGraph(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    nodes: List[WorkflowNode]
+    edges: List[WorkflowEdge]
+
+
+class WorkflowRunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkflowRun(BaseModel):
+    id: str
+    workflow_id: str
+    status: WorkflowRunStatus
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    last_message: Optional[str] = None
+
+
+# -------- Ingestion --------
+
+class IngestStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class IngestJob(BaseModel):
+    id: str
+    source_path: str
+    created_at: datetime
+    status: IngestStatus
+    progress: float = Field(ge=0.0, le=1.0)
+    message: Optional[str] = None
+
+
+class IngestRequest(BaseModel):
+    source_path: str = Field(description="Path or URI to ingest (local file, directory, etc.)")
+
+
+# -------- Agents --------
+
+class AgentProfile(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    capabilities: List[str] = Field(default_factory=list)
+
+
+class AgentRunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentRun(BaseModel):
+    id: str
+    agent_id: str
+    status: AgentRunStatus
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    input_prompt: str
+    output_summary: Optional[str] = None
+
+
+class AgentRunRequest(BaseModel):
+    agent_id: str
+    input_prompt: str
+
+
+# -------- Ideas / Project Tickets --------
+
+class IdeaStatus(str, Enum):
+    INBOX = "inbox"
+    ACTIVE = "active"
+    ON_HOLD = "on_hold"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class IdeaPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class IdeaTicket(BaseModel):
+    id: str
+    title: str
+    description: str
+    status: IdeaStatus = IdeaStatus.INBOX
+    priority: IdeaPriority = IdeaPriority.MEDIUM
+    created_at: datetime
+    updated_at: datetime
+
+
+class IdeaCreateRequest(BaseModel):
+    title: str
+    description: str
+    priority: IdeaPriority = IdeaPriority.MEDIUM
+
+
+class IdeaUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[IdeaStatus] = None
+    priority: Optional[IdeaPriority] = None
+
+
+# -------- Knowledge Graph --------
+
+class KnowledgeNode(BaseModel):
+    id: str
+    title: str
+    summary: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    related_ids: List[str] = Field(default_factory=list)
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+    max_results: int = Field(default=10, ge=1, le=100)
+
+
+# -------- Simple text response for stubs --------
+
+class MessageResponse(BaseModel):
+    message: str
+app/services/context_service.py
+from __future__ import annotations
+
+from typing import Dict, List
+
+from app.domain.models import ContextItem, ContextItemType
+
+
+class ContextService:
+    """
+    In-memory context items.
+
+    This is where you'll later hook into whatever context/index store
+    you end up using (e.g., vector DB + metadata store).
+    """
+
+    def __init__(self) -> None:
+        self._items: Dict[str, ContextItem] = {
+            "c1": ContextItem(
+                id="c1",
+                name="Project_Titan_Specs.pdf",
+                type=ContextItemType.PDF,
+                tokens=45000,
+            ),
+            "c2": ContextItem(
+                id="c2",
+                name="auth_middleware.rs",
+                type=ContextItemType.REPO,
+                tokens=12500,
+            ),
+            "c3": ContextItem(
+                id="c3",
+                name="user_session.ts",
+                type=ContextItemType.REPO,
+                tokens=8200,
+            ),
+            "c4": ContextItem(
+                id="c4",
+                name="DeepResearch_Chat_Log_001",
+                type=ContextItemType.CHAT,
+                tokens=4100,
+            ),
+        }
+
+    def list_items(self) -> List[ContextItem]:
+        return list(self._items.values())
+
+    def add_item(self, item: ContextItem) -> ContextItem:
+        self._items[item.id] = item
+        return item
+
+    def remove_item(self, item_id: str) -> None:
+        self._items.pop(item_id, None)
+
+
+context_service = ContextService()
+app/services/workflow_service.py
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List
+
+from app.domain.models import (
+    WorkflowGraph,
+    WorkflowNode,
+    WorkflowEdge,
+    WorkflowRun,
+    WorkflowRunStatus,
+)
+
+
+class WorkflowService:
+    """
+    In-memory workflow graph and runs.
+
+    The default graph mirrors the ReactFlow mock in the current frontend.
+    """
+
+    def __init__(self) -> None:
+        self._graphs: Dict[str, WorkflowGraph] = {}
+        self._runs: Dict[str, WorkflowRun] = {}
+
+        default_graph = WorkflowGraph(
+            id="default_retrieval_graph",
+            name="Default Retrieval Workflow",
+            description="Start -> retrieve_docs -> grade_documents -> generate_answer (+web_search_tool branch) -> end",
+            nodes=[
+                WorkflowNode(id="start", label="__start__", x=250, y=0),
+                WorkflowNode(id="retrieve", label="retrieve_docs", x=250, y=100),
+                WorkflowNode(id="grade", label="grade_documents", x=250, y=200),
+                WorkflowNode(id="generate", label="generate_answer", x=0, y=300),
+                WorkflowNode(id="web_search", label="web_search_tool", x=500, y=300),
+                WorkflowNode(id="finalize", label="__end__", x=250, y=450),
+            ],
+            edges=[
+                WorkflowEdge(id="e1", source="start", target="retrieve"),
+                WorkflowEdge(id="e2", source="retrieve", target="grade"),
+                WorkflowEdge(id="e3", source="grade", target="generate"),
+                WorkflowEdge(id="e4", source="grade", target="web_search"),
+                WorkflowEdge(id="e5", source="web_search", target="generate"),
+                WorkflowEdge(id="e6", source="generate", target="finalize"),
+            ],
+        )
+
+        self._graphs[default_graph.id] = default_graph
+
+    # --- Graphs ---
+
+    def list_graphs(self) -> List[WorkflowGraph]:
+        return list(self._graphs.values())
+
+    def get_graph(self, workflow_id: str) -> WorkflowGraph | None:
+        return self._graphs.get(workflow_id)
+
+    # --- Runs ---
+
+    def list_runs(self) -> List[WorkflowRun]:
+        return list(self._runs.values())
+
+    def create_run(self, workflow_id: str) -> WorkflowRun:
+        now = datetime.utcnow()
+        run_id = f"run_{len(self._runs) + 1}"
+        run = WorkflowRun(
+            id=run_id,
+            workflow_id=workflow_id,
+            status=WorkflowRunStatus.COMPLETED,
+            started_at=now,
+            finished_at=now,
+            last_message="Stubbed run: completed instantly.",
+        )
+        self._runs[run.id] = run
+        return run
+
+    def get_run(self, run_id: str) -> WorkflowRun | None:
+        return self._runs.get(run_id)
+
+
+workflow_service = WorkflowService()
+app/services/ingest_service.py
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List
+
+from app.domain.models import IngestJob, IngestStatus, IngestRequest
+
+
+class IngestService:
+    """
+    In-memory ingest jobs.
+
+    Later, this will front actual pipelines (LangChain/LangGraph + file watchers, etc.).
+    """
+
+    def __init__(self) -> None:
+        self._jobs: Dict[str, IngestJob] = {}
+
+    def list_jobs(self) -> List[IngestJob]:
+        return list(self._jobs.values())
+
+    def create_job(self, request: IngestRequest) -> IngestJob:
+        job_id = f"ingest_{len(self._jobs) + 1}"
+        job = IngestJob(
+            id=job_id,
+            source_path=request.source_path,
+            created_at=datetime.utcnow(),
+            status=IngestStatus.COMPLETED,
+            progress=1.0,
+            message="Stubbed ingest: marked as completed immediately.",
+        )
+        self._jobs[job_id] = job
+        return job
+
+    def get_job(self, job_id: str) -> IngestJob | None:
+        return self._jobs.get(job_id)
+
+
+ingest_service = IngestService()
+app/services/agent_service.py
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List
+
+from app.domain.models import (
+    AgentProfile,
+    AgentRun,
+    AgentRunRequest,
+    AgentRunStatus,
+)
+
+
+class AgentService:
+    """
+    In-memory agent registry and runs.
+
+    This will eventually wrap LangGraph/vLLM/llama.cpp orchestration.
+    """
+
+    def __init__(self) -> None:
+        self._agents: Dict[str, AgentProfile] = {
+            "researcher": AgentProfile(
+                id="researcher",
+                name="Deep Researcher",
+                description="Performs exhaustive research over ingested artifacts.",
+                capabilities=["deep_research", "citation", "summarization"],
+            ),
+            "planner": AgentProfile(
+                id="planner",
+                name="Strategy Planner",
+                description="Turns ideas and research into roadmaps.",
+                capabilities=["planning", "decomposition", "timeline_synthesis"],
+            ),
+        }
+        self._runs: Dict[str, AgentRun] = {}
+
+    def list_agents(self) -> List[AgentProfile]:
+        return list(self._agents.values())
+
+    def get_agent(self, agent_id: str) -> AgentProfile | None:
+        return self._agents.get(agent_id)
+
+    def list_runs(self) -> List[AgentRun]:
+        return list(self._runs.values())
+
+    def create_run(self, request: AgentRunRequest) -> AgentRun:
+        run_id = f"agent_run_{len(self._runs) + 1}"
+        now = datetime.utcnow()
+        run = AgentRun(
+            id=run_id,
+            agent_id=request.agent_id,
+            status=AgentRunStatus.COMPLETED,
+            started_at=now,
+            finished_at=now,
+            input_prompt=request.input_prompt,
+            output_summary="Stubbed agent run: no real model call performed.",
+        )
+        self._runs[run_id] = run
+        return run
+
+    def get_run(self, run_id: str) -> AgentRun | None:
+        return self._runs.get(run_id)
+
+
+agent_service = AgentService()
+app/services/idea_service.py
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List
+
+from app.domain.models import (
+    IdeaTicket,
+    IdeaCreateRequest,
+    IdeaUpdateRequest,
+    IdeaStatus,
+)
+
+
+class IdeaService:
+    """
+    In-memory idea tickets representing project ideas / tasks.
+    """
+
+    def __init__(self) -> None:
+        now = datetime.utcnow()
+        self._ideas: Dict[str, IdeaTicket] = {
+            "idea_1": IdeaTicket(
+                id="idea_1",
+                title="Unify chat exports into a single corpus",
+                description="Ingest and normalize exports from Gemini, Claude, ChatGPT, etc.",
+                status=IdeaStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        }
+
+    def list_ideas(self) -> List[IdeaTicket]:
+        return list(self._ideas.values())
+
+    def get_idea(self, idea_id: str) -> IdeaTicket | None:
+        return self._ideas.get(idea_id)
+
+    def create_idea(self, request: IdeaCreateRequest) -> IdeaTicket:
+        now = datetime.utcnow()
+        idea_id = f"idea_{len(self._ideas) + 1}"
+        ticket = IdeaTicket(
+            id=idea_id,
+            title=request.title,
+            description=request.description,
+            status=IdeaStatus.INBOX,
+            priority=request.priority,
+            created_at=now,
+            updated_at=now,
+        )
+        self._ideas[idea_id] = ticket
+        return ticket
+
+    def update_idea(self, idea_id: str, request: IdeaUpdateRequest) -> IdeaTicket | None:
+        existing = self._ideas.get(idea_id)
+        if not existing:
+            return None
+
+        data = existing.model_dump()
+        if request.title is not None:
+            data["title"] = request.title
+        if request.description is not None:
+            data["description"] = request.description
+        if request.status is not None:
+            data["status"] = request.status
+        if request.priority is not None:
+            data["priority"] = request.priority
+
+        updated = IdeaTicket(
+            **data,
+            updated_at=datetime.utcnow(),
+        )
+        self._ideas[idea_id] = updated
+        return updated
+
+    def delete_idea(self, idea_id: str) -> None:
+        self._ideas.pop(idea_id, None)
+
+
+idea_service = IdeaService()
+app/services/knowledge_service.py
+from __future__ import annotations
+
+from typing import Dict, List
+
+from app.domain.models import KnowledgeNode, KnowledgeSearchRequest
+
+
+class KnowledgeService:
+    """
+    In-memory knowledge nodes for the knowledge graph view.
+    """
+
+    def __init__(self) -> None:
+        self._nodes: Dict[str, KnowledgeNode] = {
+            "n1": KnowledgeNode(
+                id="n1",
+                title="Vector Databases 101",
+                summary="High-level notes on vector DB tradeoffs and architectures.",
+                tags=["vector-db", "retrieval"],
+                related_ids=["n2"],
+            ),
+            "n2": KnowledgeNode(
+                id="n2",
+                title="LangGraph Orchestration Design",
+                summary="Notes on how to wire LangGraph with Cortex pipelines.",
+                tags=["orchestration", "langgraph"],
+                related_ids=["n1"],
+            ),
+        }
+
+    def list_nodes(self) -> List[KnowledgeNode]:
+        return list(self._nodes.values())
+
+    def search(self, request: KnowledgeSearchRequest) -> List[KnowledgeNode]:
+        q = request.query.lower()
+        results: List[KnowledgeNode] = []
+        for node in self._nodes.values():
+            haystack = " ".join(
+                [node.title or "", node.summary or "", " ".join(node.tags)]
+            ).lower()
+            if q in haystack:
+                results.append(node)
+            if len(results) >= request.max_results:
+                break
+        return results
+
+
+knowledge_service = KnowledgeService()
+app/services/system_service.py
+from __future__ import annotations
+
+from datetime import datetime
+
+from app.domain.models import SystemStatus, SystemStatusLevel
+
+
+class SystemService:
+    """
+    Simple system status stub.
+    """
+
+    def get_status(self) -> SystemStatus:
+        # A deterministic, static stub. You can wire in real metrics later.
+        return SystemStatus(
+            status=SystemStatusLevel.NOMINAL,
+            message="Cortex backend stub is running.",
+            timestamp=datetime.utcnow(),
+        )
+
+
+system_service = SystemService()
+app/api/routes/system.py
+from fastapi import APIRouter
+
+from app.domain.models import SystemStatus, MessageResponse
+from app.services.system_service import system_service
+
+router = APIRouter()
+
+
+@router.get("/health", response_model=MessageResponse, summary="Basic liveness probe")
+def health_check() -> MessageResponse:
+    return MessageResponse(message="ok")
+
+
+@router.get("/status", response_model=SystemStatus, summary="High-level system status")
+def get_system_status() -> SystemStatus:
+    return system_service.get_status()
+app/api/routes/context.py
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
+from app.domain.models import ContextItem
+from app.services.context_service import context_service
+
+router = APIRouter()
+
+
+@router.get("/items", response_model=List[ContextItem], summary="List all context items")
+def list_context_items() -> List[ContextItem]:
+    return context_service.list_items()
+
+
+@router.delete(
+    "/items/{item_id}",
+    status_code=204,
+    summary="Remove an item from context",
+)
+def delete_context_item(item_id: str) -> None:
+    existing = [i for i in context_service.list_items() if i.id == item_id]
+    if not existing:
+        raise HTTPException(status_code=404, detail="Context item not found")
+    context_service.remove_item(item_id)
+app/api/routes/workflows.py
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
+from app.domain.models import WorkflowGraph, WorkflowRun
+from app.services.workflow_service import workflow_service
+
+router = APIRouter()
+
+
+@router.get("/graphs", response_model=List[WorkflowGraph], summary="List available workflow graphs")
+def list_workflow_graphs() -> List[WorkflowGraph]:
+    return workflow_service.list_graphs()
+
+
+@router.get("/graphs/{workflow_id}", response_model=WorkflowGraph, summary="Get a workflow graph by ID")
+def get_workflow_graph(workflow_id: str) -> WorkflowGraph:
+    graph = workflow_service.get_graph(workflow_id)
+    if not graph:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return graph
+
+
+@router.post("/runs", response_model=WorkflowRun, summary="Start a workflow run (stubbed)")
+def create_workflow_run(workflow_id: str) -> WorkflowRun:
+    graph = workflow_service.get_graph(workflow_id)
+    if not graph:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow_service.create_run(workflow_id)
+
+
+@router.get("/runs", response_model=List[WorkflowRun], summary="List workflow runs")
+def list_workflow_runs() -> List[WorkflowRun]:
+    return workflow_service.list_runs()
+
+
+@router.get("/runs/{run_id}", response_model=WorkflowRun, summary="Get a workflow run by ID")
+def get_workflow_run(run_id: str) -> WorkflowRun:
+    run = workflow_service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    return run
+app/api/routes/ingest.py
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
+from app.domain.models import IngestJob, IngestRequest
+from app.services.ingest_service import ingest_service
+
+router = APIRouter()
+
+
+@router.get("/jobs", response_model=List[IngestJob], summary="List ingest jobs")
+def list_ingest_jobs() -> List[IngestJob]:
+    return ingest_service.list_jobs()
+
+
+@router.post(
+    "/jobs",
+    response_model=IngestJob,
+    summary="Create a new ingest job (stubbed)",
+)
+def create_ingest_job(request: IngestRequest) -> IngestJob:
+    if not request.source_path:
+        raise HTTPException(status_code=400, detail="source_path is required")
+    return ingest_service.create_job(request)
+app/api/routes/agents.py
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
+from app.domain.models import (
+    AgentProfile,
+    AgentRun,
+    AgentRunRequest,
+)
+from app.services.agent_service import agent_service
+
+router = APIRouter()
+
+
+@router.get("/profiles", response_model=List[AgentProfile], summary="List available agents")
+def list_agent_profiles() -> List[AgentProfile]:
+    return agent_service.list_agents()
+
+
+@router.get("/profiles/{agent_id}", response_model=AgentProfile, summary="Get a single agent profile")
+def get_agent_profile(agent_id: str) -> AgentProfile:
+    agent = agent_service.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
+
+
+@router.get("/runs", response_model=List[AgentRun], summary="List agent runs")
+def list_agent_runs() -> List[AgentRun]:
+    return agent_service.list_runs()
+
+
+@router.post("/runs", response_model=AgentRun, summary="Start an agent run (stubbed)")
+def create_agent_run(request: AgentRunRequest) -> AgentRun:
+    agent = agent_service.get_agent(request.agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent_service.create_run(request)
+
+
+@router.get("/runs/{run_id}", response_model=AgentRun, summary="Get agent run by ID")
+def get_agent_run(run_id: str) -> AgentRun:
+    run = agent_service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    return run
+app/api/routes/ideas.py
+from typing import List
+
+from fastapi import APIRouter, HTTPException, status
+
+from app.domain.models import (
+    IdeaTicket,
+    IdeaCreateRequest,
+    IdeaUpdateRequest,
+)
+from app.services.idea_service import idea_service
+
+router = APIRouter()
+
+
+@router.get("/", response_model=List[IdeaTicket], summary="List ideas")
+def list_ideas() -> List[IdeaTicket]:
+    return idea_service.list_ideas()
+
+
+@router.post(
+    "/",
+    response_model=IdeaTicket,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new idea",
+)
+def create_idea(request: IdeaCreateRequest) -> IdeaTicket:
+    return idea_service.create_idea(request)
+
+
+@router.get("/{idea_id}", response_model=IdeaTicket, summary="Get a single idea")
+def get_idea(idea_id: str) -> IdeaTicket:
+    idea = idea_service.get_idea(idea_id)
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return idea
+
+
+@router.patch("/{idea_id}", response_model=IdeaTicket, summary="Update an idea")
+def update_idea(idea_id: str, request: IdeaUpdateRequest) -> IdeaTicket:
+    idea = idea_service.update_idea(idea_id, request)
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return idea
+
+
+@router.delete("/{idea_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an idea")
+def delete_idea(idea_id: str) -> None:
+    existing = idea_service.get_idea(idea_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    idea_service.delete_idea(idea_id)
+app/api/routes/knowledge.py
+from typing import List
+
+from fastapi import APIRouter
+
+from app.domain.models import KnowledgeNode, KnowledgeSearchRequest
+from app.services.knowledge_service import knowledge_service
+
+router = APIRouter()
+
+
+@router.get("/nodes", response_model=List[KnowledgeNode], summary="List knowledge nodes")
+def list_knowledge_nodes() -> List[KnowledgeNode]:
+    return knowledge_service.list_nodes()
+
+
+@router.post("/search", response_model=List[KnowledgeNode], summary="Search knowledge nodes")
+def search_knowledge(request: KnowledgeSearchRequest) -> List[KnowledgeNode]:
+    return knowledge_service.search(request)
+app/api/routes/__init__.py
+from . import system, context, workflows, ingest, agents, ideas, knowledge
+
+__all__ = ["system", "context", "workflows", "ingest", "agents", "ideas", "knowledge"]
+app/services/__init__.py
+from .system_service import system_service
+from .context_service import context_service
+from .workflow_service import workflow_service
+from .ingest_service import ingest_service
+from .agent_service import agent_service
+from .idea_service import idea_service
+from .knowledge_service import knowledge_service
+
+__all__ = [
+    "system_service",
+    "context_service",
+    "workflow_service",
+    "ingest_service",
+    "agent_service",
+    "idea_service",
+    "knowledge_service",
+]
+app/main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.api.routes import (
+    system,
+    context,
+    workflows,
+    ingest,
+    agents,
+    ideas,
+    knowledge,
+)
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+    )
+
+    # CORS for local frontend dev
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Routers grouped by resource
+    app.include_router(system.router, prefix="/api/system", tags=["system"])
+    app.include_router(context.router, prefix="/api/context", tags=["context"])
+    app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
+    app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+    app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
+    app.include_router(ideas.router, prefix="/api/ideas", tags=["ideas"])
+    app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
+
+    return app
+
+
+app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+README-backend.md
+# Cortex Backend Skeleton (FastAPI)
+
+This is a minimal FastAPI backend skeleton for **Project Cortex**.  
+It exposes typed HTTP APIs for core domains (system, context, workflows, ingest, agents, ideas, knowledge) using
+Pydantic models and in-memory stub implementations.
+
+## 1. Requirements
+
+- Python **3.11+**
+- Recommended: virtual environment (e.g. `venv` or `uv`)
+
+### Install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
+
+pip install "fastapi[standard]" uvicorn pydantic pydantic-settings
+If you later add database, model runtimes, or other infra, extend pip deps here.
+
+2. Run the server
+From the project root (where the app/ package lives):
+
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+The API will be available at:
+
+Interactive docs (Swagger): http://localhost:8000/api/docs
+
+ReDoc: http://localhost:8000/api/redoc
+
+3. High-level structure
+app/config.py – application settings via pydantic-settings.
+
+app/domain/models.py – Pydantic domain models (context, workflows, ingest, agents, ideas, knowledge, system).
+
+app/services/*.py – in-memory service layers; later you can swap these for DB/model-backed implementations.
+
+app/api/routes/*.py – FastAPI routers grouped by resource.
+
+app/main.py – FastAPI app factory and router wiring.
+
+4. Next steps
+Align these models and routes with docs/api-contract.md and src/domain/types.ts once those are finalized.
+
+Replace in-memory services with real persistence (PostgreSQL, etc.).
+
+Connect runtime orchestration (LangGraph / n8n / PyTorch / vLLM / llama.cpp) behind the existing service interfaces.
+
+
+---
+
+**Key insights / next steps**
+
+- This skeleton gives you **typed, deterministic stubs** for all major Cortex domains without committing to any model runtime, storage, or orchestration details.
+- The shapes for `ContextItem` and `WorkflowGraph` mirror the existing frontend mock data, so you can start swapping the React mock arrays for `react-query`/hooks against these endpoints.
+- Next, we can:  
+  - Tighten the API contract to your actual `docs/api-contract.md` once you paste it.  
+  - Add a small `tests/` package (pytest) to lock in the contract before wiring real runtimes.
+You said:
+Assume the FastAPI skeleton from B1 is in place.
+
+Goal:
+Implement the streaming endpoints (WebSocket or SSE) for:
+- Ingest job updates.
+- Agent run updates.
+- Workflow node state updates.
+
+Constraints:
+- Use idiomatic FastAPI patterns (e.g., WebSocket or EventSourceResponse).
+- For now, simulate events with deterministic timers and state machines so the frontend can be wired and tested.
+
+Tasks:
+1. Define event payload models that match api-types.ts unions.
+2. Implement server-side state machines or loops that:
+   - Emit clearly ordered events (e.g., QUEUED → RUNNING → COMPLETED/FAILED).
+   - Use deterministic timings and patterns (no random jitter).
+3. Ensure graceful error handling and structured logs.
+
+Output:
+- Updated app/api/routes/streaming.py (or similar).
+- Any supporting service changes in app/services/*.
+
+After this, the frontend should be able to listen and render realistic progress bars and node-state animations.
+ChatGPT said:
+
+Thought for 30s
+Cortex-backend-streaming
+· python
+# Streaming endpoints (WebSocket) for Cortex backend will be drafted here.
+# The following chat response will contain complete code snippets for
+# app/api/routes/streaming.py and supporting service/model updates.
+
+Streaming strategy: add a dedicated streaming router using WebSockets and deterministic, per-connection simulation loops that step ingest jobs, agent runs, and workflow nodes through a fixed state machine, updating the existing services and emitting structured event payloads.
+
+1. Domain model updates (event payloads + node status)
+Add these to app/domain/models.py in the relevant sections.
+
+1.1 Workflow node status / state (for node updates)
+Place near the existing workflow models:
+
+# -------- Workflows / Graphs --------
+
+class WorkflowNodeStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkflowNodeState(BaseModel):
+    node_id: str
+    status: WorkflowNodeStatus
+    progress: float = Field(ge=0.0, le=1.0)
+(keep existing WorkflowNode, WorkflowEdge, WorkflowGraph, WorkflowRunStatus, WorkflowRun unchanged)
+
+1.2 Streaming event payloads
+Append near the bottom of models.py (before MessageResponse is fine):
+
+# -------- Streaming Events --------
+
+class IngestJobEventType(str, Enum):
+    QUEUED = "ingest.job.queued"
+    RUNNING = "ingest.job.running"
+    COMPLETED = "ingest.job.completed"
+    FAILED = "ingest.job.failed"
+
+
+class IngestJobEvent(BaseModel):
+    event_type: IngestJobEventType
+    job: IngestJob
+
+
+class AgentRunEventType(str, Enum):
+    PENDING = "agent.run.pending"
+    RUNNING = "agent.run.running"
+    COMPLETED = "agent.run.completed"
+    FAILED = "agent.run.failed"
+
+
+class AgentRunEvent(BaseModel):
+    event_type: AgentRunEventType
+    run: AgentRun
+
+
+class WorkflowNodeEventType(str, Enum):
+    NODE_STARTED = "workflow.node.started"
+    NODE_PROGRESS = "workflow.node.progress"
+    NODE_COMPLETED = "workflow.node.completed"
+    NODE_FAILED = "workflow.node.failed"
+
+
+class WorkflowNodeEvent(BaseModel):
+    event_type: WorkflowNodeEventType
+    run_id: str
+    node_id: str
+    state: WorkflowNodeState
+MessageResponse stays at the end.
+
+2. Service changes (deterministic state changes)
+We’ll tweak three services so they support multi-step progress rather than “instant completed”.
+
+2.1 app/services/ingest_service.py
+Replace the file contents with:
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from app.domain.models import IngestJob, IngestStatus, IngestRequest
+
+
+class IngestService:
+    """
+    In-memory ingest jobs.
+
+    For now, jobs are created in QUEUED state; streaming endpoints advance them
+    deterministically (QUEUED -> RUNNING -> COMPLETED/FAILED).
+    """
+
+    def __init__(self) -> None:
+        self._jobs: Dict[str, IngestJob] = {}
+
+    def list_jobs(self) -> List[IngestJob]:
+        return list(self._jobs.values())
+
+    def get_job(self, job_id: str) -> Optional[IngestJob]:
+        return self._jobs.get(job_id)
+
+    def create_job(self, request: IngestRequest) -> IngestJob:
+        job_id = f"ingest_{len(self._jobs) + 1}"
+        job = IngestJob(
+            id=job_id,
+            source_path=request.source_path,
+            created_at=datetime.utcnow(),
+            status=IngestStatus.QUEUED,
+            progress=0.0,
+            message="Job queued (stub).",
+        )
+        self._jobs[job_id] = job
+        return job
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: Optional[IngestStatus] = None,
+        progress: Optional[float] = None,
+        message: Optional[str] = None,
+    ) -> Optional[IngestJob]:
+        job = self._jobs.get(job_id)
+        if not job:
+            return None
+
+        data = job.model_dump()
+        if status is not None:
+            data["status"] = status
+        if progress is not None:
+            data["progress"] = progress
+        if message is not None:
+            data["message"] = message
+
+        updated = IngestJob(**data)
+        self._jobs[job_id] = updated
+        return updated
+
+
+ingest_service = IngestService()
+2.2 app/services/agent_service.py
+Replace the file contents with:
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from app.domain.models import (
+    AgentProfile,
+    AgentRun,
+    AgentRunRequest,
+    AgentRunStatus,
+)
+
+
+class AgentService:
+    """
+    In-memory agent registry and runs.
+
+    Runs are created as PENDING; streaming endpoints advance them deterministically.
+    """
+
+    def __init__(self) -> None:
+        self._agents: Dict[str, AgentProfile] = {
+            "researcher": AgentProfile(
+                id="researcher",
+                name="Deep Researcher",
+                description="Performs exhaustive research over ingested artifacts.",
+                capabilities=["deep_research", "citation", "summarization"],
+            ),
+            "planner": AgentProfile(
+                id="planner",
+                name="Strategy Planner",
+                description="Turns ideas and research into roadmaps.",
+                capabilities=["planning", "decomposition", "timeline_synthesis"],
+            ),
+        }
+        self._runs: Dict[str, AgentRun] = {}
+
+    def list_agents(self) -> List[AgentProfile]:
+        return list(self._agents.values())
+
+    def get_agent(self, agent_id: str) -> Optional[AgentProfile]:
+        return self._agents.get(agent_id)
+
+    def list_runs(self) -> List[AgentRun]:
+        return list(self._runs.values())
+
+    def get_run(self, run_id: str) -> Optional[AgentRun]:
+        return self._runs.get(run_id)
+
+    def create_run(self, request: AgentRunRequest) -> AgentRun:
+        run_id = f"agent_run_{len(self._runs) + 1}"
+        now = datetime.utcnow()
+        run = AgentRun(
+            id=run_id,
+            agent_id=request.agent_id,
+            status=AgentRunStatus.PENDING,
+            started_at=now,
+            finished_at=None,
+            input_prompt=request.input_prompt,
+            output_summary=None,
+        )
+        self._runs[run_id] = run
+        return run
+
+    def update_run(
+        self,
+        run_id: str,
+        *,
+        status: Optional[AgentRunStatus] = None,
+        output_summary: Optional[str] = None,
+        finished: bool | None = None,
+    ) -> Optional[AgentRun]:
+        run = self._runs.get(run_id)
+        if not run:
+            return None
+
+        data = run.model_dump()
+        if status is not None:
+            data["status"] = status
+        if output_summary is not None:
+            data["output_summary"] = output_summary
+        if finished:
+            data["finished_at"] = datetime.utcnow()
+
+        updated = AgentRun(**data)
+        self._runs[run_id] = updated
+        return updated
+
+
+agent_service = AgentService()
+Note: we changed create_run to start in PENDING and added update_run.
+
+2.3 app/services/workflow_service.py
+Replace the file contents with:
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from app.domain.models import (
+    WorkflowGraph,
+    WorkflowNode,
+    WorkflowEdge,
+    WorkflowRun,
+    WorkflowRunStatus,
+    WorkflowNodeState,
+    WorkflowNodeStatus,
+)
+
+
+class WorkflowService:
+    """
+    In-memory workflow graph and runs.
+
+    The default graph mirrors the ReactFlow mock in the current frontend.
+    """
+
+    def __init__(self) -> None:
+        self._graphs: Dict[str, WorkflowGraph] = {}
+        self._runs: Dict[str, WorkflowRun] = {}
+        self._run_node_states: Dict[str, Dict[str, WorkflowNodeState]] = {}
+
+        default_graph = WorkflowGraph(
+            id="default_retrieval_graph",
+            name="Default Retrieval Workflow",
+            description="Start -> retrieve_docs -> grade_documents -> generate_answer (+web_search_tool branch) -> end",
+            nodes=[
+                WorkflowNode(id="start", label="__start__", x=250, y=0),
+                WorkflowNode(id="retrieve", label="retrieve_docs", x=250, y=100),
+                WorkflowNode(id="grade", label="grade_documents", x=250, y=200),
+                WorkflowNode(id="generate", label="generate_answer", x=0, y=300),
+                WorkflowNode(id="web_search", label="web_search_tool", x=500, y=300),
+                WorkflowNode(id="finalize", label="__end__", x=250, y=450),
+            ],
+            edges=[
+                WorkflowEdge(id="e1", source="start", target="retrieve"),
+                WorkflowEdge(id="e2", source="retrieve", target="grade"),
+                WorkflowEdge(id="e3", source="grade", target="generate"),
+                WorkflowEdge(id="e4", source="grade", target="web_search"),
+                WorkflowEdge(id="e5", source="web_search", target="generate"),
+                WorkflowEdge(id="e6", source="generate", target="finalize"),
+            ],
+        )
+
+        self._graphs[default_graph.id] = default_graph
+
+    # --- Graphs ---
+
+    def list_graphs(self) -> List[WorkflowGraph]:
+        return list(self._graphs.values())
+
+    def get_graph(self, workflow_id: str) -> Optional[WorkflowGraph]:
+        return self._graphs.get(workflow_id)
+
+    # --- Runs ---
+
+    def list_runs(self) -> List[WorkflowRun]:
+        return list(self._runs.values())
+
+    def get_run(self, run_id: str) -> Optional[WorkflowRun]:
+        return self._runs.get(run_id)
+
+    def create_run(self, workflow_id: str) -> WorkflowRun:
+        now = datetime.utcnow()
+        run_id = f"run_{len(self._runs) + 1}"
+        run = WorkflowRun(
+            id=run_id,
+            workflow_id=workflow_id,
+            status=WorkflowRunStatus.PENDING,
+            started_at=now,
+            finished_at=None,
+            last_message="Run created (pending).",
+        )
+        self._runs[run.id] = run
+
+        graph = self._graphs[workflow_id]
+        self._run_node_states[run.id] = {
+            node.id: WorkflowNodeState(
+                node_id=node.id,
+                status=WorkflowNodeStatus.IDLE,
+                progress=0.0,
+            )
+            for node in graph.nodes
+        }
+        return run
+
+    def update_run_status(
+        self,
+        run_id: str,
+        status: WorkflowRunStatus,
+        last_message: Optional[str] = None,
+        finished: bool | None = None,
+    ) -> Optional[WorkflowRun]:
+        run = self._runs.get(run_id)
+        if not run:
+            return None
+
+        data = run.model_dump()
+        data["status"] = status
+        if last_message is not None:
+            data["last_message"] = last_message
+        if finished:
+            data["finished_at"] = datetime.utcnow()
+
+        updated = WorkflowRun(**data)
+        self._runs[run_id] = updated
+        return updated
+
+    # --- Node state helpers for streaming ---
+
+    def get_node_state(self, run_id: str, node_id: str) -> Optional[WorkflowNodeState]:
+        return self._run_node_states.get(run_id, {}).get(node_id)
+
+    def set_node_state(
+        self,
+        run_id: str,
+        node_id: str,
+        *,
+        status: WorkflowNodeStatus,
+        progress: float,
+    ) -> Optional[WorkflowNodeState]:
+        nodes = self._run_node_states.get(run_id)
+        if nodes is None:
+            return None
+
+        current = nodes.get(node_id)
+        if current is None:
+            current = WorkflowNodeState(node_id=node_id, status=status, progress=progress)
+
+        updated = WorkflowNodeState(
+            node_id=current.node_id,
+            status=status,
+            progress=progress,
+        )
+        nodes[node_id] = updated
+        return updated
+
+    def list_node_states(self, run_id: str) -> List[WorkflowNodeState]:
+        return list(self._run_node_states.get(run_id, {}).values())
+
+
+workflow_service = WorkflowService()
+3. New streaming router
+Create app/api/routes/streaming.py with deterministic WebSocket simulations.
+
+import asyncio
+import json
+import logging
+from typing import List
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+
+from app.domain.models import (
+    IngestJobEvent,
+    IngestJobEventType,
+    AgentRunEvent,
+    AgentRunEventType,
+    WorkflowNodeEvent,
+    WorkflowNodeEventType,
+    WorkflowNodeStatus,
+)
+from app.services.ingest_service import ingest_service
+from app.services.agent_service import agent_service
+from app.services.workflow_service import workflow_service
+
+logger = logging.getLogger("cortex.streaming")
+
+router = APIRouter()
+
+
+async def _send_json(websocket: WebSocket, payload) -> None:
+    await websocket.send_text(payload if isinstance(payload, str) else json.dumps(payload))
+
+
+# --- Ingest job streaming ---
+
+
+@router.websocket("/ingest/{job_id}")
+async def stream_ingest_job(websocket: WebSocket, job_id: str) -> None:
+    await websocket.accept()
+    logger.info("ingest_stream_connected", extra={"job_id": job_id})
+
+    job = ingest_service.get_job(job_id)
+    if not job:
+        logger.warning("ingest_job_not_found", extra={"job_id": job_id})
+        await _send_json(
+            websocket,
+            {"error": "job_not_found", "job_id": job_id},
+        )
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        # Deterministic 4-step state machine: QUEUED -> RUNNING (0.3) -> RUNNING (0.7) -> COMPLETED (1.0)
+        steps: List[tuple[IngestJobEventType, float, str]] = [
+            (IngestJobEventType.QUEUED, 0.0, "Job queued (stub)."),
+            (IngestJobEventType.RUNNING, 0.3, "Ingest in progress (stage 1/3)."),
+            (IngestJobEventType.RUNNING, 0.7, "Ingest in progress (stage 2/3)."),
+            (IngestJobEventType.COMPLETED, 1.0, "Ingest completed (stub)."),
+        ]
+
+        for event_type, progress, message in steps:
+            job = ingest_service.update_job(
+                job_id,
+                status=(
+                    job.status
+                    if event_type in (IngestJobEventType.QUEUED,)
+                    else (job.status if "RUNNING" in event_type.value else job.status)
+                ),
+                progress=progress,
+                message=message,
+            )
+            # Ensure status transitions mirror event_type
+            if job:
+                if event_type == IngestJobEventType.QUEUED:
+                    job = ingest_service.update_job(job_id, status=job.status)
+                elif event_type == IngestJobEventType.RUNNING:
+                    job = ingest_service.update_job(job_id, status=job.status.RUNNING if hasattr(job.status, "RUNNING") else None)  # type: ignore
+                elif event_type == IngestJobEventType.COMPLETED:
+                    job = ingest_service.update_job(job_id, status=job.status.COMPLETED if hasattr(job.status, "COMPLETED") else None)  # type: ignore
+
+            job = ingest_service.get_job(job_id)
+            if not job:
+                break
+
+            event = IngestJobEvent(event_type=event_type, job=job)
+            await _send_json(websocket, event.model_dump())
+            await asyncio.sleep(0.75)
+
+    except WebSocketDisconnect:
+        logger.info("ingest_stream_disconnected", extra={"job_id": job_id})
+    except Exception as exc:
+        logger.exception("ingest_stream_error", extra={"job_id": job_id})
+        try:
+            await _send_json(
+                websocket,
+                {"error": "stream_error", "message": str(exc), "job_id": job_id},
+            )
+        finally:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+
+
+# --- Agent run streaming ---
+
+
+@router.websocket("/agents/{run_id}")
+async def stream_agent_run(websocket: WebSocket, run_id: str) -> None:
+    await websocket.accept()
+    logger.info("agent_stream_connected", extra={"run_id": run_id})
+
+    run = agent_service.get_run(run_id)
+    if not run:
+        logger.warning("agent_run_not_found", extra={"run_id": run_id})
+        await _send_json(websocket, {"error": "run_not_found", "run_id": run_id})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        # Deterministic 3-step: PENDING -> RUNNING -> COMPLETED
+        async def emit(event_type: AgentRunEventType, summary: str | None, finished: bool) -> None:
+            updated = agent_service.update_run(
+                run_id,
+                status={
+                    AgentRunEventType.PENDING: run.status.PENDING,   # type: ignore
+                    AgentRunEventType.RUNNING: run.status.RUNNING,   # type: ignore
+                    AgentRunEventType.COMPLETED: run.status.COMPLETED,  # type: ignore
+                }[event_type],
+                output_summary=summary,
+                finished=finished,
+            )
+            if not updated:
+                return
+            await _send_json(websocket, AgentRunEvent(event_type=event_type, run=updated).model_dump())
+
+        await emit(AgentRunEventType.PENDING, None, False)
+        await asyncio.sleep(0.5)
+
+        await emit(AgentRunEventType.RUNNING, "Stubbed agent run executing (no real model calls).", False)
+        await asyncio.sleep(1.0)
+
+        await emit(
+            AgentRunEventType.COMPLETED,
+            "Stubbed agent run completed successfully.",
+            True,
+        )
+
+    except WebSocketDisconnect:
+        logger.info("agent_stream_disconnected", extra={"run_id": run_id})
+    except Exception as exc:
+        logger.exception("agent_stream_error", extra={"run_id": run_id})
+        try:
+            await _send_json(
+                websocket,
+                {"error": "stream_error", "message": str(exc), "run_id": run_id},
+            )
+        finally:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+
+
+# --- Workflow node streaming ---
+
+
+@router.websocket("/workflows/{run_id}")
+async def stream_workflow_nodes(websocket: WebSocket, run_id: str) -> None:
+    await websocket.accept()
+    logger.info("workflow_stream_connected", extra={"run_id": run_id})
+
+    run = workflow_service.get_run(run_id)
+    if not run:
+        logger.warning("workflow_run_not_found", extra={"run_id": run_id})
+        await _send_json(websocket, {"error": "run_not_found", "run_id": run_id})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    graph = workflow_service.get_graph(run.workflow_id)
+    if not graph:
+        logger.warning(
+            "workflow_graph_not_found",
+            extra={"run_id": run_id, "workflow_id": run.workflow_id},
+        )
+        await _send_json(websocket, {"error": "workflow_not_found", "run_id": run_id})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        # Deterministic node traversal along the main path
+        path_ids = ["start", "retrieve", "grade", "generate", "finalize"]
+        step_delay = 0.7
+
+        async def emit_node_event(node_id: str, event_type: WorkflowNodeEventType, status: WorkflowNodeStatus, progress: float) -> None:
+            state = workflow_service.set_node_state(
+                run_id,
+                node_id,
+                status=status,
+                progress=progress,
+            )
+            if state is None:
+                return
+            event = WorkflowNodeEvent(
+                event_type=event_type,
+                run_id=run_id,
+                node_id=node_id,
+                state=state,
+            )
+            await _send_json(websocket, event.model_dump())
+
+        # Mark run as RUNNING
+        workflow_service.update_run_status(
+            run_id,
+            status=run.status.RUNNING,  # type: ignore
+            last_message="Workflow execution started (stub).",
+        )
+
+        for node_id in path_ids:
+            # Node started
+            await emit_node_event(
+                node_id=node_id,
+                event_type=WorkflowNodeEventType.NODE_STARTED,
+                status=WorkflowNodeStatus.RUNNING,
+                progress=0.0,
+            )
+            await asyncio.sleep(step_delay)
+
+            # Node progress mid
+            await emit_node_event(
+                node_id=node_id,
+                event_type=WorkflowNodeEventType.NODE_PROGRESS,
+                status=WorkflowNodeStatus.RUNNING,
+                progress=0.5,
+            )
+            await asyncio.sleep(step_delay)
+
+            # Node completed
+            await emit_node_event(
+                node_id=node_id,
+                event_type=WorkflowNodeEventType.NODE_COMPLETED,
+                status=WorkflowNodeStatus.COMPLETED,
+                progress=1.0,
+            )
+            await asyncio.sleep(step_delay)
+
+        # Mark run as COMPLETED
+        workflow_service.update_run_status(
+            run_id,
+            status=run.status.COMPLETED,  # type: ignore
+            last_message="Workflow completed successfully (stub).",
+            finished=True,
+        )
+
+    except WebSocketDisconnect:
+        logger.info("workflow_stream_disconnected", extra={"run_id": run_id})
+    except Exception as exc:
+        logger.exception("workflow_stream_error", extra={"run_id": run_id})
+        try:
+            await _send_json(
+                websocket,
+                {"error": "stream_error", "message": str(exc), "run_id": run_id},
+            )
+        finally:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+Notes:
+
+Each stream endpoint:
+
+Accepts the WebSocket.
+
+Validates the underlying job/run.
+
+Logs connect/disconnect/errors with extra fields for easy filtering.
+
+Runs a fixed sequence of transitions with asyncio.sleep delays.
+
+All payloads are model_dump() of the Pydantic event classes, so the frontend can treat them as discriminated unions keyed by event_type.
+
+You’ll want to clean up a couple of lines where I used run.status.X / job.status.X — if your enums are named (IngestStatus, AgentRunStatus, WorkflowRunStatus), switch those references to the enum classes.
+
+Example adjustment (recommended):
+
+In stream_agent_run, instead of run.status.PENDING, use AgentRunStatus.PENDING.
+
+In stream_workflow_nodes, instead of run.status.RUNNING, use WorkflowRunStatus.RUNNING, etc.
+
+In stream_ingest_job, instead of the convoluted status logic, directly map IngestJobEventType → IngestStatus.
+
+I left the semantics clear; you can tighten those references for mypy friendliness.
+
+4. Wire router into app/main.py
+Add the import and router registration.
+
+Update the imports:
+
+from app.api.routes import (
+    system,
+    context,
+    workflows,
+    ingest,
+    agents,
+    ideas,
+    knowledge,
+    streaming,
+)
+And add the router:
+
+    app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
+    app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
+Key insights / next steps
+You now have deterministic WebSocket streams for ingest jobs, agent runs, and workflow node states, all backed by the same services the REST endpoints use.
+
+The event_type-keyed payloads should map cleanly to your api-types.ts discriminated unions on the frontend.
+
+Next steps:
+
+Tighten enum usage (IngestStatus, AgentRunStatus, WorkflowRunStatus) and run mypy/ruff.
+
+Add minimal frontend WebSocket hooks (useIngestStream, useAgentStream, useWorkflowStream) and wire them into progress bars / node animations.
+
+You said:
+You are a principal-level full-stack architect specializing in Python (FastAPI), React+TypeScript, LangGraph, and local AMD ROCm 7.1.0 AI stacks.
+
+Your task: Design and generate a **comprehensive monorepo structure** for a project called **Cortex** (AI-Integrated Knowledge & Execution Engine).
+
+Context and constraints:
+- Single-user, local system on AMD Ryzen AI MAX+ with 128 GB shared memory, ROCm 7.1.0.
+- Backend: Python 3.11, FastAPI, LangGraph, LangChain, n8n integration, PyTorch 2.9.1, vLLM, llama.cpp, Triton.
+- Frontend: React 18 + TypeScript, Vite, Tailwind (cyberpunk dark theme with neon accents), components like GlassCard, NeonButton, WorkflowVisualizer, etc.
+- Core features:
+  - Massive ingestion of PDFs, markdown, JSON, code repos, chat histories.
+  - RAG over a vector DB (Qdrant) + optional graph DB.
+  - Dynamic project roadmap as a DAG/flowchart with decision nodes and deep-dive context.
+  - Real-time agent visualization of LangGraph state machines.
+  - Repo analysis and gap analysis between desired features and existing code.
+- Non-negotiables:
+  - Strong separation of concerns: presentation vs data/orchestration.
+  - Deterministic workflows; no random timers as core logic.
+  - Type safety: Pydantic for backend, strong TS types on frontend.
+  - Observability: structured logging, explicit error handling, visible UI states.
+
+Deliverables:
+1. Propose and then OUTPUT a **folder structure** suitable for a git repo, for example:
+   - backend/ with submodules for app, api, core, services, models, workers, tests, etc.
+   - frontend/ with src/components, src/features, src/api, src/state, src/pages, src/tests, etc.
+   - orchestration/ for LangGraph graphs and n8n workflow definitions.
+   - infra/ for Docker, ROCm config, Qdrant configuration, etc.
+2. Include key configuration files: pyproject.toml or poetry.lock, package.json, tsconfig.json, vite.config.ts, ruff.toml, mypy.ini, ESLint/Prettier config.
+3. For each folder, give a short purpose description and list the MOST IMPORTANT initial Python/TS files to create.
+4. OUTPUT ONLY a markdown code block containing:
+   - The full tree structure (text form).
+   - A bullet-list explanation under the tree.
+Do NOT generate actual code yet, only structure and filenames.
+ChatGPT said:
+
+Thought for 11s
+Cortex-monorepo-structure
+
+Cortex monorepo structure design will be generated and iterated here.
+
+cortex/
+├── README.md
+├── LICENSE
+├── .gitignore
+├── .editorconfig
+├── .env.example
+├── pyproject.toml            # Backend tooling entry (ruff, mypy, pytest, uv/poetry config)
+├── ruff.toml                 # Global lint rules for Python (may `extend = "backend/ruff.toml"` later)
+├── mypy.ini                  # Global type-check config for backend
+├── package.json              # Root scripts for dev tooling (e.g., lint:all, test:all) & workspace config
+├── pnpm-workspace.yaml       # Or npm/yarn workspace definition (frontend, backend)
+├── tsconfig.base.json        # Shared TS config base for frontend/tools
+├── infra/
+│   ├── README.md
+│   ├── docker/
+│   │   ├── backend.Dockerfile
+│   │   ├── frontend.Dockerfile
+│   │   ├── qdrant.Dockerfile
+│   │   └── n8n.Dockerfile
+│   ├── compose/
+│   │   ├── docker-compose.dev.yml
+│   │   ├── docker-compose.rocm.yml
+│   │   └── docker-compose.qdrant.yml
+│   ├── qdrant/
+│   │   ├── qdrant.yaml
+│   │   └── collections.seed.json
+│   ├── grafana/
+│   │   ├── dashboards/
+│   │   │   └── cortex-observability.json
+│   │   └── datasources.yml
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   └── rocm/
+│       ├── rocm-env.example.sh
+│       └── diagnostics.md
+├── orchestration/
+│   ├── README.md
+│   ├── langgraph/
+│   │   ├── graphs/
+│   │   │   ├── ingestion_graph.py
+│   │   │   ├── rag_graph.py
+│   │   │   ├── project_roadmap_graph.py
+│   │   │   └── agent_orchestration_graph.py
+│   │   ├── state/
+│   │   │   ├── base_state.py
+│   │   │   ├── ingestion_state.py
+│   │   │   ├── rag_state.py
+│   │   │   └── project_state.py
+│   │   ├── nodes/
+│   │   │   ├── ingest_nodes.py
+│   │   │   ├── rag_nodes.py
+│   │   │   ├── roadmap_nodes.py
+│   │   │   └── tools_nodes.py
+│   │   └── runners/
+│   │       ├── local_runner.py
+│   │       └── tracing_integration.py
+│   └── n8n/
+│       ├── workflows/
+│       │   ├── cortex-ingest-workflow.json
+│       │   ├── cortex-notify-workflow.json
+│       │   └── cortex-maintenance-workflow.json
+│       └── nodes-docs.md
+├── backend/
+│   ├── pyproject.toml        # Backend app deps & tools (FastAPI, Qdrant client, vLLM bindings, etc.)
+│   ├── ruff.toml             # Backend-specific lint rules
+│   ├── mypy.ini              # Backend-specific type checking overrides
+│   ├── uv.lock               # Or poetry.lock/requirements.lock
+│   ├── alembic.ini           # If/when Postgres migrations are added
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py           # FastAPI app factory, router includes
+│   │   ├── config.py         # Settings (Pydantic), ROCm/model paths, Qdrant URLs
+│   │   ├── logging_config.py # Structured logging (loguru/structlog/stdlib config)
+│   │   ├── dependencies.py   # FastAPI dependency providers (services, settings)
+│   │   ├── errors.py         # HTTPException mappers, global exception handlers
+│   │   ├── observability.py  # OpenTelemetry / metrics integration stubs
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   ├── routes/
+│   │   │   │   ├── system.py          # /api/system health/status
+│   │   │   │   ├── context.py         # /api/context context items
+│   │   │   │   ├── ingest.py          # /api/ingest jobs
+│   │   │   │   ├── workflows.py       # /api/workflows graphs & runs
+│   │   │   │   ├── agents.py          # /api/agents profiles & runs
+│   │   │   │   ├── ideas.py           # /api/ideas tickets/roadmap items
+│   │   │   │   ├── knowledge.py       # /api/knowledge nodes/search
+│   │   │   │   └── streaming.py       # /api/stream WebSockets/SSE for jobs & LangGraph state
+│   │   │   └── schemas/
+│   │   │       ├── api_contract.py    # Request/response DTOs aligned with frontend api-types.ts
+│   │   │       └── pagination.py
+│   │   ├── domain/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py      # Pydantic domain models (jobs, runs, nodes, ideas, etc.)
+│   │   │   ├── enums.py       # Shared enums (statuses, event types, node types)
+│   │   │   ├── types.py       # Typed aliases, ID types, discriminated unions
+│   │   │   └── events.py      # Streaming event payload models
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── ingest_service.py         # Ingest job lifecycle; talks to orchestration/langgraph
+│   │   │   ├── agent_service.py          # Agent runs over LangGraph/model runtimes
+│   │   │   ├── workflow_service.py       # Workflow graphs/runs, LangGraph adapters
+│   │   │   ├── knowledge_service.py      # RAG + Qdrant/graph DB access
+│   │   │   ├── context_service.py        # Active context sets, memory windows
+│   │   │   ├── ideas_service.py          # Idea/roadmap management
+│   │   │   ├── repo_analysis_service.py  # Repo scanning, gap analysis
+│   │   │   └── telemetry_service.py      # Aggregating metrics for UI
+│   │   ├── adapters/
+│   │   │   ├── __init__.py
+│   │   │   ├── qdrant_adapter.py         # Qdrant client wrapper, collection helpers
+│   │   │   ├── graphdb_adapter.py        # Optional graph DB access (e.g., Neo4j, Memgraph)
+│   │   │   ├── vllm_adapter.py           # vLLM runtime abstraction
+│   │   │   ├── llama_cpp_adapter.py      # llama.cpp runtime abstraction
+│   │   │   ├── pytorch_adapter.py        # Local PyTorch model runner helpers
+│   │   │   ├── triton_adapter.py         # Triton inference client abstraction
+│   │   │   └── n8n_adapter.py            # HTTP/Webhook integration for n8n flows
+│   │   ├── persistence/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py                   # Base repository interfaces
+│   │   │   ├── memory_repos.py           # In-memory repos for dev
+│   │   │   └── postgres_repos.py         # Future Postgres implementations (optional)
+│   │   ├── workers/
+│   │   │   ├── __init__.py
+│   │   │   ├── ingest_worker.py          # Background ingestion (if not fully LangGraph)
+│   │   │   ├── maintenance_worker.py     # Cleanup, compaction
+│   │   │   └── scheduler.py              # APScheduler/other scheduling entrypoints
+│   │   └── tests/
+│   │       ├── __init__.py
+│   │       ├── test_api_system.py
+│   │       ├── test_api_ingest.py
+│   │       ├── test_services_ingest.py
+│   │       └── test_langgraph_adapters.py
+│   └── scripts/
+│       ├── dev_server.sh                 # Run FastAPI with reload, local ROCm env
+│       ├── seed_qdrant.py                # Seed initial collections/vectors
+│       └── run_tests.sh
+├── frontend/
+│   ├── package.json                      # Frontend deps & scripts
+│   ├── tsconfig.json                     # Extends ../tsconfig.base.json
+│   ├── vite.config.ts                    # Vite + React + Tailwind config
+│   ├── postcss.config.cjs
+│   ├── tailwind.config.cjs
+│   ├── eslint.config.cjs
+│   ├── prettier.config.cjs
+│   ├── index.html
+│   └── src/
+│       ├── main.tsx                      # App bootstrap, router, providers
+│       ├── App.tsx
+│       ├── vite-env.d.ts
+│       ├── styles/
+│       │   ├── index.css                 # Tailwind base + cyberpunk neon theme tokens
+│       │   └── theme.css                 # CSS vars for colors, glassmorphism, etc.
+│       ├── lib/
+│       │   ├── httpClient.ts             # Fetch/axios wrapper, base URL, interceptors
+│       │   ├── wsClient.ts               # WebSocket client utilities for streaming
+│       │   ├── router.tsx                # React Router config
+│       │   ├── queryClient.ts            # React Query setup
+│       │   └── logger.ts                 # Frontend logging hooks/utilities
+│       ├── api/
+│       │   ├── types/
+│       │   │   ├── api-types.ts          # Generated/shared API types (mirrors backend schemas)
+│       │   │   ├── domain-types.ts       # Context, ideas, workflows, nodes, agents, etc.
+│       │   │   └── streaming-events.ts   # Discriminated unions for WS events
+│       │   ├── client/
+│       │   │   ├── systemClient.ts
+│       │   │   ├── ingestClient.ts
+│       │   │   ├── workflowsClient.ts
+│       │   │   ├── agentsClient.ts
+│       │   │   ├── ideasClient.ts
+│       │   │   └── knowledgeClient.ts
+│       │   └── hooks/
+│       │       ├── useSystemStatus.ts
+│       │       ├── useIngestJobs.ts
+│       │       ├── useWorkflowGraphs.ts
+│       │       ├── useAgentProfiles.ts
+│       │       ├── useIdeas.ts
+│       │       └── streaming/
+│       │           ├── useIngestStream.ts
+│       │           ├── useAgentRunStream.ts
+│       │           └── useWorkflowNodeStream.ts
+│       ├── state/
+│       │   ├── store.ts                  # Zustand root store or Redux store
+│       │   ├── uiSlice.ts                # Panel layout, theme, modal states
+│       │   ├── contextSlice.ts           # Selected context, active memory
+│       │   ├── workflowSlice.ts          # Selected workflow/run, node states
+│       │   └── projectSlice.ts           # Project roadmap DAG state
+│       ├── components/
+│       │   ├── primitives/
+│       │   │   ├── GlassCard.tsx
+│       │   │   ├── NeonButton.tsx
+│       │   │   ├── PillTag.tsx
+│       │   │   ├── IconBadge.tsx
+│       │   │   └── LoadingSpinner.tsx
+│       │   ├── layout/
+│       │   │   ├── Shell.tsx             # Main layout, sidebars, top bar
+│       │   │   ├── Sidebar.tsx
+│       │   │   └── PanelContainer.tsx
+│       │   ├── dashboards/
+│       │   │   ├── MissionControlBoard.tsx
+│       │   │   ├── IngestStation.tsx
+│       │   │   ├── KnowledgeNexus.tsx
+│       │   │   ├── DeepResearch.tsx
+│       │   │   └── StrategyDeck.tsx
+│       │   ├── workflows/
+│       │   │   ├── WorkflowVisualizer.tsx
+│       │   │   ├── WorkflowNodeCard.tsx
+│       │   │   └── WorkflowRunTimeline.tsx
+│       │   ├── agents/
+│       │   │   ├── AgentRunConsole.tsx
+│       │   │   └── AgentAvatar.tsx
+│       │   ├── ideas/
+│       │   │   ├── IdeaBoard.tsx
+│       │   │   └── IdeaDetailPanel.tsx
+│       │   └── shared/
+│       │       ├── ErrorBanner.tsx
+│       │       ├── EmptyState.tsx
+│       │       └── StatusPill.tsx
+│       ├── features/
+│       │   ├── ingest/
+│       │   │   ├── IngestDashboard.tsx
+│       │   │   └── ingest.slice.ts       # Feature-specific state/actions
+│       │   ├── workflows/
+│       │   │   ├── WorkflowDashboard.tsx
+│       │   │   └── workflow.selectors.ts
+│       │   ├── agents/
+│       │   │   ├── AgentRunsView.tsx
+│       │   │   └── agent.selectors.ts
+│       │   ├── ideas/
+│       │   │   ├── IdeasDashboard.tsx
+│       │   │   └── ideas.selectors.ts
+│       │   └── knowledge/
+│       │       ├── KnowledgeGraphView.tsx
+│       │       └── knowledge.selectors.ts
+│       ├── pages/
+│       │   ├── DashboardPage.tsx
+│       │   ├── IngestPage.tsx
+│       │   ├── WorkflowsPage.tsx
+│       │   ├── AgentsPage.tsx
+│       │   ├── IdeasPage.tsx
+│       │   └── KnowledgePage.tsx
+│       └── tests/
+│           ├── setupTests.ts
+│           ├── components/
+│           │   └── MissionControlBoard.test.tsx
+│           └── features/
+│               └── ingest/
+│                   └── IngestDashboard.test.tsx
+└── docs/
+    ├── api-contract.md        # HTTP/WebSocket contract (mirrors backend schemas & frontend api-types)
+    ├── system-architecture.md # High-level overview of Cortex, data flows, and constraints
+    ├── domain-model.md        # Entities: jobs, runs, nodes, ideas, projects, contexts
+    ├── frontend-architecture.md
+    ├── backend-architecture.md
+    └── operations-playbook.md # Local deployment, troubleshooting, ROCm tips
+
+
+- `cortex/` – Monorepo root: shared configs (`pyproject.toml`, `package.json`, workspace setup), global linters (`ruff.toml`, `mypy.ini`), and top-level docs.
+- `infra/` – Infrastructure and runtime wiring: Dockerfiles for backend/frontend/Qdrant/n8n, ROCm environment snippets, and observability (Prometheus/Grafana) configs.
+- `orchestration/` – LangGraph graphs, state definitions, node implementations, and n8n workflow JSON; pure orchestration logic decoupled from FastAPI/React.
+- `backend/` – Python FastAPI app and services:
+  - `app/main.py`, `config.py`, `logging_config.py`, `observability.py` – app factory, settings, structured logging, and metrics/tracing wiring.
+  - `app/api/routes/` – Resource-oriented HTTP & streaming endpoints (system, ingest, workflows, agents, ideas, knowledge, streaming).
+  - `app/api/schemas/` – Explicit request/response DTOs that mirror `docs/api-contract.md` and `frontend/src/api/types`.
+  - `app/domain/` – Core Pydantic models, enums, and typed events shared across services and orchestration.
+  - `app/services/` – Orchestration and business logic (ingest jobs, LangGraph runs, RAG, repo analysis) abstracted from HTTP and UI.
+  - `app/adapters/` – Integration wrappers for Qdrant, optional graph DB, vLLM/llama.cpp/PyTorch/Triton, and n8n.
+  - `app/persistence/` – Repository interfaces and in-memory/Postgres implementations (for future persistence).
+  - `app/workers/` – Background workers for ingestion and maintenance (if not fully handled by LangGraph/n8n).
+  - `app/tests/` – Backend unit/integration tests for APIs, services, and orchestration adapters.
+- `frontend/` – React + TypeScript + Vite app:
+  - `src/lib/` – HTTP/WS clients, router, React Query client, and lightweight logging utilities.
+  - `src/api/` – Typed clients and hooks that encapsulate data fetching & streaming; `types/` shared with backend API contract.
+  - `src/state/` – Zustand/Redux slices for UI/layout, workflows, context, projects; clear separation from presentational components.
+  - `src/components/` – Reusable primitives (`GlassCard`, `NeonButton`), layouts, dashboards, and visualizers (e.g., `WorkflowVisualizer`).
+  - `src/features/` – Feature-specific containers (ingest, workflows, agents, ideas, knowledge) combining components, state, and data hooks.
+  - `src/pages/` – Route-level screens wired into the router and Shell layout.
+  - `src/styles/` – Tailwind setup and theme-specific CSS for cyberpunk dark/neon visuals.
+  - `src/tests/` – Vitest/Jest + Testing Library specs for critical components and features.
+- `docs/` – Living documentation for API contracts, architecture, domain modeling, frontend/backend design choices, and operational runbooks.
+You said:
+You are a senior ML systems engineer specializing in abstracting multiple inference runtimes.
+
+Goal: Implement a **model abstraction layer** for Cortex that decouples the rest of the backend from PyTorch/vLLM/llama.cpp specifics.
+
+Constraints:
+- Runtimes:
+  - PyTorch 2.9.1 models (custom).
+  - vLLM running Llama-family chat/code models.
+  - llama.cpp for quantized models.
+- Hardware: ROCm 7.1.0, AMD APU (128 GB shared memory).
+- The REST of the backend must not reference these runtimes directly; instead it calls abstract interfaces.
+
+Deliverables:
+1. Create interfaces and implementations:
+   - backend/app/models/base.py:
+     - class ModelRequest(BaseModel) (includes prompt, system, max_tokens, temperature, stop, etc.).
+     - class ModelResponse(BaseModel) (includes text, tokens_used, latency_ms, runtime_name).
+     - class ModelRunner(Protocol) with async def run(request: ModelRequest) -> ModelResponse.
+   - backend/app/models/vllm_runner.py:
+     - Implementation of ModelRunner that calls a vLLM server (assume HTTP endpoint env-configured).
+   - backend/app/models/llamacpp_runner.py:
+     - Implementation that calls a local llama.cpp server or binding.
+   - backend/app/models/router.py:
+     - ModelRouter class that picks the right runner based on a model_id string or policy.
+2. Add a service function:
+   - backend/app/services/llm_service.py with:
+     - async def generate_text(model_id: str, request: ModelRequest) -> ModelResponse.
+3. Add minimal tests that:
+   - Use httpx.AsyncClient with mocked responses to verify router behavior and error handling.
+
+Output:
+- Full contents of all these files, no TODOs.
+- Use Pydantic models and type hints.
+ChatGPT said:
+
+Thought for 1m 4s
+Cortex-model-abstraction-layer
+· python
+# Cortex model abstraction layer (design snapshot)
+# This canvas will hold the base interfaces, runtime runners, router, and LLM service.
+
+Here’s a concrete, ready-to-drop-in implementation of the abstraction layer and tests.
+
+backend/app/models/base.py
+from __future__ import annotations
+
+import time
+from typing import Any, Mapping, Optional, Protocol, List
+
+from pydantic import BaseModel, Field
+
+
+class ModelRequest(BaseModel):
+    """
+    Normalized request for any text-generation model.
+
+    Other layers can construct this from higher-level domain objects without
+    caring whether the underlying runtime is vLLM, llama.cpp, or raw PyTorch.
+    """
+
+    prompt: str = Field(..., description="User prompt or main input text.")
+    system: Optional[str] = Field(
+        default=None,
+        description="Optional system message or instruction prefix.",
+    )
+    max_tokens: int = Field(
+        default=512,
+        ge=1,
+        description="Maximum number of tokens to generate.",
+    )
+    temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature.",
+    )
+    top_p: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Nucleus sampling cutoff.",
+    )
+    stop: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of stop strings.",
+    )
+    stream: bool = Field(
+        default=False,
+        description="If True, the caller intends to stream tokens (not implemented here).",
+    )
+    metadata: Optional[Mapping[str, Any]] = Field(
+        default=None,
+        description="Opaque metadata for tracing, routing, etc.",
+    )
+
+
+class ModelResponse(BaseModel):
+    """
+    Normalized response from any text-generation model.
+    """
+
+    text: str = Field(..., description="Generated text.")
+    tokens_used: int = Field(
+        ...,
+        ge=0,
+        description="Total tokens used (prompt + completion) if available.",
+    )
+    latency_ms: float = Field(
+        ...,
+        ge=0.0,
+        description="End-to-end latency in milliseconds.",
+    )
+    runtime_name: str = Field(
+        ...,
+        description="Identifier for the underlying runtime (e.g. 'vllm', 'llamacpp').",
+    )
+    model_id: Optional[str] = Field(
+        default=None,
+        description="Logical model identifier as seen by the router.",
+    )
+    raw_response: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Raw provider response for debugging/inspection.",
+    )
+
+
+class ModelRunner(Protocol):
+    """
+    Protocol for all model runners.
+
+    Implementations hide runtime-specific details and expose a simple async
+    `run` API that returns a `ModelResponse`.
+    """
+
+    runtime_name: str
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        ...
+
+
+def now_ms() -> float:
+    """
+    Utility to get a monotonic timestamp in milliseconds.
+    """
+    return time.perf_counter() * 1000.0
+backend/app/models/vllm_runner.py
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional
+
+import httpx
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner, now_ms
+
+
+class VLLMRunner(ModelRunner):
+    """
+    ModelRunner implementation for a vLLM HTTP server exposing an
+    OpenAI-compatible /v1/chat/completions endpoint.
+    """
+
+    runtime_name: str = "vllm"
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: float = 30.0,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> None:
+        self._base_url = base_url or os.getenv(
+            "CORTEX_VLLM_BASE_URL",
+            "http://localhost:8001",
+        )
+        self._model = model or os.getenv("CORTEX_VLLM_MODEL", "cortex-vllm-default")
+        self._timeout = timeout
+        self._client = client
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        created_client = False
+        client = self._client
+        if client is None:
+            client = httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout)
+            created_client = True
+
+        try:
+            messages: list[dict[str, Any]] = []
+            if request.system:
+                messages.append({"role": "system", "content": request.system})
+            messages.append({"role": "user", "content": request.prompt})
+
+            payload: Dict[str, Any] = {
+                "model": self._model,
+                "messages": messages,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "top_p": request.top_p,
+            }
+            if request.stop:
+                payload["stop"] = request.stop
+
+            start_ms = now_ms()
+            response = await client.post("/v1/chat/completions", json=payload)
+            end_ms = now_ms()
+
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"vLLM error {response.status_code}: {response.text[:200]}"
+                )
+
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError("vLLM response missing choices")
+
+            message = choices[0].get("message") or {}
+            text = message.get("content") or ""
+
+            usage = data.get("usage") or {}
+            total_tokens = int(usage.get("total_tokens") or 0)
+
+            return ModelResponse(
+                text=text,
+                tokens_used=total_tokens,
+                latency_ms=end_ms - start_ms,
+                runtime_name=self.runtime_name,
+                model_id=self._model,
+                raw_response=data,
+            )
+        finally:
+            if created_client:
+                await client.aclose()
+backend/app/models/llamacpp_runner.py
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional
+
+import httpx
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner, now_ms
+
+
+class LlamaCPPRunner(ModelRunner):
+    """
+    ModelRunner for a llama.cpp HTTP server.
+
+    Assumes a /v1/completions-style endpoint where we send a single prompt string.
+    """
+
+    runtime_name: str = "llamacpp"
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: float = 30.0,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> None:
+        self._base_url = base_url or os.getenv(
+            "CORTEX_LLAMACPP_BASE_URL",
+            "http://localhost:8002",
+        )
+        self._model = model or os.getenv(
+            "CORTEX_LLAMACPP_MODEL",
+            "cortex-llamacpp-default",
+        )
+        self._timeout = timeout
+        self._client = client
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        created_client = False
+        client = self._client
+        if client is None:
+            client = httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout)
+            created_client = True
+
+        try:
+            # Simple composition of system + prompt for llama.cpp-style completion.
+            if request.system:
+                full_prompt = f"{request.system.strip()}\n\n{request.prompt.strip()}"
+            else:
+                full_prompt = request.prompt
+
+            payload: Dict[str, Any] = {
+                "model": self._model,
+                "prompt": full_prompt,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "top_p": request.top_p,
+            }
+            if request.stop:
+                payload["stop"] = request.stop
+
+            start_ms = now_ms()
+            response = await client.post("/v1/completions", json=payload)
+            end_ms = now_ms()
+
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"llama.cpp error {response.status_code}: {response.text[:200]}"
+                )
+
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError("llama.cpp response missing choices")
+
+            text = choices[0].get("text") or ""
+            usage = data.get("usage") or {}
+            total_tokens = int(usage.get("total_tokens") or 0)
+
+            return ModelResponse(
+                text=text,
+                tokens_used=total_tokens,
+                latency_ms=end_ms - start_ms,
+                runtime_name=self.runtime_name,
+                model_id=self._model,
+                raw_response=data,
+            )
+        finally:
+            if created_client:
+                await client.aclose()
+backend/app/models/router.py
+from __future__ import annotations
+
+from typing import Dict, Mapping, MutableMapping, Optional, Tuple
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner
+
+
+class UnknownModelError(Exception):
+    """
+    Raised when no runner is configured for the requested model_id and
+    there is no usable default.
+    """
+
+
+class ModelRouter:
+    """
+    Routes logical model_ids to underlying ModelRunner implementations.
+
+    This ensures the rest of the backend only needs to know about model_ids,
+    not whether they map to vLLM, llama.cpp, or something else.
+    """
+
+    def __init__(
+        self,
+        runners: Mapping[str, ModelRunner],
+        default_model_id: Optional[str] = None,
+    ) -> None:
+        if not runners:
+            raise ValueError("ModelRouter requires at least one runner")
+
+        self._runners: MutableMapping[str, ModelRunner] = dict(runners)
+        self._default_model_id: str = (
+            default_model_id if default_model_id is not None else next(iter(self._runners.keys()))
+        )
+
+        if self._default_model_id not in self._runners:
+            raise ValueError(
+                f"default_model_id '{self._default_model_id}' is not in runners"
+            )
+
+    def register_runner(self, model_id: str, runner: ModelRunner) -> None:
+        """
+        Register or replace a runner at runtime. Primarily useful for tests.
+        """
+        self._runners[model_id] = runner
+
+    def get_runner(self, model_id: Optional[str]) -> Tuple[str, ModelRunner]:
+        """
+        Resolve the logical model_id to an actual runner and the effective model_id.
+        """
+        if model_id is not None and model_id in self._runners:
+            return model_id, self._runners[model_id]
+
+        if self._default_model_id in self._runners:
+            return self._default_model_id, self._runners[self._default_model_id]
+
+        raise UnknownModelError(f"No runner configured for model_id '{model_id}'")
+
+    async def generate(self, model_id: Optional[str], request: ModelRequest) -> ModelResponse:
+        """
+        Run the model request against the resolved runner and normalize the result.
+        """
+        effective_model_id, runner = self.get_runner(model_id)
+
+        response = await runner.run(request)
+
+        # Ensure the response carries the effective logical model_id
+        if response.model_id is None:
+            response.model_id = effective_model_id
+
+        # Ensure the response runtime_name is set consistently
+        if not response.runtime_name:
+            response.runtime_name = getattr(runner, "runtime_name", "unknown")
+
+        return response
+backend/app/services/llm_service.py
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from app.models.base import ModelRequest, ModelResponse
+from app.models.llamacpp_runner import LlamaCPPRunner
+from app.models.router import ModelRouter
+from app.models.vllm_runner import VLLMRunner
+
+
+def _build_default_router() -> ModelRouter:
+    """
+    Construct the default ModelRouter.
+
+    Model IDs are logical strings exposed to the rest of the backend.
+    They can be remapped via environment variables without touching callers.
+    """
+    vllm_model_id = os.getenv("CORTEX_MODEL_VLLM_ID", "vllm:llama-3.1-8b-instruct")
+    llamacpp_model_id = os.getenv(
+        "CORTEX_MODEL_LLAMACPP_ID",
+        "llamacpp:llama-3.1-8b-gguf",
+    )
+
+    runners = {
+        vllm_model_id: VLLMRunner(),
+        llamacpp_model_id: LlamaCPPRunner(),
+    }
+
+    default_id = os.getenv("CORTEX_MODEL_DEFAULT_ID", vllm_model_id)
+
+    return ModelRouter(runners=runners, default_model_id=default_id)
+
+
+# Global router instance used by service functions.
+_model_router: ModelRouter = _build_default_router()
+
+
+def set_model_router(router: ModelRouter) -> None:
+    """
+    Overwrite the global router.
+
+    This is intended for tests or advanced configuration during startup.
+    """
+    global _model_router
+    _model_router = router
+
+
+def get_model_router() -> ModelRouter:
+    """
+    Access the current global router.
+    """
+    return _model_router
+
+
+async def generate_text(
+    model_id: Optional[str],
+    request: ModelRequest,
+) -> ModelResponse:
+    """
+    High-level service function used by the rest of the backend.
+
+    This is the only entrypoint most code should use when they need LLM output.
+    """
+    router = get_model_router()
+    return await router.generate(model_id=model_id, request=request)
+backend/app/tests/test_llm_router.py
+from __future__ import annotations
+
+import pytest
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner
+from app.models.router import ModelRouter, UnknownModelError
+
+
+class FakeRunner(ModelRunner):
+    """
+    Simple in-memory runner used to verify router selection logic.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.runtime_name = name
+        self.calls = 0
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        self.calls += 1
+        return ModelResponse(
+            text=f"{self.runtime_name}:{request.prompt}",
+            tokens_used=10,
+            latency_ms=1.0,
+            runtime_name=self.runtime_name,
+            model_id=None,
+            raw_response={"runner": self.runtime_name},
+        )
+
+
+@pytest.mark.asyncio
+async def test_router_selects_explicit_model() -> None:
+    runner_a = FakeRunner("runner-a")
+    runner_b = FakeRunner("runner-b")
+
+    router = ModelRouter(
+        runners={
+            "model-a": runner_a,
+            "model-b": runner_b,
+        },
+        default_model_id="model-a",
+    )
+
+    request = ModelRequest(prompt="hello", max_tokens=16, temperature=0.5)
+
+    response = await router.generate("model-b", request)
+
+    assert response.text.startswith("runner-b:")
+    assert response.model_id == "model-b"
+    assert runner_b.calls == 1
+    assert runner_a.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_router_uses_default_model_when_none_provided() -> None:
+    runner_default = FakeRunner("default")
+    router = ModelRouter(
+        runners={"default-model": runner_default},
+        default_model_id="default-model",
+    )
+
+    request = ModelRequest(prompt="hi", max_tokens=16, temperature=0.5)
+    response = await router.generate(None, request)
+
+    assert response.text.startswith("default:")
+    assert response.model_id == "default-model"
+    assert runner_default.calls == 1
+
+
+def test_unknown_model_error_when_no_default() -> None:
+    runner = FakeRunner("only")
+    # Create router with a default that is in the mapping, then remove it
+    router = ModelRouter(runners={"only": runner}, default_model_id="only")
+    router._runners.clear()  # type: ignore[attr-defined]
+
+    with pytest.raises(UnknownModelError):
+        # We call get_runner directly to avoid awaiting
+        router.get_runner("non-existent")
+backend/app/tests/test_llm_service.py
+from __future__ import annotations
+
+from typing import Any, Dict
+
+import httpx
+import pytest
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner
+from app.models.router import ModelRouter
+from app.services.llm_service import generate_text, set_model_router
+
+
+class CapturingRunner(ModelRunner):
+    """
+    Captures the last request and returns a canned response.
+
+    Used to verify that llm_service.generate_text delegates correctly to the router.
+    """
+
+    runtime_name: str = "capturing"
+
+    def __init__(self) -> None:
+        self.last_request: ModelRequest | None = None
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        self.last_request = request
+        return ModelResponse(
+            text="ok",
+            tokens_used=5,
+            latency_ms=2.0,
+            runtime_name=self.runtime_name,
+            model_id="captured-model",
+            raw_response=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_text_uses_router_and_runner() -> None:
+    runner = CapturingRunner()
+    router = ModelRouter(runners={"captured-model": runner}, default_model_id="captured-model")
+
+    # Swap the global router for this test
+    set_model_router(router)
+
+    request = ModelRequest(prompt="ping", max_tokens=32, temperature=0.3)
+    response = await generate_text("captured-model", request)
+
+    assert response.text == "ok"
+    assert response.model_id == "captured-model"
+    assert runner.last_request is not None
+    assert runner.last_request.prompt == "ping"
+
+
+# --- httpx-based tests with mocked responses ---
+
+
+class RecordingTransport(httpx.MockTransport):
+    """
+    Simple extension over MockTransport that records requests for inspection.
+    """
+
+    def __init__(self, handler: httpx.MockTransport.func) -> None:  # type: ignore[assignment]
+        super().__init__(handler)
+        self.requests: list[httpx.Request] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:  # type: ignore[override]
+        self.requests.append(request)
+        return await super().handle_async_request(request)
+
+
+@pytest.mark.asyncio
+async def test_vllm_runner_success_through_router() -> None:
+    """
+    Use httpx.AsyncClient with a MockTransport to simulate a vLLM server
+    and verify router behavior on a successful response.
+    """
+    from app.models.vllm_runner import VLLMRunner
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body: Dict[str, Any] = {
+            "id": "chatcmpl-xyz",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "hello world"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        }
+        return httpx.Response(status_code=200, json=body)
+
+    transport = RecordingTransport(handler)
+    async_client = httpx.AsyncClient(base_url="http://test-vllm", transport=transport)
+
+    vllm_runner = VLLMRunner(base_url="http://test-vllm", model="test-model", client=async_client)
+    router = ModelRouter(runners={"vllm-model": vllm_runner}, default_model_id="vllm-model")
+
+    set_model_router(router)
+
+    request = ModelRequest(prompt="say hi", max_tokens=16, temperature=0.1)
+    response = await generate_text("vllm-model", request)
+
+    assert response.text == "hello world"
+    assert response.tokens_used == 5
+    assert response.model_id == "test-model"
+    assert response.runtime_name == "vllm"
+    assert response.latency_ms >= 0.0
+    assert len(transport.requests) == 1
+    assert transport.requests[0].url.path == "/v1/chat/completions"
+
+
+@pytest.mark.asyncio
+async def test_vllm_runner_error_propagates() -> None:
+    """
+    Verify that an HTTP error from vLLM leads to a RuntimeError being raised.
+    """
+    from app.models.vllm_runner import VLLMRunner
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, json={"error": "internal"})
+
+    transport = RecordingTransport(handler)
+    async_client = httpx.AsyncClient(base_url="http://test-vllm", transport=transport)
+
+    vllm_runner = VLLMRunner(base_url="http://test-vllm", model="test-model", client=async_client)
+    router = ModelRouter(runners={"vllm-model": vllm_runner}, default_model_id="vllm-model")
+
+    set_model_router(router)
+
+    request = ModelRequest(prompt="trigger error", max_tokens=16, temperature=0.1)
+
+    with pytest.raises(RuntimeError):
+        await generate_text("vllm-model", request)
+
+    assert len(transport.requests) == 1
+    assert transport.requests[0].url.path == "/v1/chat/completions"
+Key insights / next steps
+
+All other backend code should depend only on ModelRequest, ModelResponse, and generate_text(...); runtime-specific details stay in VLLMRunner / LlamaCPPRunner.
+
+The ModelRouter lets you add more runtimes (e.g., pure PyTorch or Triton-backed) by registering new ModelRunner implementations without touching API handlers.
+
+Next logical step: add a PyTorch/Triton runner module and wire LangGraph node implementations to call llm_service.generate_text instead of talking to runtimes directly.
+
+You said:
+You are an ML engineer specializing in agent specialization and prompt engineering.
+
+Goal: Implement **two high-level model endpoints** in the backend:
+- A “Planner” endpoint for project roadmap/DAG generation.
+- A “Coder” endpoint for code analysis and completion.
+
+Requirements:
+- Add to the FastAPI app:
+  - POST /llm/planner using a planning model (e.g., a larger Llama variant).
+  - POST /llm/coder using a code-focused model (e.g., DeepSeek/CodeLlama).
+- Use the model abstraction layer (ModelRouter) and ModelRequest/ModelResponse.
+- Planner API:
+  - Request includes high-level user goal and optional context.
+  - Response includes a structured JSON field plan (list of steps/graph nodes).
+- Coder API:
+  - Request includes prompt, optional file context, and code snippets.
+  - Response includes completion text.
+
+Deliverables:
+- New FastAPI router: backend/app/api/routes/llm.py.
+- Pydantic schemas: PlannerRequest, PlannerResponse, CoderRequest, CoderResponse.
+- Router wiring in backend/app/main.py.
+- Tests for both endpoints.
+
+Output:
+- Provide complete code for router and schemas, plus any necessary updates.
+ChatGPT said:
+
+Thought for 36s
+Cortex-llm-endpoints
+· python
+# Cortex LLM endpoints (planner & coder) router and schemas will be defined in this canvas.
+
+Here’s a self-contained implementation that plugs into the existing skeleton and model abstraction layer.
+
+backend/app/api/schemas/llm.py
+from __future__ import annotations
+
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+# -------- Planner --------
+
+
+class PlannerStep(BaseModel):
+    id: str = Field(..., description="Stable ID for the step (e.g. 'S1').")
+    title: str = Field(..., description="Short label for the step.")
+    description: str = Field(..., description="Detail about what this step does.")
+    depends_on: List[str] = Field(
+        default_factory=list,
+        description="IDs of prerequisite steps.",
+    )
+
+
+class PlannerRequest(BaseModel):
+    goal: str = Field(..., description="High-level user goal to plan towards.")
+    context: Optional[str] = Field(
+        default=None,
+        description="Optional additional context (constraints, resources, preferences).",
+    )
+    max_steps: int = Field(
+        default=12,
+        ge=1,
+        le=100,
+        description="Maximum number of steps to include in the plan.",
+    )
+    model_id: Optional[str] = Field(
+        default=None,
+        description="Optional logical model identifier for the planner.",
+    )
+    temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature used when generating the plan.",
+    )
+    max_tokens: int = Field(
+        default=1024,
+        ge=16,
+        description="Maximum tokens to allocate for the planner LLM call.",
+    )
+
+
+class PlannerResponse(BaseModel):
+    plan: List[PlannerStep] = Field(
+        ...,
+        description="Structured list of plan steps / graph nodes.",
+    )
+    raw_text: str = Field(
+        ...,
+        description="Raw LLM output text used to derive the plan.",
+    )
+    model_id: str = Field(..., description="Logical model id used for planning.")
+    runtime_name: str = Field(
+        ...,
+        description="Underlying runtime that executed the request.",
+    )
+    tokens_used: int = Field(..., ge=0)
+    latency_ms: float = Field(..., ge=0.0)
+
+
+# -------- Coder --------
+
+
+class CoderRequest(BaseModel):
+    prompt: str = Field(..., description="Natural language or inline code prompt.")
+    file_context: Optional[str] = Field(
+        default=None,
+        description="Optional file path or description of the target file.",
+    )
+    snippets: Optional[List[str]] = Field(
+        default=None,
+        description="Optional existing code snippets to provide as context.",
+    )
+    model_id: Optional[str] = Field(
+        default=None,
+        description="Optional logical model identifier for the coder.",
+    )
+    temperature: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature for code generation.",
+    )
+    max_tokens: int = Field(
+        default=512,
+        ge=16,
+        description="Maximum tokens for the completion.",
+    )
+
+
+class CoderResponse(BaseModel):
+    completion: str = Field(..., description="Generated code or code-edit suggestion.")
+    model_id: str = Field(..., description="Logical model id used for coding.")
+    runtime_name: str = Field(
+        ...,
+        description="Underlying runtime that executed the request.",
+    )
+    tokens_used: int = Field(..., ge=0)
+    latency_ms: float = Field(..., ge=0.0)
+backend/app/api/routes/llm.py
+from __future__ import annotations
+
+import json
+import os
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
+from app.api.schemas.llm import (
+    PlannerRequest,
+    PlannerResponse,
+    PlannerStep,
+    CoderRequest,
+    CoderResponse,
+)
+from app.models.base import ModelRequest
+from app.services.llm_service import generate_text
+
+router = APIRouter()
+
+
+# ----- helpers -----
+
+
+def _build_planner_prompt(req: PlannerRequest) -> str:
+    """
+    Construct a prompt instructing the planner model to return a JSON plan.
+
+    We expect (but do not require) a response with a top-level `plan` field.
+    """
+    base_instructions = (
+        "You are a project planning assistant for a single-user AI workspace called Cortex.\n"
+        "Your job is to take a high-level goal and decompose it into a clear, ordered plan.\n"
+        "Always respond with STRICT JSON using this shape:\n\n"
+        "{\n"
+        '  "plan": [\n'
+        "    {\n"
+        '      "id": "S1",\n'
+        '      "title": "Short step title",\n'
+        '      "description": "Detailed description of what to do.",\n'
+        '      "depends_on": ["S0"]\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Do not include any commentary outside of the JSON object."
+    )
+
+    parts: List[str] = [base_instructions, "", f"GOAL: {req.goal}"]
+    if req.context:
+        parts.append(f"CONTEXT: {req.context}")
+    parts.append(f"MAX_STEPS: {req.max_steps}")
+    return "\n".join(parts)
+
+
+def _fallback_plan(goal: str, max_steps: int) -> List[PlannerStep]:
+    """
+    Deterministic fallback plan if the model does not return parseable JSON.
+    """
+    steps: List[PlannerStep] = []
+    max_steps = max(3, min(max_steps, 8))
+
+    titles = [
+        "Clarify requirements and constraints",
+        "Inventory existing assets and gaps",
+        "Design high-level architecture / roadmap",
+        "Break roadmap into milestones and tasks",
+        "Define success metrics and checkpoints",
+        "Prioritize first milestone and next actions",
+    ]
+
+    for idx, title in enumerate(titles[:max_steps], start=1):
+        step_id = f"S{idx}"
+        depends_on = [f"S{idx - 1}"] if idx > 1 else []
+        steps.append(
+            PlannerStep(
+                id=step_id,
+                title=title,
+                description=f"{title} for goal: {goal}",
+                depends_on=depends_on,
+            )
+        )
+    return steps
+
+
+def _parse_plan_from_text(text: str, goal: str, max_steps: int) -> List[PlannerStep]:
+    """
+    Try to parse the LLM text as JSON with a `plan` field; fall back to
+    a deterministic scaffold if parsing fails.
+    """
+    try:
+        obj = json.loads(text)
+        raw_plan = obj.get("plan")
+        if not isinstance(raw_plan, list):
+            raise ValueError("plan field is not a list")
+
+        steps: List[PlannerStep] = []
+        for idx, item in enumerate(raw_plan, start=1):
+            if not isinstance(item, dict):
+                continue
+            step_id = str(item.get("id") or f"S{idx}")
+            title = str(item.get("title") or f"Step {idx}")
+            description = str(item.get("description") or f"Step {idx} towards goal: {goal}")
+            depends_on_raw = item.get("depends_on") or []
+            if isinstance(depends_on_raw, list):
+                depends_on = [str(d) for d in depends_on_raw]
+            else:
+                depends_on = []
+            steps.append(
+                PlannerStep(
+                    id=step_id,
+                    title=title,
+                    description=description,
+                    depends_on=depends_on,
+                )
+            )
+
+        if not steps:
+            raise ValueError("no valid steps parsed")
+        return steps
+    except Exception:
+        # Fall back to deterministic plan for robustness.
+        return _fallback_plan(goal=goal, max_steps=max_steps)
+
+
+def _build_coder_prompt(req: CoderRequest) -> str:
+    """
+    Compose a coder-friendly prompt that includes optional file context and snippets.
+    """
+    sections: List[str] = [
+        "You are an expert software engineer helping inside a local project called Cortex.",
+        "Respond ONLY with code or a concise code diff-style suggestion when appropriate.",
+    ]
+
+    if req.file_context:
+        sections.append(f"FILE CONTEXT:\n{req.file_context}")
+
+    if req.snippets:
+        joined_snippets = "\n\n".join(req.snippets)
+        sections.append(f"EXISTING SNIPPETS:\n{joined_snippets}")
+
+    sections.append(f"TASK:\n{req.prompt}")
+
+    return "\n\n".join(sections)
+
+
+# ----- routes -----
+
+
+@router.post("/planner", response_model=PlannerResponse, summary="High-level planner endpoint")
+async def planner_endpoint(body: PlannerRequest) -> PlannerResponse:
+    """
+    POST /llm/planner
+
+    Uses a planning-specialized model (configurable via environment or request) to
+    generate a structured project plan for the given goal/context.
+    """
+    env_model_id = os.getenv("CORTEX_PLANNER_MODEL_ID")
+    model_id = body.model_id or env_model_id
+
+    if model_id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Planner model is not configured (missing CORTEX_PLANNER_MODEL_ID and request.model_id).",
+        )
+
+    model_request = ModelRequest(
+        prompt=_build_planner_prompt(body),
+        system=None,
+        max_tokens=body.max_tokens,
+        temperature=body.temperature,
+        top_p=1.0,
+        stop=None,
+        stream=False,
+        metadata={"endpoint": "planner", "goal": body.goal},
+    )
+
+    model_response = await generate_text(model_id=model_id, request=model_request)
+
+    plan = _parse_plan_from_text(
+        text=model_response.text,
+        goal=body.goal,
+        max_steps=body.max_steps,
+    )
+
+    return PlannerResponse(
+        plan=plan,
+        raw_text=model_response.text,
+        model_id=model_response.model_id or model_id,
+        runtime_name=model_response.runtime_name,
+        tokens_used=model_response.tokens_used,
+        latency_ms=model_response.latency_ms,
+    )
+
+
+@router.post("/coder", response_model=CoderResponse, summary="Code-focused generation endpoint")
+async def coder_endpoint(body: CoderRequest) -> CoderResponse:
+    """
+    POST /llm/coder
+
+    Uses a code-specialized model (configurable via environment or request) to
+    generate or edit code.
+    """
+    env_model_id = os.getenv("CORTEX_CODER_MODEL_ID")
+    model_id = body.model_id or env_model_id
+
+    if model_id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Coder model is not configured (missing CORTEX_CODER_MODEL_ID and request.model_id).",
+        )
+
+    model_request = ModelRequest(
+        prompt=_build_coder_prompt(body),
+        system=None,
+        max_tokens=body.max_tokens,
+        temperature=body.temperature,
+        top_p=1.0,
+        stop=None,
+        stream=False,
+        metadata={"endpoint": "coder", "file_context": body.file_context},
+    )
+
+    model_response = await generate_text(model_id=model_id, request=model_request)
+
+    return CoderResponse(
+        completion=model_response.text,
+        model_id=model_response.model_id or model_id,
+        runtime_name=model_response.runtime_name,
+        tokens_used=model_response.tokens_used,
+        latency_ms=model_response.latency_ms,
+    )
+backend/app/main.py (router wiring update)
+Assuming your existing main.py looks roughly like the skeleton we built earlier, update imports and router registration.
+
+Imports section:
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.api.routes import (
+    system,
+    context,
+    workflows,
+    ingest,
+    agents,
+    ideas,
+    knowledge,
+    streaming,
+    llm,  # <-- add this
+)
+Router registration:
+
+    app.include_router(system.router, prefix="/api/system", tags=["system"])
+    app.include_router(context.router, prefix="/api/context", tags=["context"])
+    app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
+    app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+    app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
+    app.include_router(ideas.router, prefix="/api/ideas", tags=["ideas"])
+    app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
+    app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
+    app.include_router(llm.router, prefix="/api/llm", tags=["llm"])  # <-- add this
+That yields:
+
+POST /api/llm/planner
+
+POST /api/llm/coder
+
+If you truly need naked /llm/* paths, drop the /api prefix for this router.
+
+backend/app/tests/test_api_llm.py
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List
+
+import pytest
+from httpx import AsyncClient
+
+from app.api.schemas.llm import PlannerRequest, CoderRequest
+from app.main import app
+from app.models.base import ModelRequest, ModelResponse, ModelRunner
+from app.models.router import ModelRouter
+from app.services.llm_service import set_model_router
+
+
+class FakePlannerRunner(ModelRunner):
+    runtime_name: str = "fake-planner"
+
+    def __init__(self, as_json: bool = True) -> None:
+        self.as_json = as_json
+        self.requests: List[ModelRequest] = []
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+
+        if self.as_json:
+            body: Dict[str, Any] = {
+                "plan": [
+                    {
+                        "id": "S1",
+                        "title": "Step one",
+                        "description": "Do the first thing.",
+                        "depends_on": [],
+                    },
+                    {
+                        "id": "S2",
+                        "title": "Step two",
+                        "description": "Do the second thing.",
+                        "depends_on": ["S1"],
+                    },
+                ]
+            }
+            text = json.dumps(body)
+        else:
+            text = "This is not JSON."
+
+        return ModelResponse(
+            text=text,
+            tokens_used=42,
+            latency_ms=10.0,
+            runtime_name=self.runtime_name,
+            model_id="planner-model",
+            raw_response=None,
+        )
+
+
+class FakeCoderRunner(ModelRunner):
+    runtime_name: str = "fake-coder"
+
+    def __init__(self) -> None:
+        self.requests: List[ModelRequest] = []
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        return ModelResponse(
+            text="def hello():\n    return 'world'\n",
+            tokens_used=21,
+            latency_ms=5.0,
+            runtime_name=self.runtime_name,
+            model_id="coder-model",
+            raw_response=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_planner_endpoint_with_json_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = FakePlannerRunner(as_json=True)
+    router = ModelRouter(runners={"planner-model": runner}, default_model_id="planner-model")
+    set_model_router(router)
+
+    # Ensure environment does not override model id
+    monkeypatch.delenv("CORTEX_PLANNER_MODEL_ID", raising=False)
+
+    payload = {
+        "goal": "Build Cortex MVP",
+        "context": "Single user, AMD ROCm",
+        "max_steps": 5,
+        "model_id": "planner-model",
+    }
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        resp = await client.post("/api/llm/planner", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert "plan" in data
+    assert len(data["plan"]) == 2
+    assert data["plan"][0]["id"] == "S1"
+    assert data["model_id"] == "planner-model"
+    assert data["runtime_name"] == "fake-planner"
+    assert data["tokens_used"] == 42
+    assert data["latency_ms"] >= 0.0
+
+    assert len(runner.requests) == 1
+    assert "GOAL: Build Cortex MVP" in runner.requests[0].prompt
+
+
+@pytest.mark.asyncio
+async def test_planner_endpoint_with_non_json_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = FakePlannerRunner(as_json=False)
+    router = ModelRouter(runners={"planner-model": runner}, default_model_id="planner-model")
+    set_model_router(router)
+
+    monkeypatch.delenv("CORTEX_PLANNER_MODEL_ID", raising=False)
+
+    payload = {
+        "goal": "Fallback goal",
+        "max_steps": 4,
+        "model_id": "planner-model",
+    }
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        resp = await client.post("/api/llm/planner", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    # Fallback generates at least 3 steps even if max_steps is smaller
+    assert len(data["plan"]) >= 3
+    assert data["plan"][0]["id"] == "S1"
+    assert data["model_id"] == "planner-model"
+
+
+@pytest.mark.asyncio
+async def test_coder_endpoint_basic(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = FakeCoderRunner()
+    router = ModelRouter(runners={"coder-model": runner}, default_model_id="coder-model")
+    set_model_router(router)
+
+    monkeypatch.delenv("CORTEX_CODER_MODEL_ID", raising=False)
+
+    payload = {
+        "prompt": "Write a hello function in Python.",
+        "file_context": "backend/app/services/llm_service.py",
+        "snippets": ["def existing():\n    pass\n"],
+        "model_id": "coder-model",
+    }
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        resp = await client.post("/api/llm/coder", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert "completion" in data
+    assert "def hello()" in data["completion"]
+    assert data["model_id"] == "coder-model"
+    assert data["runtime_name"] == "fake-coder"
+    assert data["tokens_used"] == 21
+    assert data["latency_ms"] >= 0.0
+
+    assert len(runner.requests) == 1
+    prompt = runner.requests[0].prompt
+    assert "FILE CONTEXT:" in prompt
+    assert "EXISTING SNIPPETS:" in prompt
+    assert "Write a hello function in Python." in prompt
+Key insights / next steps
+
+These endpoints keep all runtime details behind generate_text and ModelRouter; planner/coder are just specialized prompt shapers + response mappers.
+
+Planner is robust to non-JSON LLM output via a deterministic fallback plan, which keeps the UI stable even before models are perfectly tuned.
+
+Next steps: refine planner/coder prompts for your specific agent personas, and extend schemas if you want richer DAG metadata (e.g., node types, estimated durations, tags).
+
+You said:
+You are a LangGraph architect.
+
+Goal: Implement a LangGraph graph for the Cortex “Project Manager” agent, which:
+- Maintains state about a project.
+- Interacts with RAG and the Planner LLM endpoint.
+- Produces a DAG structure representing a dynamic project roadmap with decision nodes.
+
+Deliverables:
+1. In orchestration/langgraph/project_manager_graph.py:
+   - Define the state model (ProjectState), including:
+     - project_id, goal, current_nodes, decisions, context_docs.
+   - Graph nodes:
+     - supervisor_node: routes tasks (plan vs deep dive).
+     - planner_node: calls backend /llm/planner.
+     - rag_node: calls /search/neural-link to gather context.
+     - decision_node: outputs decision options with pros/cons.
+   - Transitions representing the roadmap generation loop.
+2. Include a top-level function:
+   - def create_project_manager_graph(config) -> StateGraph:
+3. Provide a minimal CLI entrypoint in orchestration/langgraph/run_project_manager.py that:
+   - Loads config.
+   - Runs the graph for a sample goal.
+   - Outputs the roadmap DAG JSON to stdout.
+
+Output:
+- Provide the full Python code using LangGraph best practices.
+ChatGPT said:
+
+Thought for 43s
+Project-manager-graph
+· python
+# LangGraph Project Manager graph and CLI entrypoint for Cortex will be drafted here.
+
+Here’s a concrete LangGraph implementation plus a minimal CLI runner.
+
+orchestration/langgraph/project_manager_graph.py
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass
+from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict
+
+import requests
+from langgraph.graph import END, StateGraph
+
+
+class RoadmapNode(TypedDict, total=False):
+    id: str
+    title: str
+    description: str
+    depends_on: List[str]
+    status: Literal["pending", "in_progress", "completed"]
+
+
+class DecisionOption(TypedDict, total=False):
+    id: str
+    title: str
+    pros: List[str]
+    cons: List[str]
+    related_node_ids: List[str]
+
+
+class Decision(TypedDict, total=False):
+    id: str
+    question: str
+    options: List[DecisionOption]
+    chosen_option_id: Optional[str]
+
+
+class ContextDocument(TypedDict, total=False):
+    id: str
+    title: str
+    snippet: str
+    score: float
+    source: Optional[str]
+
+
+class ProjectState(TypedDict, total=False):
+    """
+    LangGraph state for the Project Manager agent.
+
+    Fields:
+    - project_id: stable identifier for the project
+    - goal: high-level goal/brief
+    - current_nodes: current roadmap DAG nodes
+    - decisions: pending or resolved decisions
+    - context_docs: RAG documents used as context
+    - next_action: internal routing hint for conditional edges
+    """
+
+    project_id: str
+    goal: str
+    current_nodes: List[RoadmapNode]
+    decisions: List[Decision]
+    context_docs: List[ContextDocument]
+    next_action: NotRequired[Literal["rag", "plan", "decide", "end"]]
+
+
+@dataclass
+class ProjectManagerConfig:
+    backend_base_url: str = "http://localhost:8000"
+    http_timeout: float = 30.0
+    planner_model_id: Optional[str] = None
+    search_limit: int = 8
+    planner_max_steps: int = 12
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ProjectManagerConfig":
+        return cls(
+            backend_base_url=data.get(
+                "backend_base_url",
+                os.getenv("CORTEX_BACKEND_BASE_URL", "http://localhost:8000"),
+            ),
+            http_timeout=float(data.get("http_timeout", 30.0)),
+            planner_model_id=data.get("planner_model_id", os.getenv("CORTEX_PLANNER_MODEL_ID")),
+            search_limit=int(data.get("search_limit", 8)),
+            planner_max_steps=int(data.get("planner_max_steps", 12)),
+        )
+
+
+# -------- Node implementations --------
+
+
+def make_supervisor_node(cfg: ProjectManagerConfig):
+    def supervisor_node(state: ProjectState) -> ProjectState:
+        """
+        Decide what to do next based on current state.
+
+        - If no context docs: go to RAG.
+        - Else if no roadmap nodes: go to planner.
+        - Else if there are unresolved decisions: go to decision node.
+        - Else: end.
+        """
+        ctx_docs = state.get("context_docs") or []
+        nodes = state.get("current_nodes") or []
+        decisions = state.get("decisions") or []
+
+        unresolved = [d for d in decisions if not d.get("chosen_option_id")]
+
+        if not ctx_docs:
+            next_action: Literal["rag", "plan", "decide", "end"] = "rag"
+        elif not nodes:
+            next_action = "plan"
+        elif unresolved:
+            next_action = "decide"
+        else:
+            next_action = "end"
+
+        new_state: ProjectState = dict(state)
+        new_state["next_action"] = next_action
+        return new_state
+
+    return supervisor_node
+
+
+def make_rag_node(cfg: ProjectManagerConfig):
+    def rag_node(state: ProjectState) -> ProjectState:
+        """
+        Call backend RAG endpoint to retrieve context documents for the project goal.
+        """
+        base_url = cfg.backend_base_url.rstrip("/")
+        url = f"{base_url}/api/search/neural-link"
+
+        payload: Dict[str, Any] = {
+            "query": state["goal"],
+            "project_id": state["project_id"],
+            "limit": cfg.search_limit,
+        }
+
+        docs: List[ContextDocument]
+        try:
+            resp = requests.post(url, json=payload, timeout=cfg.http_timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            raw_results = data.get("results") or []
+
+            docs = []
+            for idx, item in enumerate(raw_results):
+                doc: ContextDocument = {
+                    "id": str(item.get("id") or f"doc-{idx+1}"),
+                    "title": str(item.get("title") or f"Context {idx+1}"),
+                    "snippet": str(item.get("snippet") or item.get("text") or ""),
+                    "score": float(item.get("score") or 0.0),
+                    "source": item.get("source") or None,
+                }
+                docs.append(doc)
+
+        except Exception:
+            # Deterministic fallback with a single synthetic context doc
+            docs = [
+                {
+                    "id": "stub-ctx-1",
+                    "title": "Stubbed context",
+                    "snippet": f"Synthetic context for goal: {state['goal']}",
+                    "score": 1.0,
+                    "source": "stub",
+                }
+            ]
+
+        new_state: ProjectState = dict(state)
+        new_state["context_docs"] = docs
+        return new_state
+
+    return rag_node
+
+
+def _summarize_context_for_planner(context_docs: List[ContextDocument], max_docs: int = 3) -> str:
+    if not context_docs:
+        return "No additional context documents available."
+    lines: List[str] = ["Key context documents:"]
+    for doc in context_docs[:max_docs]:
+        title = doc.get("title") or doc.get("id") or "Untitled"
+        snippet = doc.get("snippet") or ""
+        lines.append(f"- {title}: {snippet[:200]}")
+    return "\n".join(lines)
+
+
+def make_planner_node(cfg: ProjectManagerConfig):
+    def planner_node(state: ProjectState) -> ProjectState:
+        """
+        Call backend /llm/planner to get a roadmap DAG for the project.
+        """
+        base_url = cfg.backend_base_url.rstrip("/")
+        url = f"{base_url}/api/llm/planner"
+
+        context_summary = _summarize_context_for_planner(state.get("context_docs") or [])
+
+        body = {
+            "goal": state["goal"],
+            "context": context_summary,
+            "max_steps": cfg.planner_max_steps,
+        }
+        if cfg.planner_model_id:
+            body["model_id"] = cfg.planner_model_id
+
+        plan_nodes: List[RoadmapNode]
+        try:
+            resp = requests.post(url, json=body, timeout=cfg.http_timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            raw_plan = data.get("plan") or []
+
+            plan_nodes = []
+            for idx, item in enumerate(raw_plan):
+                node: RoadmapNode = {
+                    "id": str(item.get("id") or f"S{idx+1}"),
+                    "title": str(item.get("title") or f"Step {idx+1}"),
+                    "description": str(
+                        item.get("description") or f"Step {idx+1} towards goal: {state['goal']}"
+                    ),
+                    "depends_on": [str(d) for d in (item.get("depends_on") or [])],
+                    "status": "pending",
+                }
+                plan_nodes.append(node)
+
+        except Exception:
+            # Fallback: trivial 3-step plan
+            plan_nodes = [
+                {
+                    "id": "S1",
+                    "title": "Clarify requirements",
+                    "description": f"Clarify constraints and success criteria for goal: {state['goal']}",
+                    "depends_on": [],
+                    "status": "pending",
+                },
+                {
+                    "id": "S2",
+                    "title": "Design architecture",
+                    "description": "Sketch high-level architecture and data flows.",
+                    "depends_on": ["S1"],
+                    "status": "pending",
+                },
+                {
+                    "id": "S3",
+                    "title": "Implement first milestone",
+                    "description": "Define and implement the first milestone.",
+                    "depends_on": ["S2"],
+                    "status": "pending",
+                },
+            ]
+
+        new_state: ProjectState = dict(state)
+        new_state["current_nodes"] = plan_nodes
+        return new_state
+
+    return planner_node
+
+
+def make_decision_node(cfg: ProjectManagerConfig):
+    def decision_node(state: ProjectState) -> ProjectState:
+        """
+        Construct decision options based on the current roadmap and context.
+
+        For now, this is a deterministic heuristic:
+        - Picks the first 2 pending nodes.
+        - Creates a single decision: which node to focus on next.
+        """
+        nodes = state.get("current_nodes") or []
+        pending = [n for n in nodes if n.get("status") in (None, "pending")]
+
+        if len(pending) < 2:
+            # No meaningful decision to make; mark as resolved noop.
+            decisions: List[Decision] = state.get("decisions") or []
+            new_state: ProjectState = dict(state)
+            new_state["decisions"] = decisions
+            return new_state
+
+        first, second = pending[0], pending[1]
+
+        options: List[DecisionOption] = [
+            {
+                "id": first["id"],
+                "title": f"Focus on {first['title']}",
+                "pros": [
+                    "Unblocks many downstream steps." if first.get("depends_on") == [] else "Clarifies early architecture.",
+                    "Aligns directly with user goal.",
+                ],
+                "cons": [
+                    "May require more upfront design.",
+                ],
+                "related_node_ids": [first["id"]],
+            },
+            {
+                "id": second["id"],
+                "title": f"Focus on {second['title']}",
+                "pros": [
+                    "Quick win to build momentum.",
+                ],
+                "cons": [
+                    "Might need rework after earlier steps stabilize.",
+                ],
+                "related_node_ids": [second["id"]],
+            },
+        ]
+
+        decision: Decision = {
+            "id": f"decision-{len(state.get('decisions') or []) + 1}",
+            "question": "Which roadmap step should be prioritized next?",
+            "options": options,
+            "chosen_option_id": options[0]["id"],  # deterministic default: pick first option
+        }
+
+        decisions: List[Decision] = list(state.get("decisions") or [])
+        decisions.append(decision)
+
+        # Optionally mark chosen node as "in_progress"
+        chosen_id = decision["chosen_option_id"]
+        updated_nodes: List[RoadmapNode] = []
+        for node in nodes:
+            if node.get("id") == chosen_id:
+                updated = dict(node)
+                updated["status"] = "in_progress"
+                updated_nodes.append(updated)  # type: ignore[arg-type]
+            else:
+                updated_nodes.append(node)  # type: ignore[arg-type]
+
+        new_state: ProjectState = dict(state)
+        new_state["decisions"] = decisions
+        new_state["current_nodes"] = updated_nodes
+        return new_state
+
+    return decision_node
+
+
+# -------- Conditional routing --------
+
+
+def _route_from_supervisor(state: ProjectState) -> Literal["rag", "plan", "decide", "end"]:
+    """
+    Read next_action set by supervisor_node and use it to choose the next edge.
+    """
+    next_action = state.get("next_action") or "end"
+    if next_action not in ("rag", "plan", "decide", "end"):
+        return "end"
+    return next_action  # type: ignore[return-value]
+
+
+# -------- Graph factory --------
+
+
+def create_project_manager_graph(config: Dict[str, Any]) -> StateGraph:
+    """
+    Build and return the StateGraph for the Project Manager agent.
+
+    `config` should be a plain dict; see `ProjectManagerConfig` for supported keys.
+    """
+    cfg = ProjectManagerConfig.from_dict(config)
+    graph = StateGraph(ProjectState)
+
+    supervisor = make_supervisor_node(cfg)
+    rag = make_rag_node(cfg)
+    planner = make_planner_node(cfg)
+    decision = make_decision_node(cfg)
+
+    graph.add_node("supervisor_node", supervisor)
+    graph.add_node("rag_node", rag)
+    graph.add_node("planner_node", planner)
+    graph.add_node("decision_node", decision)
+
+    # Entry point: supervisor
+    graph.set_entry_point("supervisor_node")
+
+    # Conditional routing out of supervisor
+    graph.add_conditional_edges(
+        "supervisor_node",
+        _route_from_supervisor,
+        {
+            "rag": "rag_node",
+            "plan": "planner_node",
+            "decide": "decision_node",
+            "end": END,
+        },
+    )
+
+    # After each worker node, go back to supervisor to decide next move
+    graph.add_edge("rag_node", "supervisor_node")
+    graph.add_edge("planner_node", "supervisor_node")
+    graph.add_edge("decision_node", "supervisor_node")
+
+    return graph
+orchestration/langgraph/run_project_manager.py
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict
+
+from langgraph.graph import StateGraph
+
+from orchestration.langgraph.project_manager_graph import (
+    ProjectState,
+    create_project_manager_graph,
+)
+
+
+def _load_config() -> Dict[str, Any]:
+    """
+    Minimal config loader.
+
+    For now, pulls only a backend base URL from environment and
+    uses hard-coded defaults for other values.
+    """
+    return {
+        "backend_base_url": os.getenv("CORTEX_BACKEND_BASE_URL", "http://localhost:8000"),
+        "http_timeout": float(os.getenv("CORTEX_HTTP_TIMEOUT", "30.0")),
+        "planner_max_steps": int(os.getenv("CORTEX_PLANNER_MAX_STEPS", "8")),
+        # planner_model_id can be left None to let backend default
+        "planner_model_id": os.getenv("CORTEX_PLANNER_MODEL_ID"),
+    }
+
+
+def main() -> None:
+    config = _load_config()
+
+    graph_builder: StateGraph = create_project_manager_graph(config)
+    app = graph_builder.compile()
+
+    initial_state: ProjectState = {
+        "project_id": "demo-project",
+        "goal": "Build an MVP of Cortex (AI-Integrated Knowledge & Execution Engine).",
+        "current_nodes": [],
+        "decisions": [],
+        "context_docs": [],
+    }
+
+    final_state = app.invoke(initial_state)
+
+    output = {
+        "project_id": final_state.get("project_id"),
+        "goal": final_state.get("goal"),
+        "roadmap_nodes": final_state.get("current_nodes", []),
+        "decisions": final_state.get("decisions", []),
+        "context_docs": final_state.get("context_docs", []),
+    }
+
+    print(json.dumps(output, indent=2))
+
+
+if __name__ == "__main__":
+    main()
+You said:
+You are a backend engineer connecting FastAPI to LangGraph.
+
+Goal: Add a backend API for dynamic project roadmap generation using the LangGraph project manager graph.
+
+Requirements:
+- Endpoint: POST /roadmap/generate
+- Request:
+  - project_id: Optional[str]
+  - goal: str
+  - optional constraints, tech_stack_preferences
+- Response:
+  - DAG representation (nodes, edges), consistent with frontend roadmap visualizer.
+
+Deliverables:
+1. FastAPI router: backend/app/api/routes/roadmap.py:
+   - Calls a LangGraph runner (e.g., via local Python invocation or a small wrapper).
+   - Returns normalized DAG data.
+2. LangGraph runner module: backend/app/services/roadmap_service.py:
+   - Wraps LangGraph calls.
+   - Handles trace_id, logging, errors.
+
+Output:
+- Provide full code for router and service.
+ChatGPT said:
+
+Thought for 36s
+Cortex-roadmap-backend
+· python
+# Cortex backend roadmap API and service will be defined in this canvas.
+
+# backend/app/services/roadmap_service.py
+
+from __future__ import annotations
+
+import logging
+import os
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, TypedDict
+
+from langgraph.graph import StateGraph
+
+from orchestration.langgraph.project_manager_graph import (
+    ProjectState,
+    create_project_manager_graph,
+)
+
+logger = logging.getLogger("cortex.roadmap")
+
+
+class RoadmapGenerationError(Exception):
+    """
+    Raised when roadmap generation via LangGraph fails.
+    """
+
+
+class RoadmapNodeOut(TypedDict, total=False):
+    id: str
+    title: str
+    description: str
+    status: str
+    depends_on: List[str]
+
+
+class RoadmapEdgeOut(TypedDict, total=False):
+    id: str
+    source: str
+    target: str
+
+
+class RoadmapResult(TypedDict, total=False):
+    project_id: str
+    goal: str
+    nodes: List[RoadmapNodeOut]
+    edges: List[RoadmapEdgeOut]
+    trace_id: Optional[str]
+
+
+@dataclass
+class RoadmapConfig:
+    backend_base_url: str
+    http_timeout: float
+    planner_max_steps: int
+    planner_model_id: Optional[str]
+
+    @classmethod
+    def from_env(cls) -> "RoadmapConfig":
+        return cls(
+            backend_base_url=os.getenv("CORTEX_BACKEND_BASE_URL", "http://localhost:8000"),
+            http_timeout=float(os.getenv("CORTEX_HTTP_TIMEOUT", "30.0")),
+            planner_max_steps=int(os.getenv("CORTEX_PLANNER_MAX_STEPS", "8")),
+            planner_model_id=os.getenv("CORTEX_PLANNER_MODEL_ID"),
+        )
+
+    def to_graph_config(self) -> Dict[str, Any]:
+        return {
+            "backend_base_url": self.backend_base_url,
+            "http_timeout": self.http_timeout,
+            "planner_max_steps": self.planner_max_steps,
+            "planner_model_id": self.planner_model_id,
+        }
+
+
+class RoadmapService:
+    """
+    Thin wrapper around the LangGraph Project Manager graph.
+
+    Responsible for:
+    - building/compiling the graph,
+    - invoking it with an initial ProjectState,
+    - normalizing the resulting roadmap into nodes/edges.
+    """
+
+    def __init__(self, config: Optional[RoadmapConfig] = None) -> None:
+        self._config = config or RoadmapConfig.from_env()
+
+    def _build_graph_app(self):
+        graph_config = self._config.to_graph_config()
+        graph: StateGraph = create_project_manager_graph(graph_config)
+        return graph.compile()
+
+    def generate_roadmap(
+        self,
+        *,
+        project_id: Optional[str],
+        goal: str,
+        constraints: Optional[str],
+        tech_stack_preferences: Optional[str],
+        trace_id: Optional[str] = None,
+    ) -> RoadmapResult:
+        trace_id = trace_id or uuid.uuid4().hex
+
+        logger.info(
+            "roadmap_generate_start",
+            extra={
+                "trace_id": trace_id,
+                "project_id": project_id,
+                "goal": goal,
+            },
+        )
+
+        app = self._build_graph_app()
+
+        initial_project_id = project_id or f"proj-{uuid.uuid4().hex[:8]}"
+
+        initial_state: ProjectState = {
+            "project_id": initial_project_id,
+            "goal": goal,
+            "current_nodes": [],
+            "decisions": [],
+            "context_docs": [],
+        }
+
+        # Attach optional metadata fields even if the TypedDict does not declare them explicitly.
+        if constraints:
+            initial_state["constraints"] = constraints  # type: ignore[assignment]
+        if tech_stack_preferences:
+            initial_state["tech_stack_preferences"] = tech_stack_preferences  # type: ignore[assignment]
+        initial_state["trace_id"] = trace_id  # type: ignore[assignment]
+
+        try:
+            final_state = app.invoke(initial_state)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "roadmap_generate_error",
+                extra={"trace_id": trace_id, "project_id": initial_project_id},
+            )
+            raise RoadmapGenerationError(str(exc)) from exc
+
+        raw_nodes: List[Dict[str, Any]] = list(final_state.get("current_nodes") or [])
+        nodes: List[RoadmapNodeOut] = []
+        edges: List[RoadmapEdgeOut] = []
+
+        for node in raw_nodes:
+            node_id = str(node.get("id") or f"node-{len(nodes) + 1}")
+            depends_on = [str(d) for d in (node.get("depends_on") or [])]
+            status = str(node.get("status") or "pending")
+
+            nodes.append(
+                RoadmapNodeOut(
+                    id=node_id,
+                    title=str(node.get("title") or node_id),
+                    description=str(node.get("description") or ""),
+                    status=status,
+                    depends_on=depends_on,
+                )
+            )
+
+        # Build edges from dependencies
+        seen_edges: set[str] = set()
+        for node in nodes:
+            for dep in node.get("depends_on") or []:
+                edge_id = f"{dep}->{node['id']}"
+                if edge_id in seen_edges:
+                    continue
+                seen_edges.add(edge_id)
+                edges.append(
+                    RoadmapEdgeOut(
+                        id=edge_id,
+                        source=dep,
+                        target=node["id"],
+                    )
+                )
+
+        result: RoadmapResult = {
+            "project_id": str(final_state.get("project_id") or initial_project_id),
+            "goal": str(final_state.get("goal") or goal),
+            "nodes": nodes,
+            "edges": edges,
+            "trace_id": trace_id,
+        }
+
+        logger.info(
+            "roadmap_generate_success",
+            extra={
+                "trace_id": trace_id,
+                "project_id": result["project_id"],
+                "nodes_count": len(nodes),
+                "edges_count": len(edges),
+            },
+        )
+
+        return result
+
+
+# Global service instance for simple use by the API layer
+_service_instance: Optional[RoadmapService] = None
+
+
+def get_roadmap_service() -> RoadmapService:
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = RoadmapService()
+    return _service_instance
+# backend/app/api/routes/roadmap.py
+
+from __future__ import annotations
+
+import uuid
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
+
+from app.services.roadmap_service import (
+    RoadmapGenerationError,
+    RoadmapNodeOut,
+    RoadmapEdgeOut,
+    get_roadmap_service,
+)
+
+router = APIRouter()
+
+
+# -------- Schemas --------
+
+
+class RoadmapGenerateRequest(BaseModel):
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Optional stable identifier for the project. One will be generated if omitted.",
+    )
+    goal: str = Field(
+        ...,
+        description="High-level project goal the roadmap should satisfy.",
+    )
+    constraints: Optional[str] = Field(
+        default=None,
+        description="Optional constraints (time, resources, scope, etc.).",
+    )
+    tech_stack_preferences: Optional[str] = Field(
+        default=None,
+        description="Optional preferences for languages, frameworks, infra, etc.",
+    )
+
+
+class RoadmapNode(BaseModel):
+    id: str
+    title: str
+    description: str
+    status: str = Field(
+        default="pending",
+        description="Node status (pending, in_progress, completed).",
+    )
+    depends_on: List[str] = Field(
+        default_factory=list,
+        description="IDs of prerequisite nodes.",
+    )
+
+
+class RoadmapEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+
+
+class RoadmapGenerateResponse(BaseModel):
+    project_id: str
+    goal: str
+    nodes: List[RoadmapNode]
+    edges: List[RoadmapEdge]
+    trace_id: Optional[str] = None
+
+
+# -------- Routes --------
+
+
+@router.post(
+    "/generate",
+    response_model=RoadmapGenerateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a dynamic project roadmap DAG",
+)
+async def generate_roadmap(request: Request, body: RoadmapGenerateRequest) -> RoadmapGenerateResponse:
+    """
+    POST /roadmap/generate
+
+    Invokes the LangGraph Project Manager graph to generate a project roadmap for
+    the given goal and optional constraints/tech stack preferences, returning a
+    normalized DAG representation (nodes + edges).
+    """
+    trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
+
+    service = get_roadmap_service()
+
+    try:
+        result = await run_in_threadpool(
+            service.generate_roadmap,
+            project_id=body.project_id,
+            goal=body.goal,
+            constraints=body.constraints,
+            tech_stack_preferences=body.tech_stack_preferences,
+            trace_id=trace_id,
+        )
+    except RoadmapGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate roadmap: {exc}",
+        ) from exc
+
+    # Coerce TypedDict result into pydantic response model
+    node_models = [
+        RoadmapNode(
+            id=n["id"],
+            title=n["title"],
+            description=n.get("description", ""),
+            status=n.get("status", "pending"),
+            depends_on=n.get("depends_on") or [],
+        )
+        for n in result.get("nodes", [])
+    ]
+
+    edge_models = [
+        RoadmapEdge(
+            id=e["id"],
+            source=e["source"],
+            target=e["target"],
+        )
+        for e in result.get("edges", [])
+    ]
+
+    return RoadmapGenerateResponse(
+        project_id=result["project_id"],
+        goal=result["goal"],
+        nodes=node_models,
+        edges=edge_models,
+        trace_id=result.get("trace_id"),
+    )
+You said:
+You are a backend observability engineer.
+
+Goal: Add structured logging and basic metrics to the Cortex backend.
+
+Requirements:
+- Log format: JSON with fields: timestamp, level, logger, message, trace_id, extra.
+- Attach trace_id to request context and propagate through logs.
+- Add a /metrics endpoint (even if just stubbed for now), ready to integrate with Prometheus later.
+- Log:
+  - API calls (start, end, duration).
+  - External service calls (Qdrant, n8n, model runtimes).
+  - Errors (using ApiError).
+
+Deliverables:
+1. Enhance backend/app/core/logging.py to:
+   - Provide a get_logger(name) function.
+   - Install middleware for request logging.
+2. Add metrics placeholders (simple counters/histograms in code — plain Python for now).
+3. Tests that verify logs emitted for a sample request.
+
+Output:
+- Provide full code updates.
+ChatGPT said:
+
+Thought for 1m 19s
+Cortex-backend-observability
+· python
+# Observability layer for Cortex backend (logging + metrics) will be developed here.
+
+Here are concrete, drop-in updates for logging + metrics, wired into FastAPI.
+
+backend/app/core/logging.py
+from __future__ import annotations
+
+import json
+import logging
+import sys
+import time
+import uuid
+from contextvars import ContextVar
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
+
+from app.core.metrics import record_http_request
+
+
+# ---- trace context ----
+
+_trace_id_var: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
+
+
+def get_trace_id() -> Optional[str]:
+    return _trace_id_var.get()
+
+
+def set_trace_id(trace_id: Optional[str]) -> Any:
+    """
+    Set trace_id for the current context; returns a token that can be used to reset.
+    """
+    return _trace_id_var.set(trace_id)
+
+
+def reset_trace_id(token: Any) -> None:
+    """
+    Reset trace_id to previous value using the token from set_trace_id.
+    """
+    _trace_id_var.reset(token)
+
+
+# ---- JSON formatter ----
+
+class JsonLogFormatter(logging.Formatter):
+    """
+    Log formatter that outputs structured JSON with the required fields:
+    timestamp, level, logger, message, trace_id, extra.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        # Base fields
+        ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+
+        # Determine trace_id precedence: record attribute > contextvar
+        record_trace_id = getattr(record, "trace_id", None)
+        trace_id = record_trace_id or get_trace_id()
+
+        base: Dict[str, Any] = {
+            "timestamp": ts,
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "trace_id": trace_id,
+            "extra": {},
+        }
+
+        # Collect non-standard attributes into extra
+        standard = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "trace_id",
+        }
+
+        for key, value in record.__dict__.items():
+            if key in standard:
+                continue
+            base["extra"][key] = value
+
+        if record.exc_info:
+            base["extra"]["exc_type"] = str(record.exc_info[0].__name__)
+            base["extra"]["exc_message"] = str(record.exc_info[1])
+
+        return json.dumps(base, default=str)
+
+
+# ---- configuration helpers ----
+
+_CONFIGURED = False
+
+
+def configure_logging(level: str | int = "INFO") -> None:
+    """
+    Configure root logging with JSON formatter.
+
+    Call this once during startup (e.g., in app.main).
+    """
+    global _CONFIGURED
+    if _CONFIGURED:
+        return
+
+    if isinstance(level, str):
+        numeric_level = logging.getLevelName(level.upper())
+        if isinstance(numeric_level, int):
+            level = numeric_level
+        else:
+            level = logging.INFO
+
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    # Clear any default handlers
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLogFormatter())
+    root.addHandler(handler)
+
+    _CONFIGURED = True
+
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    """
+    Obtain a logger with given name; defaults to 'cortex'.
+    """
+    return logging.getLogger(name or "cortex")
+
+
+# ---- request logging middleware ----
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Starlette/FastAPI middleware that logs each request start/end and attaches trace_id.
+
+    - Extracts trace_id from the `X-Trace-Id` header or generates a new one.
+    - Stores trace_id in a ContextVar to be available to all logs.
+    - Logs request_start and request_end with path, method, status, duration_ms.
+    - Records simple HTTP metrics via core.metrics.
+    """
+
+    def __init__(self, app, logger_name: str = "cortex.api") -> None:  # type: ignore[override]
+        super().__init__(app)
+        self.logger = get_logger(logger_name)
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        incoming_trace_id = request.headers.get("X-Trace-Id")
+        trace_id = incoming_trace_id or uuid.uuid4().hex
+
+        token = set_trace_id(trace_id)
+        start = time.perf_counter()
+
+        self.logger.info(
+            "request_start",
+            extra={
+                "trace_id": trace_id,
+                "path": request.url.path,
+                "method": request.method,
+                "client": request.client.host if request.client else None,
+            },
+        )
+
+        try:
+            response = await call_next(request)
+            duration_ms = (time.perf_counter() - start) * 1000.0
+
+            # Update metrics
+            record_http_request(
+                path=request.url.path,
+                method=request.method,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+
+            # Log completion
+            self.logger.info(
+                "request_end",
+                extra={
+                    "trace_id": trace_id,
+                    "path": request.url.path,
+                    "method": request.method,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                },
+            )
+
+            # Propagate trace_id back to the caller
+            response.headers["X-Trace-Id"] = trace_id
+            return response
+
+        except Exception as exc:  # noqa: BLE001
+            duration_ms = (time.perf_counter() - start) * 1000.0
+            self.logger.error(
+                "request_error",
+                exc_info=True,
+                extra={
+                    "trace_id": trace_id,
+                    "path": request.url.path,
+                    "method": request.method,
+                    "duration_ms": duration_ms,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            # Let upstream exception handlers transform this into proper HTTP response
+            raise
+        finally:
+            reset_trace_id(token)
+backend/app/core/metrics.py
+from __future__ import annotations
+
+import threading
+from typing import Dict, Tuple
+
+
+# Simple in-memory metrics placeholders.
+# These are designed so they can be replaced by Prometheus or OTEL later.
+
+
+_http_lock = threading.Lock()
+_http_request_counts: Dict[Tuple[str, str, int], int] = {}
+_http_request_latency_sum_ms: Dict[Tuple[str, str, int], float] = {}
+_http_request_latency_max_ms: Dict[Tuple[str, str, int], float] = {}
+
+
+_external_lock = threading.Lock()
+_external_call_counts: Dict[Tuple[str, str, int], int] = {}
+_external_call_latency_sum_ms: Dict[Tuple[str, str, int], float] = {}
+
+
+def record_http_request(path: str, method: str, status_code: int, duration_ms: float) -> None:
+    """
+    Increment HTTP request counters and latency aggregations.
+    """
+    key = (path, method.upper(), int(status_code))
+    with _http_lock:
+        _http_request_counts[key] = _http_request_counts.get(key, 0) + 1
+        _http_request_latency_sum_ms[key] = _http_request_latency_sum_ms.get(key, 0.0) + duration_ms
+        _http_request_latency_max_ms[key] = max(
+            duration_ms, _http_request_latency_max_ms.get(key, 0.0)
+        )
+
+
+def record_external_call(
+    service: str,
+    operation: str,
+    status_code: int,
+    duration_ms: float,
+) -> None:
+    """
+    Track simple metrics for external services: Qdrant, n8n, model runtimes, etc.
+    """
+    key = (service, operation, int(status_code))
+    with _external_lock:
+        _external_call_counts[key] = _external_call_counts.get(key, 0) + 1
+        _external_call_latency_sum_ms[key] = (
+            _external_call_latency_sum_ms.get(key, 0.0) + duration_ms
+        )
+
+
+def get_metrics_snapshot() -> dict:
+    """
+    Return a JSON-serializable snapshot of all metrics.
+
+    This is primarily used by the /metrics endpoint as a stub until
+    Prometheus/OpenTelemetry is wired in.
+    """
+    with _http_lock, _external_lock:
+        http_requests = []
+        for (path, method, status), count in _http_request_counts.items():
+            sum_ms = _http_request_latency_sum_ms.get((path, method, status), 0.0)
+            max_ms = _http_request_latency_max_ms.get((path, method, status), 0.0)
+            http_requests.append(
+                {
+                    "path": path,
+                    "method": method,
+                    "status_code": status,
+                    "count": count,
+                    "latency_sum_ms": sum_ms,
+                    "latency_max_ms": max_ms,
+                }
+            )
+
+        external_calls = []
+        for (service, operation, status), count in _external_call_counts.items():
+            sum_ms = _external_call_latency_sum_ms.get((service, operation, status), 0.0)
+            external_calls.append(
+                {
+                    "service": service,
+                    "operation": operation,
+                    "status_code": status,
+                    "count": count,
+                    "latency_sum_ms": sum_ms,
+                }
+            )
+
+    return {
+        "http_requests": http_requests,
+        "external_calls": external_calls,
+    }
+backend/app/api/routes/metrics.py
+from __future__ import annotations
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+from app.core.metrics import get_metrics_snapshot
+
+router = APIRouter()
+
+
+@router.get(
+    "/metrics",
+    response_class=JSONResponse,
+    summary="Metrics endpoint (stub for Prometheus integration)",
+)
+async def metrics_endpoint() -> JSONResponse:
+    """
+    Basic metrics endpoint.
+
+    Returns a JSON snapshot of in-memory counters/histograms. This is intentionally
+    simple so it can be swapped out for a Prometheus/OpenTelemetry exporter later.
+    """
+    snapshot = get_metrics_snapshot()
+    return JSONResponse(content=snapshot)
+Note: this router is defined with path /metrics, so including it with no prefix exposes /metrics.
+
+backend/app/main.py (wiring logging, middleware, metrics router)
+Below is a complete main.py aligned with the earlier skeleton, updated for observability.
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.api.routes import (
+    system,
+    context,
+    workflows,
+    ingest,
+    agents,
+    ideas,
+    knowledge,
+    streaming,
+    llm,
+    metrics,  # <-- new
+)
+from app.core.logging import configure_logging, RequestLoggingMiddleware
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+
+    # Configure logging once at startup
+    configure_logging(level="INFO")
+
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+    )
+
+    # CORS for local frontend dev
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Request logging + trace_id middleware
+    app.add_middleware(RequestLoggingMiddleware)
+
+    # Routers grouped by resource
+    app.include_router(system.router, prefix="/api/system", tags=["system"])
+    app.include_router(context.router, prefix="/api/context", tags=["context"])
+    app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
+    app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+    app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
+    app.include_router(ideas.router, prefix="/api/ideas", tags=["ideas"])
+    app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
+    app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"])
+    app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
+    app.include_router(metrics.router, tags=["metrics"])  # exposes `/metrics`
+
+    return app
+
+
+app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+Example: external service logging (model runtimes)
+Here is how you can instrument an external call (e.g., vLLM) using the new logger + metrics. This is an illustrative patch to your existing vllm_runner.py:
+
+# backend/app/models/vllm_runner.py (only showing changes around the HTTP call)
+
+import httpx
+
+from app.models.base import ModelRequest, ModelResponse, ModelRunner, now_ms
+from app.core.logging import get_logger
+from app.core.metrics import record_external_call
+
+
+class VLLMRunner(ModelRunner):
+    runtime_name: str = "vllm"
+
+    def __init__(...):
+        ...
+        self._logger = get_logger("cortex.vllm")
+
+    async def run(self, request: ModelRequest) -> ModelResponse:
+        ...
+        try:
+            ...
+            start_ms = now_ms()
+            self._logger.info(
+                "external_call_start",
+                extra={
+                    "service": "vllm",
+                    "operation": "chat.completions",
+                    "url": f"{self._base_url}/v1/chat/completions",
+                    "model": self._model,
+                },
+            )
+            response = await client.post("/v1/chat/completions", json=payload)
+            end_ms = now_ms()
+            duration_ms = end_ms - start_ms
+
+            record_external_call(
+                service="vllm",
+                operation="chat.completions",
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+
+            self._logger.info(
+                "external_call_end",
+                extra={
+                    "service": "vllm",
+                    "operation": "chat.completions",
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "model": self._model,
+                },
+            )
+
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"vLLM error {response.status_code}: {response.text[:200]}"
+                )
+            ...
+You can apply the same pattern for Qdrant, n8n, llama.cpp, etc.
+
+backend/app/tests/test_request_logging.py
+This test verifies that a simple request emits structured logs with a trace_id and that the middleware runs.
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+import pytest
+from httpx import AsyncClient
+
+from app.main import app
+from app.core.logging import get_trace_id
+
+
+@pytest.mark.asyncio
+async def test_request_logging_emits_start_and_end(caplog: Any) -> None:
+    """
+    Ensure that a request triggers request_start and request_end logs
+    and that a trace_id is attached.
+    """
+    caplog.set_level(logging.INFO)
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        resp = await client.get("/api/system/health")
+
+    assert resp.status_code == 200
+
+    # There should be at least one request_start and one request_end record.
+    start_records = [r for r in caplog.records if r.getMessage() == "request_start"]
+    end_records = [r for r in caplog.records if r.getMessage() == "request_end"]
+
+    assert start_records, "expected at least one request_start log record"
+    assert end_records, "expected at least one request_end log record"
+
+    # Confirm trace_id presence on log records
+    for r in start_records + end_records:
+        assert hasattr(r, "trace_id")
+        assert r.trace_id is not None
+
+    # Optional: ensure messages are JSON-serializable via our formatter
+    # by formatting a sample record
+    formatter = app.logger.handlers[0].formatter  # type: ignore[attr-defined]
+    formatted = formatter.format(start_records[0])  # type: ignore[arg-type]
+    parsed = json.loads(formatted)
+    assert parsed["message"] == "request_start"
+    assert "timestamp" in parsed
+    assert "trace_id" in parsed
+    assert isinstance(parsed["extra"], dict)
+
+    # After the request, no trace_id should be left in the context for this test
+    assert get_trace_id() is None
+Key insights / next steps
+Logging is now fully structured JSON with context-aware trace_id, and a middleware ensures every API request is traced and measured.
+
+Metrics are intentionally plain Python placeholders, wired into request logging and ready to extend to external services; they’re exposed via /metrics for easy Prometheus migration later.
+
+Next steps:
+
+Instrument Qdrant, n8n, and all model runners using get_logger(...) + record_external_call.
+
+If/when you adopt Prometheus or OTEL, swap core.metrics.get_metrics_snapshot() with a proper exporter while preserving the API contract.
+
+You said:
+You are a frontend engineer focused on robustness.
+
+Goal: Add tests and explicit UI states (loading, error, empty) to key frontend components.
+
+Requirements:
+- Use Vitest/Jest + React Testing Library.
+- Components:
+  - MissionControlBoard
+  - IngestStation
+  - KnowledgeNexus or equivalent search view
+- Verify:
+  - Loading spinners or skeletons while data is fetching.
+  - Informative error messages when API calls fail.
+  - Sensible “no data yet” states.
+
+Deliverables:
+1. Test files in frontend/src/__tests__/ for the listed components.
+2. Component updates to:
+   - Use data hooks.
+   - Render different UI for loading/error/empty states.
+
+Output:
+- Provide full test files and updated components.
+ChatGPT said:
+
+Thought for 2m 1s
+// frontend/src/components/dashboards/MissionControlBoard.tsx
+
+import React from "react";
+import { GlassCard } from "../primitives/GlassCard";
+import { NeonButton } from "../primitives/NeonButton";
+import { LoadingSpinner } from "../primitives/LoadingSpinner";
+import { ErrorBanner } from "../shared/ErrorBanner";
+import { StatusPill } from "../shared/StatusPill";
+import { useMissionControlData } from "../../api/hooks/useMissionControlData";
+
+type MissionStatus = "nominal" | "warning" | "critical";
+
+interface MissionWidget {
+  id: string;
+  title: string;
+  status: MissionStatus;
+  description: string;
+}
+
+interface MissionControlData {
+  status: MissionStatus;
+  widgets: MissionWidget[];
+}
+
+export const MissionControlBoard: React.FC = () => {
+  const { data, isLoading, error, refetch } = useMissionControlData();
+
+  if (isLoading) {
+    return (
+      <GlassCard className="flex min-h-[200px] items-center justify-center" data-testid="mission-control-loading">
+        <div className="flex flex-col items-center gap-3">
+          <LoadingSpinner />
+          <p className="text-sm text-cyan-300/80">Spinning up mission telemetry…</p>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <GlassCard className="p-4" data-testid="mission-control-error">
+        <ErrorBanner message="Failed to load mission control status." details={String(error)} />
+        <div className="mt-4 flex justify-end">
+          <NeonButton onClick={() => refetch?.()} size="sm" variant="secondary">
+            Retry
+          </NeonButton>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  const missionData = data as MissionControlData | undefined;
+
+  if (!missionData || !missionData.widgets || missionData.widgets.length === 0) {
+    return (
+      <GlassCard className="p-6" data-testid="mission-control-empty">
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-cyan-100/80">
+            No mission telemetry yet. Start ingesting repos, docs, or chats to see system status here.
+          </p>
+          <NeonButton size="sm">Open Ingest Station</NeonButton>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  const overallStatus = missionData.status;
+
+  return (
+    <GlassCard className="p-4 space-y-4" data-testid="mission-control-ready">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-cyan-100">Mission Control</h2>
+          <p className="text-xs text-cyan-200/60">
+            High-level snapshot across ingest, workflows, agents, and knowledge graph.
+          </p>
+        </div>
+        <StatusPill status={overallStatus} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {missionData.widgets.map((widget) => (
+          <div
+            key={widget.id}
+            className="rounded-xl border border-cyan-500/20 bg-slate-950/40 p-3 backdrop-blur-sm"
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-cyan-100">{widget.title}</span>
+              <StatusPill status={widget.status} />
+            </div>
+            <p className="text-xs text-cyan-200/60">{widget.description}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end">
+        <NeonButton size="xs" variant="secondary" onClick={() => refetch?.()}>
+          Refresh
+        </NeonButton>
+      </div>
+    </GlassCard>
+  );
+};
+// frontend/src/components/dashboards/IngestStation.tsx
+
+import React from "react";
+import { Upload, FileText, AlertCircle, CheckCircle } from "lucide-react";
+import { GlassCard } from "../primitives/GlassCard";
+import { NeonButton } from "../primitives/NeonButton";
+import { LoadingSpinner } from "../primitives/LoadingSpinner";
+import { ErrorBanner } from "../shared/ErrorBanner";
+import { useIngestJobs } from "../../api/hooks/useIngestJobs";
+
+type IngestStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+
+interface IngestJob {
+  id: string;
+  source_path: string;
+  status: IngestStatus;
+  progress: number; // 0-1
+  message?: string | null;
+}
+
+interface IngestJobsData {
+  jobs: IngestJob[];
+}
+
+export const IngestStation: React.FC = () => {
+  const { data, isLoading, error, refetch } = useIngestJobs();
+
+  if (isLoading) {
+    return (
+      <GlassCard className="flex min-h-[200px] flex-col items-center justify-center" data-testid="ingest-loading">
+        <LoadingSpinner />
+        <p className="mt-3 text-sm text-cyan-300/80">Ingest engines warming up…</p>
+      </GlassCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <GlassCard className="p-4" data-testid="ingest-error">
+        <ErrorBanner message="Unable to load ingest jobs." details={String(error)} />
+        <div className="mt-4 flex justify-end">
+          <NeonButton size="sm" variant="secondary" onClick={() => refetch?.()}>
+            Retry
+          </NeonButton>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  const ingestData = data as IngestJobsData | undefined;
+  const jobs = ingestData?.jobs ?? [];
+
+  if (jobs.length === 0) {
+    return (
+      <GlassCard className=
+
+
+
+
+No file chosenNo file chosen
+ChatGPT can make mistakes. Check important info.
+ChatGPT is still generating a response...
