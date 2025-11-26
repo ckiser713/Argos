@@ -372,29 +372,30 @@ class RoadmapService:
         return dfs(to_node_id)
 
     def _row_to_node(self, row) -> RoadmapNode:
+        row_data = dict(row)
         depends_on_ids = []
-        if row.get("depends_on_ids_json"):
+        if row_data.get("depends_on_ids_json"):
             try:
-                depends_on_ids = json.loads(row["depends_on_ids_json"])
+                depends_on_ids = json.loads(row_data["depends_on_ids_json"])
             except (json.JSONDecodeError, ValueError):
                 pass
 
         return RoadmapNode(
-            id=row["id"],
-            project_id=row["project_id"],
-            label=row["label"],
-            description=row.get("description"),
-            status=RoadmapNodeStatus(row["status"]),
-            priority=RoadmapNodePriority(row["priority"]) if row.get("priority") else None,
-            start_date=datetime.fromisoformat(row["start_date"]) if row.get("start_date") else None,
-            target_date=datetime.fromisoformat(row["target_date"]) if row.get("target_date") else None,
+            id=row_data["id"],
+            project_id=row_data["project_id"],
+            label=row_data["label"],
+            description=row_data.get("description"),
+            status=RoadmapNodeStatus(row_data["status"]),
+            priority=RoadmapNodePriority(row_data["priority"]) if row_data.get("priority") else None,
+            start_date=datetime.fromisoformat(row_data["start_date"]) if row_data.get("start_date") else None,
+            target_date=datetime.fromisoformat(row_data["target_date"]) if row_data.get("target_date") else None,
             depends_on_ids=depends_on_ids,
-            lane_id=row.get("lane_id"),
-            idea_id=row.get("idea_id"),
-            ticket_id=row.get("ticket_id"),
-            mission_control_task_id=row.get("mission_control_task_id"),
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+            lane_id=row_data.get("lane_id"),
+            idea_id=row_data.get("idea_id"),
+            ticket_id=row_data.get("ticket_id"),
+            mission_control_task_id=row_data.get("mission_control_task_id"),
+            created_at=datetime.fromisoformat(row_data["created_at"]),
+            updated_at=datetime.fromisoformat(row_data["updated_at"]),
         )
 
     def _row_to_edge(self, row) -> RoadmapEdge:

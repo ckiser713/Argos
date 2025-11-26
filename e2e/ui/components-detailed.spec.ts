@@ -52,8 +52,8 @@ test.describe('Component-Specific UI Tests', () => {
     }
   });
 
-  test('should render agent run display', async ({ authenticatedPage, testProject }) => {
-    const apiHelpers = new ApiHelpers(authenticatedPage.request);
+  test('should render agent run display', async ({ authenticatedPage, testProject, api }) => {
+    const apiHelpers = new ApiHelpers(api);
     
     // Create an agent run
     const run = await apiHelpers.createAgentRun(
@@ -75,8 +75,8 @@ test.describe('Component-Specific UI Tests', () => {
     }
   });
 
-  test('should render roadmap visualization', async ({ authenticatedPage, testProject }) => {
-    const apiHelpers = new ApiHelpers(authenticatedPage.request);
+  test('should render roadmap visualization', async ({ authenticatedPage, testProject, api }) => {
+    const apiHelpers = new ApiHelpers(api);
     
     // Create roadmap nodes
     await apiHelpers.createRoadmapNode(testProject.id, {
@@ -96,8 +96,8 @@ test.describe('Component-Specific UI Tests', () => {
     }
   });
 
-  test('should render knowledge graph visualization', async ({ authenticatedPage, testProject }) => {
-    const apiHelpers = new ApiHelpers(authenticatedPage.request);
+  test('should render knowledge graph visualization', async ({ authenticatedPage, testProject, api }) => {
+    const apiHelpers = new ApiHelpers(api);
     
     // Create knowledge node
     await apiHelpers.createKnowledgeNode(testProject.id, {
@@ -211,7 +211,8 @@ test.describe('Component-Specific UI Tests', () => {
       await expect(dropdown).toBeVisible();
       
       // Test dropdown interaction
-      if (dropdown.tagName() === 'SELECT') {
+      const tagName = await dropdown.evaluate(el => el.tagName);
+      if (tagName === 'SELECT') {
         await dropdown.selectOption({ index: 0 });
       }
     }

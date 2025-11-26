@@ -29,11 +29,24 @@ class ProjectService:
         return project
 
     def create_project(self, request: CreateProjectRequest) -> CortexProject:
-        existing_slug = self.repo.get_by_slug(request.slug or ProjectFactory._slugify(request.name))
-        if existing_slug:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already in use")
-        project = ProjectFactory.new(request.name, request.slug, request.description)
+        if request.slug:
+            normalized_slug = request.slug
+            if self.repo.get_by_slug(normalized_slug):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already in use")
+        else:
+            base_slug = ProjectFactory._slugify(request.name)
+            normalized_slug = self._ensure_unique_slug(base_slug)
+
+        project = ProjectFactory.new(request.name, normalized_slug, request.description)
         return self.repo.save(project)
+
+    def _ensure_unique_slug(self, base_slug: str) -> str:
+        slug = base_slug
+        counter = 1
+        while self.repo.get_by_slug(slug):
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        return slug
 
     def update_project(self, project_id: str, request: UpdateProjectRequest) -> CortexProject:
         current = self.repo.get_project(project_id)

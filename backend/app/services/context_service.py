@@ -61,16 +61,14 @@ class ContextService:
         created_items = []
         with db_session() as conn:
             for item in request.items:
-                item_id = item.id if item.id else str(uuid.uuid4())
+                item_id = item.id or str(uuid.uuid4())
                 created_item = ContextItem(
                     id=item_id,
                     name=item.name,
                     type=item.type,
                     tokens=item.tokens,
-                    pinned=item.pinned if hasattr(item, "pinned") else False,
-                    canonical_document_id=item.canonical_document_id
-                    if hasattr(item, "canonical_document_id")
-                    else None,
+                    pinned=item.pinned,
+                    canonical_document_id=item.canonical_document_id,
                     created_at=now,
                 )
                 conn.execute(

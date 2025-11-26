@@ -1,5 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
+import { UIHelpers } from './utils/ui-helpers';
+import { ApiHelpers } from './utils/api-helpers';
 
 /**
  * Custom fixtures for e2e tests
@@ -9,6 +11,8 @@ export interface TestFixtures {
   api: APIRequestContext;
   authenticatedPage: Page;
   testProject: { id: string; name: string };
+  uiHelpers: UIHelpers;
+  apiHelpers: ApiHelpers;
 }
 
 /**
@@ -46,6 +50,16 @@ export const test = base.extend<TestFixtures>({
     await api.delete(`http://localhost:8000/api/projects/${project.id}`).catch(() => {
       // Ignore cleanup errors
     });
+  },
+
+  uiHelpers: async ({ authenticatedPage }, use) => {
+    const helpers = new UIHelpers(authenticatedPage);
+    await use(helpers);
+  },
+
+  apiHelpers: async ({ api }, use) => {
+    const helpers = new ApiHelpers(api);
+    await use(helpers);
   },
 });
 

@@ -14,7 +14,13 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: process.env.CI ? 'html' : 'list',
+  reporter: process.env.CI 
+    ? [['html'], ['json', { outputFile: 'test-results/results.json' }]]
+    : [['list'], ['html']],
+  /* Test timeout */
+  timeout: 30000,
+  /* Global test timeout */
+  globalTimeout: 600000,
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -79,7 +85,7 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: [
     {
-      command: 'cd backend && poetry run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
+      command: 'cd backend && LD_LIBRARY_PATH=/nix/store/dj06r96j515npcqi9d8af1d1c60bx2vn-gcc-14.3.0-lib/lib:/nix/store/g8zyryr9cr6540xsyg4avqkwgxpnwj2a-glibc-2.40-66/lib:$LD_LIBRARY_PATH poetry run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
       url: 'http://localhost:8000/api/docs',
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,

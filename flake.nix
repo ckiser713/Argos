@@ -1,177 +1,350 @@
 {
-  description = "Cortex - AI-Integrated Knowledge & Execution Engine";
+  description = "A comprehensive development environment for Argos_Chatgpt (Project Cortex)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    poetry2nix = {
-      url = "github:nix-community/poetry2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, poetry2nix }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ poetry2nix.overlays.default ];
-        };
+  outputs = { self, nixpkgs }:
+    let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      projectRoot = builtins.toString ./.;
+      
+      # Backend package - wrapper script that uses poetry
+      backend = pkgs.symlinkJoin {
+        name = "cortex-backend";
+        paths = [ backend-runner ];
+        buildInputs = [ pkgs.python311 pkgs.poetry ];
+      };
+      
+      # Frontend package - wrapper script that uses pnpm
+      frontend = pkgs.symlinkJoin {
+        name = "cortex-frontend";
+        paths = [ frontend-runner ];
+        buildInputs = [ pkgs.nodejs_20 pkgs.nodePackages.pnpm ];
+      };
+      
+      # Service runner scripts
+      backend-runner = pkgs.writeShellScriptBin "cortex-backend-run" ''
+        set -e
+        cd ${projectRoot}/backend
+        export CORTEX_ENV=production
+        export CORTEX_QDRANT_URL=http://localhost:6333
+        export CORTEX_ATLAS_DB_PATH=${projectRoot}/backend/atlas.db
+        ${pkgs.poetry}/bin/poetry run ${pkgs.python311}/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+      '';
+      
+      frontend-runner = pkgs.writeShellScriptBin "cortex-frontend-run" ''
+        set -e
+        cd ${projectRoot}/frontend
+        export NODE_ENV=development
+        ${pkgs.nodePackages.pnpm}/bin/pnpm dev
+      '';
+      
+      docker-services-runner = pkgs.writeShellScriptBin "cortex-docker-run" ''
+        set -e
+        cd ${projectRoot}
+        ${pkgs.docker-compose}/bin/docker-compose -f ${projectRoot}/ops/docker-compose.yml up -d
+      '';
+      
+      docker-services-stopper = pkgs.writeShellScriptBin "cortex-docker-stop" ''
+        set -e
+        cd ${projectRoot}
+        ${pkgs.docker-compose}/bin/docker-compose -f ${projectRoot}/ops/docker-compose.yml down
+      '';
+      
+    in
+    {
+      # Development shell
+      devShells.x86_64-linux.default = pkgs.mkShell {
+        buildInputs = with pkgs; [
+          # ============================================
+          # Python Environment
+          # ============================================
+          python311
+          python311Packages.pip
+          python311Packages.setuptools
+          poetry
 
-        # Python 3.11
-        pythonEnv = pkgs.python311;
+          # ============================================
+          # Node.js Environment
+          # ============================================
+          nodejs_20  # Node.js 20+ as specified in docs (fallback to nodejs if not available)
+          nodePackages.pnpm
+          nodePackages.typescript
+          nodePackages.typescript-language-server
 
-        # Node.js 20 with pnpm
-        nodejs = pkgs.nodejs_20;
-        pnpm = pkgs.nodePackages.pnpm;
+          # ============================================
+          # Python Linters & Type Checkers
+          # ============================================
+          ruff
+          mypy
+          python311Packages.black  # Optional but useful
 
-        # Playwright system dependencies
-        playwrightDeps = with pkgs; [
-          # Audio support
-          alsa-lib
-          # Browser dependencies
-          nss
-          nspr
-          atk
-          at-spi2-atk
-          cups
-          dbus
+          # ============================================
+          # System Libraries for Python Packages
+          # ============================================
+          # Core C libraries
+          stdenv.cc.cc.lib
+          gcc
+          gnumake
+          binutils
+          
+          # libffi - Required for bcrypt (passlib dependency)
+          libffi
+          
+          # OpenSSL - Required for HTTPS/SSL connections (FastAPI, uvicorn, requests)
+          openssl
+          openssl.dev
+          
+          # Compression libraries - Required by various Python packages
+          zlib
+          zlib.dev
+          bzip2
+          xz
+          
+          # SQLite - Headers needed for Python sqlite3 module (though built-in)
+          sqlite
+          sqlite.dev
+          
+          # tree-sitter - Required for tree-sitter-languages Python package
+          tree-sitter
+          
+          # Additional libraries that may be needed
+          libxml2
+          libxslt
           expat
-          fontconfig
-          freetype
-          gdk-pixbuf
-          glib
-          gtk3
-          libdrm
-          libxkbcommon
-          mesa
-          pango
-          xorg.libX11
-          xorg.libXcomposite
-          xorg.libXdamage
-          xorg.libXext
-          xorg.libXfixes
-          xorg.libXi
-          xorg.libXrandr
-          xorg.libXrender
-          xorg.libXScrnSaver
-          xorg.libXtst
-          xorg.libxcb
-          xorg.libxshmfence
-        ];
-
-        # Development tools
-        devTools = with pkgs; [
-          git
-          curl
-          jq
+          ncurses
+          readline
+          
+          # ============================================
+          # Docker & Container Tools
+          # ============================================
           docker
           docker-compose
-          # Python tools
-          python311
-          pythonEnv
-          poetry
-          # Node.js tools
-          nodejs
-          pnpm
-          # TypeScript
-          nodePackages.typescript
+          
+          # ============================================
+          # Playwright Browsers & Dependencies
+          # ============================================
+          chromium
+          firefox
+          webkitgtk_6_0
+          
+          # Playwright system dependencies
+          # These are typically provided by the browsers, but we include
+          # common system libraries that might be needed
+          glib
+          nss
+          nspr
+          alsa-lib
+          atk
+          at-spi2-atk
+          libdrm
+          libxkbcommon
+          xorg.libXcomposite
+          xorg.libXdamage
+          xorg.libX11
+          xorg.libXext
+          xorg.libXfixes
+          xorg.libXrandr
+          xorg.libXcursor  # Required for Playwright (libxcursor.so.1)
+          xorg.libXi  # Required for Playwright (libXi.so.6)
+          xorg.libXrender  # Required for Playwright (libXrender.so.1)
+          libx11
+          libxext
+          libxcb
+          mesa
+          libgbm
+          udev
+          cups  # Required for Playwright (libcups.so.2)
+          pango
+          cairo
+          gdk-pixbuf
+          gtk3
+          dbus
+          fontconfig
+          freetype
+          
+          # ============================================
+          # Development Tools
+          # ============================================
+          git
+          curl
+          wget
+          jq  # Useful for JSON processing
+          bash
+          pkg-config  # For finding library paths during Python package builds
+          
+          # ============================================
+          # ROCm Support (for AMD GPU)
+          # ============================================
+          # ROCm wheels and binaries are provided from ~/rocm/py311-tor290/
+          # This includes:
+          #   - PyTorch 2.9.1 (ROCm-enabled) wheels in wheels/torch2.9/
+          #   - Common dependencies (triton, tokenizers) in wheels/common/
+          #   - llama.cpp binaries (llama-cpp, llama-bench, llama-quantize) in bin/
+          #   - vLLM Docker image in images/
+          # These are configured via PIP_FIND_LINKS and PATH environment variables
+          # rocmPackages.rocm-smi  # Optional: uncomment if you need rocm-smi tool
         ];
 
-        # Import sub-flakes
-        backendFlake = import ./backend/flake.nix {
-          inherit nixpkgs poetry2nix flake-utils;
-        };
-
-        frontendFlake = import ./frontend/flake.nix {
-          inherit nixpkgs flake-utils;
-        };
-
-        # Docker compose wrapper script
-        dockerComposeWrapper = pkgs.writeScriptBin "cortex-docker" ''
-          #!${pkgs.bash}/bin/bash
-          set -e
-          if [ "${IN_NIX_SHELL-}" != "impure" ] && [ "${IN_NIX_SHELL-}" != "pure" ]; then
-            echo "Error: cortex-docker must be run inside the Nix dev shell (nix develop)." >&2
-            exit 1
+        # ============================================
+        # Environment Variables
+        # ============================================
+        shellHook = ''
+          # Add ROCm binaries to PATH (llama-cpp, llama-bench, llama-quantize)
+          export PATH="$HOME/rocm/py311-tor290/bin:$PATH"
+          
+          echo "=========================================="
+          echo "Cortex Development Environment"
+          echo "=========================================="
+          echo ""
+          echo "Python: $(python3 --version)"
+          echo "Node.js: $(node --version)"
+          echo "pnpm: $(pnpm --version)"
+          echo "Poetry: $(poetry --version)"
+          echo ""
+          echo "ROCm Integration:"
+          echo "  - ROCm wheels: $HOME/rocm/py311-tor290/wheels"
+          echo "  - ROCm binaries: $HOME/rocm/py311-tor290/bin (added to PATH)"
+          echo "  - PIP_FIND_LINKS configured for offline PyTorch installation"
+          echo ""
+          echo "Environment variables set:"
+          echo "  - CORTEX_ENV=dev"
+          echo "  - CORTEX_QDRANT_URL=http://localhost:6333"
+          echo "  - PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright"
+          echo "  - PIP_FIND_LINKS=$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common"
+          echo "  - PIP_NO_INDEX not set (allows Poetry/pip to access PyPI)"
+          echo "  - For ROCm packages, use: pip install --no-index --find-links \$HOME/rocm/py311-tor290/wheels/..."
+          echo ""
+          echo "To install PyTorch from ROCm wheels:"
+          echo "  pip install --find-links $HOME/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio"
+          echo "  pip install --find-links $HOME/rocm/py311-tor290/wheels/common triton tokenizers"
+          echo ""
+          echo "ROCm binaries available:"
+          if [ -f "$HOME/rocm/py311-tor290/bin/llama-cpp" ]; then
+            echo "  ✓ llama-cpp (ROCm-optimized)"
+          else
+            echo "  ⚠ llama-cpp not found at $HOME/rocm/py311-tor290/bin/llama-cpp"
           fi
-          # Find project root by looking for flake.nix or ops/docker-compose.yml
-          PROJECT_ROOT="$PWD"
-          while [ "$PROJECT_ROOT" != "/" ]; do
-            if [ -f "$PROJECT_ROOT/flake.nix" ] || [ -f "$PROJECT_ROOT/ops/docker-compose.yml" ]; then
-              break
-            fi
-            PROJECT_ROOT="$(dirname "$PROJECT_ROOT")"
-          done
-          if [ "$PROJECT_ROOT" = "/" ]; then
-            echo "Error: Could not find project root (flake.nix or ops/docker-compose.yml)" >&2
-            exit 1
-          fi
-          cd "$PROJECT_ROOT"
-          exec ${pkgs.docker-compose}/bin/docker-compose -f ops/docker-compose.yml "$@"
+          echo ""
+          echo "=========================================="
         '';
 
-      in
-      {
-        # Development shell
-        devShells.default = pkgs.mkShell {
-          buildInputs = devTools ++ playwrightDeps ++ [ dockerComposeWrapper ];
-
-          shellHook = ''
-            echo "Cortex Development Environment"
-            echo "=============================="
-            echo "Python: $(python --version)"
-            echo "Node.js: $(node --version)"
-            echo "pnpm: $(pnpm --version)"
-            echo ""
-            echo "Available commands:"
-            echo "  - Backend: cd backend && poetry install && poetry run uvicorn app.main:app --reload"
-            echo "  - Frontend: cd frontend && pnpm install && pnpm dev"
-            echo "  - E2E Tests: pnpm e2e"
-          echo "  - Docker services: cortex-docker up -d"
-          echo "  - Docker services (stop): cortex-docker down"
-          echo ""
-          echo "Guardrail: All commands should run inside this Nix shell. To run from scripts, prefix with tools/require-nix.sh"
-            
-            # Set environment variables
-            export CORTEX_ENV=dev
-            export CORTEX_QDRANT_URL="http://localhost:6333"
-            export CORTEX_DB_URL="postgresql+psycopg://cortex:cortex@localhost:5432/cortex"
-            export PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright"
-            
-            # Install Playwright browsers if not already installed
-            if [ ! -d "$HOME/.cache/ms-playwright" ]; then
-              echo "Installing Playwright browsers..."
-              pnpm exec playwright install --with-deps || true
-            fi
-            
-            # Ensure Docker socket is accessible
-            if [ -S /var/run/docker.sock ]; then
-              export DOCKER_HOST=unix:///var/run/docker.sock
-            fi
-          '';
-
-          # LD_LIBRARY_PATH for Playwright browsers
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath playwrightDeps;
+        # Set environment variables for the development environment
+        CORTEX_ENV = "dev";
+        CORTEX_QDRANT_URL = "http://localhost:6333";
+        CORTEX_DB_URL = "postgresql+psycopg://cortex:cortex@localhost:5432/cortex";
+        PLAYWRIGHT_BROWSERS_PATH = "$HOME/.cache/ms-playwright";
+        
+        # ROCm Integration - Python 3.11 PyTorch 2.9 wheels
+        # Point pip to ROCm wheels for offline installation
+        # Wheels available:
+        #   - torch2.9/: torch-2.9.1, torchvision-0.25.0, torchaudio-2.9.1
+        #   - common/: triton-3.5.0, tokenizers-0.22.2
+        # Note: PIP_NO_INDEX is NOT set globally to allow Poetry/pip to access PyPI for other packages
+        # When installing ROCm packages, use: pip install --no-index --find-links $HOME/rocm/py311-tor290/wheels/...
+        PIP_FIND_LINKS = "$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common";
+        
+        # ROCm binaries (llama.cpp tools) are added to PATH in shellHook
+        # These are: llama-cpp, llama-bench, llama-quantize
+        # Located at: ~/rocm/py311-tor290/bin
+        
+        # Python environment setup
+        PYTHONPATH = "${pkgs.python311}/lib/python3.11/site-packages";
+        
+        # Library paths for Python packages that need native libraries
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
+          stdenv.cc.cc.lib
+          libffi
+          openssl
+          zlib
+          sqlite
+          tree-sitter
+          libxml2
+          libxslt
+          expat
+          ncurses
+          readline
+          # Playwright/browser dependencies
+          glib
+          nss
+          nspr
+          alsa-lib
+          atk
+          at-spi2-atk
+          libdrm
+          libxkbcommon
+          xorg.libXcomposite
+          xorg.libXdamage
+          xorg.libX11
+          xorg.libXext
+          xorg.libXfixes
+          xorg.libXrandr
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXrender
+          libxcb
+          mesa
+          libgbm
+          udev
+          cups
+          pango
+          cairo
+          gdk-pixbuf
+          gtk3
+          dbus
+          fontconfig
+          freetype
+        ]);
+        
+        # Ensure pkg-config can find libraries
+        PKG_CONFIG_PATH = pkgs.lib.makeSearchPath "lib/pkgconfig" (with pkgs; [
+          libffi
+          openssl
+          zlib
+          sqlite
+          libxml2
+          libxslt
+        ]);
+        
+        # C compiler flags
+        CFLAGS = "-I${pkgs.libffi.dev}/include -I${pkgs.openssl.dev}/include -I${pkgs.zlib.dev}/include -I${pkgs.sqlite.dev}/include";
+        LDFLAGS = "-L${pkgs.libffi}/lib -L${pkgs.openssl}/lib -L${pkgs.zlib}/lib -L${pkgs.sqlite}/lib";
+      };
+      
+      # Packages
+      packages.x86_64-linux = {
+        backend = backend;
+        frontend = frontend;
+        default = backend; # Default package
+      };
+      
+      # Apps for running services
+      apps.x86_64-linux = {
+        backend = {
+          type = "app";
+          program = "${backend-runner}/bin/cortex-backend-run";
         };
-
-        # Build outputs
-        packages = {
-          backend = backendFlake.packages.${system}.default;
-          frontend = frontendFlake.packages.${system}.default;
-          docker-compose = dockerComposeWrapper;
-
-          default = pkgs.symlinkJoin {
-            name = "cortex-full";
-            paths = [
-              self.packages.${system}.backend
-              self.packages.${system}.frontend
-            ];
-          };
+        frontend = {
+          type = "app";
+          program = "${frontend-runner}/bin/cortex-frontend-run";
         };
-
-        # Formatter
-        formatter = pkgs.nixpkgs-fmt;
-      }
-    );
+        docker-up = {
+          type = "app";
+          program = "${docker-services-runner}/bin/cortex-docker-run";
+        };
+        docker-down = {
+          type = "app";
+          program = "${docker-services-stopper}/bin/cortex-docker-stop";
+        };
+        default = {
+          type = "app";
+          program = "${backend-runner}/bin/cortex-backend-run";
+        };
+      };
+      
+      # NixOS module for systemd services
+      nixosModules.default = import ./nix/services.nix;
+    };
 }

@@ -7,6 +7,7 @@ from app.domain.models import (
     AddContextItemsResponse,
     ContextBudget,
     ContextItem,
+    RemoveContextItemResponse,
 )
 from app.services.context_service import context_service
 from fastapi import APIRouter, HTTPException
@@ -55,15 +56,15 @@ def update_context_item(
 
 @router.delete(
     "/projects/{project_id}/context/items/{context_item_id}",
-    response_model=ContextBudget,
+    response_model=RemoveContextItemResponse,
     summary="Remove context item",
 )
 def remove_context_item(
     project_id: str,
     context_item_id: str,
-) -> ContextBudget:
+) -> RemoveContextItemResponse:
     try:
-        return context_service.remove_item(project_id, context_item_id)
+        return RemoveContextItemResponse(budget=context_service.remove_item(project_id, context_item_id))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

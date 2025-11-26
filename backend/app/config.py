@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Qdrant settings
     qdrant_url: str = Field(default="http://localhost:6333", env="CORTEX_QDRANT_URL")
 
+    # Hugging Face token for authenticated model downloads (optional, for private/gated models)
+    # Note: huggingface-hub and sentence-transformers automatically use HF_TOKEN from environment
+    hf_token: str = Field(default="", env="HF_TOKEN")
+
     model_config = SettingsConfigDict(env_prefix="CORTEX_", env_file=None)
 
 

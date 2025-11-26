@@ -174,12 +174,20 @@ class QdrantService:
                     if node_type:
                         filter_condition = Filter(must=[FieldCondition(key="type", match=MatchValue(value=node_type))])
 
-                    search_results = self.client.search(
-                        collection_name=collection_name,
-                        query_vector=query_embedding,
-                        limit=limit,
-                        query_filter=filter_condition,
-                    )
+                    search_func = getattr(self.client, "search", None) or getattr(self.client, "search_points", None)
+                    if not search_func:
+                        logger.warning("Qdrant client missing search API, skipping vector search")
+                        search_results = []
+                    else:
+                        search_kwargs = {
+                            "collection_name": collection_name,
+                            "query_vector": query_embedding,
+                            "limit": limit,
+                        }
+                        if filter_condition:
+                            search_kwargs["query_filter"] = filter_condition
+
+                        search_results = search_func(**search_kwargs)
 
                     results = [
                         {
