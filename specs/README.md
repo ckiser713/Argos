@@ -44,3 +44,4 @@ Testing and auxiliary components:
 - If you touch files not covered by an existing module spec, add a new `02-modules/*.md` entry and reference it from `99-gaps-and-risks.md` until filled.
 - Keep `03-data-contracts.md` aligned with schema changes in `app/db.py` and domain models; reflect env/config shifts in `04-runtime-and-ops.md`.
 - Use `05-quality-gates-and-testing.md` to capture new tests and guardrails; log any missing coverage in `99-gaps-and-risks.md`.
+- Run all project commands inside the Nix dev shell (`nix develop` or `nix-shell nix/rocm-shell.nix`). Use `tools/require-nix.sh <command>` in scripts/CI to enforce the guardrail; avoid creating ad-hoc virtualenvs outside Nix.

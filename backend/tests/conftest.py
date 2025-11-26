@@ -3,11 +3,11 @@ import sys
 from pathlib import Path
 
 import pytest
-from app.config import get_settings
+import uuid
+from backend.app.config import get_settings
 from fastapi.testclient import TestClient
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT_DIR))
+
 
 
 @pytest.fixture(scope="session")
@@ -17,6 +17,8 @@ def client() -> TestClient:
     db_path = Path(settings.atlas_db_path)
     if db_path.exists():
         db_path.unlink()
+    from app.db import init_db
+    init_db()
 
     from app.main import app
 
@@ -32,8 +34,9 @@ def project(client: TestClient) -> dict:
     (and optionally `description`) field and returns a Project-like JSON object
     with an `id`.
     """
+    unique_name = f"Test Project {uuid.uuid4()}"
     payload = {
-        "name": "Test Project",
+        "name": unique_name,
         "description": "Project created for backend tests.",
     }
     response = client.post("/api/projects", json=payload)

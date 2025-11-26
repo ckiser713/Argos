@@ -91,6 +91,10 @@
         dockerComposeWrapper = pkgs.writeScriptBin "cortex-docker" ''
           #!${pkgs.bash}/bin/bash
           set -e
+          if [ "${IN_NIX_SHELL-}" != "impure" ] && [ "${IN_NIX_SHELL-}" != "pure" ]; then
+            echo "Error: cortex-docker must be run inside the Nix dev shell (nix develop)." >&2
+            exit 1
+          fi
           # Find project root by looking for flake.nix or ops/docker-compose.yml
           PROJECT_ROOT="$PWD"
           while [ "$PROJECT_ROOT" != "/" ]; do
@@ -124,9 +128,10 @@
             echo "  - Backend: cd backend && poetry install && poetry run uvicorn app.main:app --reload"
             echo "  - Frontend: cd frontend && pnpm install && pnpm dev"
             echo "  - E2E Tests: pnpm e2e"
-            echo "  - Docker services: cortex-docker up -d"
-            echo "  - Docker services (stop): cortex-docker down"
-            echo ""
+          echo "  - Docker services: cortex-docker up -d"
+          echo "  - Docker services (stop): cortex-docker down"
+          echo ""
+          echo "Guardrail: All commands should run inside this Nix shell. To run from scripts, prefix with tools/require-nix.sh"
             
             # Set environment variables
             export CORTEX_ENV=dev
@@ -170,4 +175,3 @@
       }
     );
 }
-

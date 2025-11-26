@@ -3,6 +3,7 @@
 - Frontend: Vite dev server for React app; production build not detailed.
 - Background tasks: FastAPI BackgroundTasks/asyncio tasks for ingest processing, workflow execution, agent execution.
 - Streaming: WebSocket endpoints under `/api/stream/...` and SSE endpoints; WebSockets rely on event broadcasts (no DB polling) and enforce per-project connection caps and send timeouts.
+- Guardrail: All local development should occur inside the Nix dev shells (`nix develop` or `nix-shell nix/rocm-shell.nix`); scripts should invoke `tools/require-nix.sh` to prevent running outside Nix or ad-hoc virtualenvs.
 
 ## Configuration & Environment
 - Settings via env (prefix `CORTEX_`): auth secret, debug/skip_auth, allowed_origins, DB paths (`atlas.db`, `atlas_checkpoints.db`), LLM backend/config (`llm_base_url`, `llm_api_key`, `llm_model_name`, `llm_backend`, llama.cpp paths/threads/context), mode parameters (normal/paranoid temps, validation passes, max_parallel_tools), qdrant_url.

@@ -114,7 +114,7 @@ class KnowledgeService:
         limit: int = 50,
     ) -> PaginatedResponse:
         with db_session() as conn:
-            query = "SELECT * FROM knowledge_nodes WHERE project_id = ? ORDER BY created_at DESC LIMIT ?"
+            query = "SELECT * FROM knowledge_nodes WHERE project_id = ? LIMIT ?"
             params = [project_id, limit + 1]
 
             rows = conn.execute(query, params).fetchall()

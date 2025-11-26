@@ -69,27 +69,17 @@ def test_fetch_knowledge_graph_for_project(client: TestClient, project: dict) ->
     }
     aligned with the knowledge-domain shapes (documents, concepts, etc.).
     """
-    # The backend service does not currently have a /api/projects/{projectId}/knowledge-graph endpoint.
-    # It has /api/knowledge/nodes and /api/knowledge/search.
-    # The prompt implies knowledge-graph is under project, but the implementation is separate.
-    # I will adapt the test to the existing implementation for now.
-    # The test in the prompt is expecting a graph object with 'nodes' and 'edges'.
-    # The `knowledge_service.py` only lists nodes.
-    # There is no direct "graph" endpoint. I will test `list_knowledge_nodes` instead.
-    resp = client.get("/api/knowledge/nodes")  # This is the available endpoint for knowledge nodes
+    project_id = project["id"]
+    resp = client.get(f"/api/projects/{project_id}/knowledge-graph")
     assert resp.status_code == 200
 
     data = resp.json()
-    assert isinstance(data, list)  # knowledge_service.list_nodes returns List[KnowledgeNode]
+    assert isinstance(data, dict)
+    assert "nodes" in data
+    assert "edges" in data
 
-    for node in data:  # Iterating directly on the list of nodes
-        assert isinstance(node, dict)
-        assert "id" in node
-        assert "title" in node  # KnowledgeNode has 'title', not 'label'
-        # Typical fields in KnowledgeNode:
-        # - type (e.g., "document", "concept", "cluster") - not in KnowledgeNode model
-        # - weight (float) used for node sizing - not in KnowledgeNode model
-        if "summary" in node:
-            assert isinstance(node["summary"], (str, type(None)))
-        if "tags" in node:
-            assert isinstance(node["tags"], list)
+    nodes = data["nodes"]
+    edges = data["edges"]
+
+    assert isinstance(nodes, list)
+    assert isinstance(edges, list)

@@ -3,6 +3,7 @@
 Test specification: Context API
 Tests for context management endpoints including budget calculations and item operations.
 """
+import uuid
 from fastapi.testclient import TestClient
 
 
@@ -12,9 +13,9 @@ def test_get_context_budget(client: TestClient, project: dict) -> None:
     resp = client.get(f"/api/projects/{project_id}/context")
     assert resp.status_code == 200
     data = resp.json()
-    assert "totalTokens" in data
-    assert "usedTokens" in data
-    assert "availableTokens" in data
+    assert "total_tokens" in data
+    assert "used_tokens" in data
+    assert "available_tokens" in data
     assert "items" in data
 
 
@@ -24,8 +25,9 @@ def test_add_context_items(client: TestClient, project: dict) -> None:
     payload = {
         "items": [
             {
+                "id": str(uuid.uuid4()),
                 "name": "test_document.pdf",
-                "type": "PDF",
+                "type": "pdf",
                 "tokens": 1000,
             }
         ]
@@ -44,8 +46,9 @@ def test_update_context_item(client: TestClient, project: dict) -> None:
     add_payload = {
         "items": [
             {
+                "id": str(uuid.uuid4()),
                 "name": "test_document.pdf",
-                "type": "PDF",
+                "type": "pdf",
                 "tokens": 1000,
             }
         ]
@@ -67,8 +70,9 @@ def test_remove_context_item(client: TestClient, project: dict) -> None:
     add_payload = {
         "items": [
             {
+                "id": str(uuid.uuid4()),
                 "name": "test_document.pdf",
-                "type": "PDF",
+                "type": "pdf",
                 "tokens": 1000,
             }
         ]
@@ -79,5 +83,5 @@ def test_remove_context_item(client: TestClient, project: dict) -> None:
         resp = client.delete(f"/api/projects/{project_id}/context/items/{item_id}")
         assert resp.status_code == 200
         data = resp.json()
-        assert "budget" in data
+        assert "total_tokens" in data
 

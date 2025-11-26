@@ -680,7 +680,7 @@ class WorkflowService:
             id=row["id"],
             project_id=row["project_id"],
             name=row["name"],
-            description=row.get("description"),
+            description=row["description"],
             nodes=[WorkflowNode(**node) for node in graph_data.get("nodes", [])],
             edges=[WorkflowEdge(**edge) for edge in graph_data.get("edges", [])],
         )
@@ -692,11 +692,11 @@ class WorkflowService:
             workflow_id=row["workflow_id"],
             status=WorkflowRunStatus(row["status"]),
             started_at=datetime.fromisoformat(row["started_at"]),
-            finished_at=datetime.fromisoformat(row["finished_at"]) if row.get("finished_at") else None,
-            last_message=row.get("last_message"),
-            task_id=row.get("task_id"),
-            paused_at=datetime.fromisoformat(row["paused_at"]) if row.get("paused_at") else None,
-            cancelled_at=datetime.fromisoformat(row["cancelled_at"]) if row.get("cancelled_at") else None,
+            finished_at=datetime.fromisoformat(row["finished_at"]) if "finished_at" in row.keys() and row["finished_at"] else None,
+            last_message=row["last_message"] if "last_message" in row.keys() else None,
+            task_id=row["task_id"] if "task_id" in row.keys() else None,
+            paused_at=datetime.fromisoformat(row["paused_at"]) if "paused_at" in row.keys() and row["paused_at"] else None,
+            cancelled_at=datetime.fromisoformat(row["cancelled_at"]) if "cancelled_at" in row.keys() and row["cancelled_at"] else None,
         )
 
     def _row_to_node_state(self, row) -> WorkflowNodeState:

@@ -104,6 +104,18 @@ Each item includes evidence, impact, and next actions. Tag `[ASSUMPTION]` where 
   - Description: WebSocket streaming endpoints now rely on event broadcasts (no DB polling) and stay open until client disconnects; backpressure via connection caps/timeouts.  
   - Suggested Next Action: Move SSE to event-driven and add heartbeat/metrics for streaming load.
 
+- **GAP-022 — ROCm environment reproducibility** (Open)  
+  - Category: DevEx/Ops | Severity: Low  
+  - Evidence: ROCm artifacts documented in `ROCM_INTEGRATION_MAP.md` but no Nix shell for ROCm setup.  
+  - Description: Developers need a reproducible environment to use local ROCm binaries/wheels.  
+  - Suggested Next Action: Use `nix/rocm-shell.nix` as a ROCm-focused shell; extend flake to expose it and add scripts for loading vLLM image/binaries.
+
+- **GAP-023 — Enforce Nix dev shell usage** (Open)  
+  - Category: DevEx | Severity: Low  
+  - Evidence: Guardrail script added (`tools/require-nix.sh`) and docs updated, but commands outside Nix are not automatically blocked.  
+  - Description: Risk of running commands in ad-hoc environments; need enforcement for CI/local tooling.  
+  - Suggested Next Action: Wire `tools/require-nix.sh` into CI scripts/package.json targets; update flake outputs to expose ROCm shell as `nix develop .#rocm`.
+
 - **GAP-018 — Project intel service TODO patterns** (Resolved)  
   - Category: Implementation | Severity: Low  
   - Evidence: Placeholder comment “Generic patterns for TODO / future work.” (`backend/app/services/project_intel_service.py:129`).  
