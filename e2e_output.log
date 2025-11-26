@@ -1,0 +1,94 @@
+==========================================
+Cortex E2E Testing Setup
+==========================================
+
+✓ Nix profile sourced
+
+Entering Nix development shell...
+This may take a while on first run as Nix builds packages...
+
+warning: Git tree '/home/nexus/Argos_Chatgpt' is dirty
+==========================================
+Cortex Development Environment
+==========================================
+
+Python: Python 3.11.14
+Node.js: v20.19.5
+pnpm: 10.23.0
+Poetry: Poetry (version 2.2.1)
+
+ROCm Integration:
+  - ROCm wheels: /home/nexus/rocm/py311-tor290/wheels
+  - ROCm binaries: /home/nexus/rocm/py311-tor290/bin (added to PATH)
+  - PIP_FIND_LINKS configured for offline PyTorch installation
+
+Environment variables set:
+  - CORTEX_ENV=dev
+  - CORTEX_QDRANT_URL=http://localhost:6333
+  - PLAYWRIGHT_BROWSERS_PATH=/home/nexus/.cache/ms-playwright
+  - PIP_FIND_LINKS=/home/nexus/rocm/py311-tor290/wheels/torch2.9:/home/nexus/rocm/py311-tor290/wheels/common
+  - PIP_NO_INDEX not set (allows Poetry/pip to access PyPI)
+  - For ROCm packages, use: pip install --no-index --find-links $HOME/rocm/py311-tor290/wheels/...
+
+To install PyTorch from ROCm wheels:
+  pip install --find-links /home/nexus/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio
+  pip install --find-links /home/nexus/rocm/py311-tor290/wheels/common triton tokenizers
+
+ROCm binaries available:
+  ✓ llama-cpp (ROCm-optimized)
+
+==========================================
+==========================================
+Step 1: Installing Backend Dependencies
+==========================================
+Installing backend dependencies with Poetry...
+Installing dependencies from lock file
+
+Package operations: 1 install, 0 updates, 0 removals
+
+  - Installing tree-sitter-languages (1.10.2)
+
+    | Unable to find installation candidates for tree-sitter-languages (1.10.2)
+    | 
+    | This is likely not a Poetry issue.
+    | 
+    |   - 59 candidate(s) were identified for the package
+    |   - 59 wheel(s) were skipped as your project's environment does not support the identified abi tags
+    | 
+    | Solutions:
+    | Make sure the lockfile is up-to-date. You can try one of the following;
+    | 
+    |     1. Regenerate lockfile: poetry lock --no-cache --regenerate
+    |     2. Update package     : poetry update --no-cache tree-sitter-languages
+    | 
+    | If neither works, please first check to verify that the tree-sitter-languages has published wheels available from your configured source that are compatible with your environment- ie. operating system, architecture (x86_64, arm64 etc.), python interpreter.
+    | 
+    | You can also run your poetry command with -v to see more information.
+
+⚠ Poetry install had issues, trying to regenerate lockfile...
+
+The option "--no-update" does not exist
+Updating dependencies
+Resolving dependencies...
+
+Package operations: 1 install, 0 updates, 0 removals
+
+  - Installing tree-sitter-languages (1.10.2)
+
+    | Unable to find installation candidates for tree-sitter-languages (1.10.2)
+    | 
+    | This is likely not a Poetry issue.
+    | 
+    |   - 59 candidate(s) were identified for the package
+    |   - 59 wheel(s) were skipped as your project's environment does not support the identified abi tags
+    | 
+    | Solutions:
+    | Make sure the lockfile is up-to-date. You can try one of the following;
+    | 
+    |     1. Regenerate lockfile: poetry lock --no-cache --regenerate
+    |     2. Update package     : poetry update --no-cache tree-sitter-languages
+    | 
+    | If neither works, please first check to verify that the tree-sitter-languages has published wheels available from your configured source that are compatible with your environment- ie. operating system, architecture (x86_64, arm64 etc.), python interpreter.
+    | 
+    | You can also run your poetry command with -v to see more information.
+
