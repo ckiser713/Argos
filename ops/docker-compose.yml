@@ -9,14 +9,26 @@ services:
     volumes:
       - ./qdrant_storage:/qdrant/storage
   inference-engine:
+    # Option 1: Use pre-built ROCm image (recommended - faster, optimized)
+    # First run: ./ops/load_rocm_image.sh
+    # Then uncomment the line below and comment out the 'build:' section
+    # image: vllm-rocm-strix:latest
+    
+    # Option 2: Build from source (fallback - slower, requires network)
     build:
       context: .
       dockerfile: Dockerfile.vllm
     devices:
       - "/dev/kfd"
       - "/dev/dri"
+    group_add:
+      - video
+      - render
     ports:
       - "11434:8000" # Maps to standard OpenAI port internally
     shm_size: '16gb'
     volumes:
       - ./models:/root/.cache/huggingface
+    environment:
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0

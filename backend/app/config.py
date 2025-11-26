@@ -25,6 +25,21 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(default="http://localhost:11434/v1", env="CORTEX_LLM_BASE_URL")
     llm_api_key: str = Field(default="ollama", env="CORTEX_LLM_API_KEY")
     llm_model_name: str = Field(default="llama3", env="CORTEX_LLM_MODEL")
+    
+    # LLM backend selection: "openai" (vLLM/Ollama API) or "llama_cpp" (local binary)
+    llm_backend: str = Field(default="openai", env="CORTEX_LLM_BACKEND")
+    
+    # llama.cpp settings (when llm_backend="llama_cpp")
+    llama_cpp_binary_path: str = Field(
+        default="/home/nexus/rocm/py311-tor290/bin/llama-cpp",
+        env="CORTEX_LLAMA_CPP_BINARY"
+    )
+    llama_cpp_model_path: str = Field(
+        default="",
+        env="CORTEX_LLAMA_CPP_MODEL_PATH"
+    )
+    llama_cpp_n_ctx: int = Field(default=4096, env="CORTEX_LLAMA_CPP_N_CTX")  # Context window size
+    llama_cpp_n_threads: int = Field(default=4, env="CORTEX_LLAMA_CPP_N_THREADS")  # CPU threads
 
     # --- Execution mode defaults ---
     normal_mode_llm_temperature: float = Field(0.2, env="CORTEX_NORMAL_TEMP")
