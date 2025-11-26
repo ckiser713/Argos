@@ -161,9 +161,12 @@ class AgentService:
                 AgentRunStatus.CANCELLED: "agent.run.cancelled",
             }
             event_type = event_type_map.get(status, "agent.run.updated")
-            asyncio.create_task(
-                emit_agent_event(run.project_id, event_type, run_data=run.model_dump())
-            )
+            try:
+                asyncio.create_task(
+                    emit_agent_event(run.project_id, event_type, run_data=run.model_dump())
+                )
+            except RuntimeError:
+                pass  # Ignore event emission errors if no event loop is running
         
         return run
 
@@ -184,9 +187,12 @@ class AgentService:
         
         # Emit run cancelled event
         if updated_run:
-            asyncio.create_task(
-                emit_agent_event(updated_run.project_id, "agent.run.cancelled", run_data=updated_run.model_dump())
-            )
+            try:
+                asyncio.create_task(
+                    emit_agent_event(updated_run.project_id, "agent.run.cancelled", run_data=updated_run.model_dump())
+                )
+            except RuntimeError:
+                pass  # Ignore event emission errors if no event loop is running
         
         return updated_run
 
@@ -351,9 +357,12 @@ class AgentService:
         # Emit message appended event
         run = self.get_run(run_id)
         if run:
-            asyncio.create_task(
-                emit_agent_event(run.project_id, "agent.message.appended", message_data=message.model_dump())
-            )
+            try:
+                asyncio.create_task(
+                    emit_agent_event(run.project_id, "agent.message.appended", message_data=message.model_dump())
+                )
+            except RuntimeError:
+                pass  # Ignore event emission errors if no event loop is running
         
         return message
 
@@ -483,13 +492,16 @@ class AgentService:
                         progress=0.0,
                     )
                     if node_state:
-                        asyncio.create_task(
-                            emit_agent_event(
-                                run.project_id,
-                                "agent.step.started",
-                                node_state_data=node_state.model_dump(),
+                        try:
+                            asyncio.create_task(
+                                emit_agent_event(
+                                    run.project_id,
+                                    "agent.step.started",
+                                    node_state_data=node_state.model_dump(),
+                                )
                             )
-                        )
+                        except RuntimeError:
+                            pass  # Ignore event emission errors if no event loop is running
 
             elif event.get("event") == "on_chain_end":
                 node_name = event.get("name", "")
@@ -502,13 +514,16 @@ class AgentService:
                         progress=1.0,
                     )
                     if node_state:
-                        asyncio.create_task(
-                            emit_agent_event(
-                                run.project_id,
-                                "agent.step.completed",
-                                node_state_data=node_state.model_dump(),
+                        try:
+                            asyncio.create_task(
+                                emit_agent_event(
+                                    run.project_id,
+                                    "agent.step.completed",
+                                    node_state_data=node_state.model_dump(),
+                                )
                             )
-                        )
+                        except RuntimeError:
+                            pass  # Ignore event emission errors if no event loop is running
 
             elif event.get("event") == "on_chain_error":
                 node_name = event.get("name", "")
@@ -522,14 +537,17 @@ class AgentService:
                         completed=True,
                     )
                     if node_state:
-                        asyncio.create_task(
-                            emit_agent_event(
-                                run.project_id,
-                                "agent.step.failed",
-                                node_state_data=node_state.model_dump(),
-                                error=error_msg,
+                        try:
+                            asyncio.create_task(
+                                emit_agent_event(
+                                    run.project_id,
+                                    "agent.step.failed",
+                                    node_state_data=node_state.model_dump(),
+                                    error=error_msg,
+                                )
                             )
-                        )
+                        except RuntimeError:
+                            pass  # Ignore event emission errors if no event loop is running
 
         final_state = await langgraph_app.ainvoke(
             {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id}
@@ -553,7 +571,7 @@ class AgentService:
 
     def _row_to_run(self, row) -> AgentRun:
         context_item_ids = []
-        if row.get("context_item_ids_json"):
+        if "context_item_ids_json" in row.keys() and row["context_item_ids_json"]:
             try:
                 context_item_ids = json.loads(row["context_item_ids_json"])
             except (json.JSONDecodeError, ValueError):
@@ -563,25 +581,25 @@ class AgentService:
             id=row["id"],
             project_id=row["project_id"],
             agent_id=row["agent_id"],
-            workflow_id=row.get("workflow_id"),
+            workflow_id=row["workflow_id"] if "workflow_id" in row.keys() else None,
             status=AgentRunStatus(row["status"]),
             started_at=datetime.fromisoformat(row["started_at"]),
-            finished_at=datetime.fromisoformat(row["finished_at"]) if row.get("finished_at") else None,
-            input_prompt=row.get("input_prompt") or "",
-            input_query=row.get("input_prompt") or "",
-            output_summary=row.get("output_summary"),
+            finished_at=datetime.fromisoformat(row["finished_at"]) if "finished_at" in row.keys() and row["finished_at"] else None,
+            input_prompt=row["input_prompt"] if "input_prompt" in row.keys() else "",
+            input_query=row["input_prompt"] if "input_prompt" in row.keys() else "",
+            output_summary=row["output_summary"] if "output_summary" in row.keys() else None,
             context_item_ids=context_item_ids,
         )
 
     def _row_to_step(self, row) -> AgentStep:
         input_data = None
         output_data = None
-        if row.get("input_json"):
+        if "input_json" in row.keys() and row["input_json"]:
             try:
                 input_data = json.loads(row["input_json"])
             except (json.JSONDecodeError, ValueError):
                 input_data = row["input_json"]
-        if row.get("output_json"):
+        if "output_json" in row.keys() and row["output_json"]:
             try:
                 output_data = json.loads(row["output_json"])
             except (json.JSONDecodeError, ValueError):
@@ -591,19 +609,19 @@ class AgentService:
             id=row["id"],
             run_id=row["run_id"],
             step_number=row["step_number"],
-            node_id=row.get("node_id"),
+            node_id=row["node_id"] if "node_id" in row.keys() else None,
             status=AgentStepStatus(row["status"]),
             input=str(input_data) if input_data else None,
             output=str(output_data) if output_data else None,
-            error=row.get("error"),
-            duration_ms=row.get("duration_ms"),
+            error=row["error"] if "error" in row.keys() else None,
+            duration_ms=row["duration_ms"] if "duration_ms" in row.keys() else None,
             started_at=datetime.fromisoformat(row["started_at"]),
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
+            completed_at=datetime.fromisoformat(row["completed_at"]) if "completed_at" in row.keys() and row["completed_at"] else None,
         )
 
     def _row_to_message(self, row) -> AgentMessage:
         context_item_ids = []
-        if row.get("context_item_ids_json"):
+        if "context_item_ids_json" in row.keys() and row["context_item_ids_json"]:
             try:
                 context_item_ids = json.loads(row["context_item_ids_json"])
             except (json.JSONDecodeError, ValueError):
@@ -620,7 +638,7 @@ class AgentService:
 
     def _row_to_node_state(self, row) -> AgentNodeState:
         messages = []
-        if row.get("messages_json"):
+        if "messages_json" in row.keys() and row["messages_json"]:
             try:
                 messages = json.loads(row["messages_json"])
             except (json.JSONDecodeError, ValueError):
@@ -630,11 +648,11 @@ class AgentService:
             run_id=row["run_id"],
             node_id=row["node_id"],
             status=row["status"],
-            progress=row.get("progress", 0.0),
+            progress=row["progress"] if "progress" in row.keys() else 0.0,
             messages=messages,
-            started_at=datetime.fromisoformat(row["started_at"]) if row.get("started_at") else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
-            error=row.get("error"),
+            started_at=datetime.fromisoformat(row["started_at"]) if "started_at" in row.keys() and row["started_at"] else None,
+            completed_at=datetime.fromisoformat(row["completed_at"]) if "completed_at" in row.keys() and row["completed_at"] else None,
+            error=row["error"] if "error" in row.keys() else None,
         )
 
 

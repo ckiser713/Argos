@@ -65,6 +65,6 @@ describe("useRoadmap", () => {
     expect(screen.getByTestId("node-count").textContent).toBe("2");
     expect(screen.getByTestId("edge-count").textContent).toBe("1");
     expect(screen.getByTestId("first-node-label").textContent).toBe("Ingest");
-    expect(spy).toHaveBeenCalledWith({ projectId: "project-1" });
+    expect(spy).toHaveBeenCalledWith("project-1");
   });
 });

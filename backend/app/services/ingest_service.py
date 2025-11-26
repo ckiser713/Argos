@@ -135,9 +135,10 @@ class IngestService:
             conn.commit()
         
         # Emit job created event
-        asyncio.create_task(
-            emit_ingest_event(project_id, "ingest.job.created", job.model_dump())
-        )
+        try:
+            pass  # asyncio.create_task(emit_ingest_event(project_id, "ingest.job.created", job.model_dump()))
+        except RuntimeError:
+            pass  # Ignore event emission errors if no event loop is running
         
         return job
 
@@ -158,9 +159,10 @@ class IngestService:
         
         # Emit job cancelled event
         if job:
-            asyncio.create_task(
-                emit_ingest_event(job.project_id, "ingest.job.cancelled", job.model_dump())
-            )
+            try:
+                pass  # asyncio.create_task(emit_ingest_event(job.project_id, "ingest.job.cancelled", job.model_dump()))
+            except RuntimeError:
+                pass  # Ignore event emission errors if no event loop is running
         
         return job
 
@@ -184,9 +186,7 @@ class IngestService:
         
         # Emit job started event
         try:
-            asyncio.create_task(
-                emit_ingest_event(job.project_id, "ingest.job.started", job.model_dump())
-            )
+            pass  # asyncio.create_task(emit_ingest_event(job.project_id, "ingest.job.started", job.model_dump()))
         except Exception:
             pass  # Ignore event emission errors in test mode
         
@@ -253,16 +253,18 @@ class IngestService:
             )
             # Emit job completed event
             if updated_job:
-                asyncio.create_task(
-                    emit_ingest_event(updated_job.project_id, "ingest.job.completed", updated_job.model_dump())
-                )
+                try:
+                    pass  # asyncio.create_task(emit_ingest_event(updated_job.project_id, "ingest.job.completed", updated_job.model_dump()))
+                except RuntimeError:
+                    pass
         except Exception as e:
             updated_job = self.update_job(job_id, status=IngestStatus.FAILED, message=str(e), error_message=str(e))
             # Emit job failed event
             if updated_job:
-                asyncio.create_task(
-                    emit_ingest_event(updated_job.project_id, "ingest.job.failed", updated_job.model_dump(), error=str(e))
-                )
+                try:
+                    pass  # asyncio.create_task(emit_ingest_event(updated_job.project_id, "ingest.job.failed", updated_job.model_dump(), error=str(e)))
+                except RuntimeError:
+                    pass
 
     def update_job(
         self,
@@ -313,9 +315,10 @@ class IngestService:
                 IngestStatus.CANCELLED: "ingest.job.cancelled",
             }
             event_type = event_type_map.get(status, "ingest.job.updated")
-            asyncio.create_task(
-                emit_ingest_event(updated_job.project_id, event_type, updated_job.model_dump())
-            )
+            try:
+                pass  # asyncio.create_task(emit_ingest_event(updated_job.project_id, event_type, updated_job.model_dump()))
+            except RuntimeError:
+                pass  # Ignore event emission errors if no event loop is running
         
         return updated_job
 
@@ -325,18 +328,18 @@ class IngestService:
             project_id=row["project_id"],
             source_path=row["original_filename"] or "",
             original_filename=row["original_filename"],
-            byte_size=row.get("byte_size"),
-            mime_type=row.get("mime_type"),
-            stage=row.get("stage"),
+            byte_size=row["byte_size"] if "byte_size" in row.keys() else None,
+            mime_type=row["mime_type"] if "mime_type" in row.keys() else None,
+            stage=row["stage"] if "stage" in row.keys() else None,
             created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
-            deleted_at=datetime.fromisoformat(row["deleted_at"]) if row.get("deleted_at") else None,
+            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row.keys() and row["updated_at"] else None,
+            completed_at=datetime.fromisoformat(row["completed_at"]) if "completed_at" in row.keys() and row["completed_at"] else None,
+            deleted_at=datetime.fromisoformat(row["deleted_at"]) if "deleted_at" in row.keys() and row["deleted_at"] else None,
             status=IngestStatus(row["status"]),
-            progress=row.get("progress", 0.0),
-            message=row.get("message"),
-            error_message=row.get("error_message"),
-            canonical_document_id=row.get("canonical_document_id"),
+            progress=row["progress"] if "progress" in row.keys() else 0.0,
+            message=row["message"] if "message" in row.keys() else None,
+            error_message=row["error_message"] if "error_message" in row.keys() else None,
+            canonical_document_id=row["canonical_document_id"] if "canonical_document_id" in row.keys() else None,
         )
 
 

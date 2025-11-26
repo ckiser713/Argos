@@ -79,6 +79,6 @@ describe("useKnowledgeGraph", () => {
     expect(screen.getByTestId("first-node-label").textContent).toBe(
       "Cortex PRD"
     );
-    expect(spy).toHaveBeenCalledWith("project-1");
+    expect(spy).toHaveBeenCalledWith("project-1", undefined);
   });
 });

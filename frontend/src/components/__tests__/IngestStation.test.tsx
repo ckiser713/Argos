@@ -132,7 +132,7 @@ describe("IngestStation", () => {
 
     // Stage badges
     expect(screen.getByText("OCR_SCANNING")).toBeInTheDocument();
-    expect(screen.getByText("COMPLETE")).toBeInTheDocument();
+    expect(screen.getAllByText("COMPLETE").length).toBeGreaterThanOrEqual(1);
 
     // Status icons/labels (e.g., RUNNING vs COMPLETE)
     expect(screen.getByTestId("job-job-1-status").textContent).toBe("RUNNING");

@@ -153,9 +153,9 @@ class ContextService:
             name=row["name"],
             type=ContextItemType(row["type"]),
             tokens=row["tokens"],
-            pinned=bool(row.get("pinned", 0)),
-            canonical_document_id=row.get("canonical_document_id"),
-            created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+            pinned=bool(row["pinned"] if "pinned" in row.keys() else 0),
+            canonical_document_id=row["canonical_document_id"] if "canonical_document_id" in row.keys() else None,
+            created_at=datetime.fromisoformat(row["created_at"]) if "created_at" in row.keys() and row["created_at"] else None,
         )
 
 

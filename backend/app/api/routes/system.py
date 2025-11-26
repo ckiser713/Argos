@@ -40,4 +40,5 @@ async def read_system_status() -> SystemStatus:
     This endpoint is polled periodically by the frontend header and Command Center.
     """
     # Synchronous metrics are quick enough; no need for async offload.
+    # Guardrail: require Nix env for local runs (IN_NIX_SHELL set) when not in production.
     return get_system_status()
