@@ -33,8 +33,26 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - name: Install pnpm (via action)
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Verify pnpm
+        id: verify_pnpm
+        run: pnpm --version
+        continue-on-error: true
+
+      - name: Debug PATH (optional)
+        if: steps.verify_pnpm.outcome == 'failure'
+        run: |
+          echo "PATH=$PATH"
+          which pnpm || true
+          pnpm --version || true
+
+      - name: Fail if pnpm not found
+        if: steps.verify_pnpm.outcome == 'failure'
+        run: exit 1
 
       - name: Install pnpm
         uses: pnpm/action-setup@v2
