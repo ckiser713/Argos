@@ -126,7 +126,7 @@ def _apply_heuristics(text: str) -> Optional[_HeuristicMatch]:
                 labels.append(label)
                 score += 0.2
 
-    # Generic patterns for TODO / future work.
+    # Generic patterns that imply follow-up work/roadmap intent.
     generic_triggers = [
         "we should",
         "i want to build",

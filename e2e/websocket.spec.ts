@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { ApiHelpers } from './utils/api-helpers';
+import WebSocket from 'ws';
 
 /**
  * WebSocket/Streaming Tests
@@ -7,33 +8,16 @@ import { ApiHelpers } from './utils/api-helpers';
  * Tests for real-time event streaming via WebSocket/SSE
  */
 test.describe('WebSocket/Streaming', () => {
-  test('should connect to WebSocket endpoint', async ({ api, testProject }) => {
-    // Create a WebSocket connection
-    const wsUrl = `ws://localhost:8000/api/stream/events?project_id=${testProject.id}`;
-    
-    // Note: Playwright's WebSocket support is limited
-    // This test verifies the endpoint exists and accepts connections
-    const response = await api.get(`http://localhost:8000/api/stream/events?project_id=${testProject.id}`);
-    
-    // WebSocket endpoints typically return 426 Upgrade Required or similar
-    // For now, we just verify the endpoint exists
-    expect([200, 426, 101]).toContain(response.status());
-  });
-
   test('should receive ingest job events', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
     // Create an ingest job
     const job = await apiHelpers.createIngestJob(testProject.id, 'test-document.md');
     
-    // In a real implementation, we would:
-    // 1. Connect to WebSocket
-    // 2. Subscribe to ingest events
-    // 3. Verify events are received
-    
-    // For now, verify job was created (which triggers events)
-    expect(job).toHaveProperty('id');
-    expect(job.projectId).toBe(testProject.id);
+    const wsUrl = `ws://localhost:8000/api/stream/projects/${testProject.id}/ingest/${job.id}`;
+    const message = await waitForFirstMessage(wsUrl);
+    expect(message).toHaveProperty('type');
+    expect(message.job?.id).toBe(job.id);
   });
 
   test('should receive agent run events', async ({ api, testProject }) => {
@@ -45,16 +29,37 @@ test.describe('WebSocket/Streaming', () => {
       'project_manager',
       'Test query'
     );
-    
-    // Verify run was created (which triggers events)
-    expect(run).toHaveProperty('id');
-    expect(run.projectId).toBe(testProject.id);
+
+    const wsUrl = `ws://localhost:8000/api/stream/projects/${testProject.id}/agent-runs/${run.id}`;
+    const message = await waitForFirstMessage(wsUrl);
+    expect(message).toHaveProperty('type');
+    expect(message.run?.id).toBe(run.id);
+    expect(message.run?.project_id ?? message.run?.projectId).toBe(testProject.id);
   });
 
-  // TODO: Add more comprehensive WebSocket tests when WebSocket client is implemented
-  // - Test event subscription/unsubscription
-  // - Test event filtering by type
-  // - Test reconnection handling
-  // - Test event ordering
 });
 
+async function waitForFirstMessage(url: string, timeoutMs = 5000): Promise<any> {
+  return await new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const timeout = setTimeout(() => {
+      ws.terminate();
+      reject(new Error(`No message received from ${url} within ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    ws.on('message', (data: WebSocket.Data) => {
+      clearTimeout(timeout);
+      ws.close();
+      try {
+        resolve(JSON.parse(data.toString()));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    ws.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}

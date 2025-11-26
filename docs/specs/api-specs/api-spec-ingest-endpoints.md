@@ -49,8 +49,8 @@ HTTP/1.1 204 No Content
 #### Notes
 - Only jobs with status COMPLETED, FAILED, or CANCELLED can be deleted
 - Jobs with status RUNNING must be cancelled first
-- Deleting a job may cascade delete associated canonical documents (TBD)
-- Soft delete vs hard delete (TBD)
+- Delete is a soft delete: row is retained with `deleted_at` and excluded from listings
+- Canonical documents are not cascaded; clean-up is explicit
 
 ---
 
@@ -282,4 +282,3 @@ Authorization: Bearer <token>
 - Project-scoped routes ensure data isolation
 - Pagination uses cursor-based approach for consistency
 - Filtering supports multiple criteria with AND logic
-

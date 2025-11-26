@@ -4,11 +4,9 @@
 Test specification for migrating ContextService from in-memory storage to database persistence, including budget calculations, item management, and project-scoped operations.
 
 ## Current State
-- `ContextService` uses in-memory `Dict[str, ContextItem]`
-- No persistence across service restarts
-- No project-scoped operations
-- No budget calculation logic
-- Budget stored separately (TBD)
+- `ContextService` persists items in SQLite
+- Project-scoped operations supported
+- Budget calculated on the fly (no dedicated budget table), default limit 100,000 tokens
 
 ## Target State
 - Database-backed persistence
@@ -29,20 +27,13 @@ Test specification for migrating ContextService from in-memory storage to databa
   - Indexes on project_id, pinned
   - Foreign key on project_id
 
-#### 1.2 Create Context Budget Table
-- **Action**: Run migration script
+#### 1.2 Budget Calculation Model
+- **Action**: Query budget for a project with existing items
 - **Expected**: 
-  - Table `context_budgets` created (or calculated on-the-fly)
-  - Columns: project_id, total_tokens, max_tokens (if stored)
-  - Index on project_id
-
-#### 1.3 Migrate Existing In-Memory Data
-- **Setup**: Service has in-memory context items
-- **Action**: Run migration script
-- **Expected**: 
-  - All items persisted to database
-  - Budget recalculated
-  - Data integrity maintained
+  - No dedicated budget table created
+  - `total_tokens` fixed to 100,000
+  - `used_tokens` equals sum of item tokens for the project
+  - `available_tokens` equals `total_tokens - used_tokens`
 
 ### 2. Add Context Item with Database
 
@@ -99,26 +90,13 @@ Test specification for migrating ContextService from in-memory storage to databa
   - Returns only items from project A
   - Project B items excluded
 
-#### 3.3 List Items Filtered by Type
-- **Setup**: Create items with different types
-- **Action**: Call `list_items(type=ContextItemType.PDF)`
+#### 3.3 List Ordering
+- **Setup**: Create items with staggered timestamps
+- **Action**: Call `list_items(project_id=<id>)`
 - **Expected**: 
-  - Returns only PDF items
-  - Other types excluded
-
-#### 3.4 List Pinned Items Only
-- **Setup**: Create pinned and non-pinned items
-- **Action**: Call `list_items(pinned=True)`
-- **Expected**: 
-  - Returns only pinned items
-  - Non-pinned items excluded
-
-#### 3.5 List Items with Pagination
-- **Setup**: Create 100 items
-- **Action**: Call `list_items(limit=20, cursor=None)`
-- **Expected**: 
-  - Returns first 20 items
-  - Includes `nextCursor` for pagination
+  - Returns all items for the project
+  - Ordered by `created_at DESC`
+  - No filter/pagination arguments supported
 
 ### 4. Remove Context Item with Database
 
@@ -359,4 +337,3 @@ CREATE INDEX idx_context_items_type ON context_items(type);
 - Verify atomicity of budget updates
 - Test with realistic data volumes
 - Mock database failures for error handling tests
-

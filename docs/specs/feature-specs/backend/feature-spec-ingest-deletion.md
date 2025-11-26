@@ -4,9 +4,9 @@
 Implementation specification for DELETE endpoint for ingest jobs, including validation, error handling, and cascade behavior.
 
 ## Current State
-- DELETE endpoint missing
+- DELETE endpoint implemented and project-scoped
 - Frontend has TODO for delete mutation
-- No way to remove completed/failed jobs
+- Jobs are soft-deleted (status marked CANCELLED, `deleted_at` timestamp recorded)
 
 ## Target State
 - DELETE endpoint implemented
@@ -20,8 +20,8 @@ Implementation specification for DELETE endpoint for ingest jobs, including vali
 1. DELETE endpoint deletes ingest job
 2. Only completed/failed/cancelled jobs can be deleted
 3. Running jobs must be cancelled first
-4. Cascade behavior for associated data (TBD)
-5. Soft delete vs hard delete (TBD)
+4. No cascade delete of canonical documents; data remains available for audit
+5. Soft delete chosen: retain row with `deleted_at`, exclude from listings
 
 ### Non-Functional Requirements
 1. Fast response time (< 100ms)
@@ -59,23 +59,20 @@ async def delete_ingest_job(
 #### 2. Service Method
 ```python
 def delete_job(self, job_id: str) -> None:
-    # Check status
     job = self.get_job(job_id)
     if job.status == IngestStatus.RUNNING:
         raise ValueError("Cannot delete running job")
-    
-    # Delete associated data (if cascade)
-    # Delete job record
-    self.repo.delete(job_id)
+
+    # Soft delete
+    self.repo.mark_deleted(job_id, status=IngestStatus.CANCELLED, deleted_at=now)
 ```
 
 #### 3. Database Changes
-- Add DELETE operation to repository
-- Consider cascade deletes for canonical documents
-- Add soft delete flag (optional)
+- Add soft delete timestamp column
+- Keep canonical documents untouched (no cascade)
 
 ### API Changes
-- New DELETE endpoint
+- New DELETE endpoint (soft delete)
 - Error responses for invalid states
 - 204 No Content on success
 
@@ -121,4 +118,3 @@ def delete_job(self, job_id: str) -> None:
 - Decide on cascade behavior (delete canonical documents?)
 - Consider soft delete for audit trail
 - Add confirmation dialog in UI
-

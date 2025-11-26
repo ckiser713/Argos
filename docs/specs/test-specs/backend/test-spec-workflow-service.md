@@ -92,7 +92,7 @@ Test specification for migrating WorkflowService from in-memory storage to datab
 - **Action**: Call `delete_graph(graph_id)`
 - **Expected**: 
   - Graph removed from database
-  - Related runs handled (cascade or prevent TBD)
+  - If runs exist for the graph, deletion is rejected (no cascade)
 
 ### 3. Workflow Run Operations with Database
 
@@ -228,7 +228,7 @@ Test specification for migrating WorkflowService from in-memory storage to datab
 - **Setup**: Single run
 - **Action**: Multiple threads updating status
 - **Expected**: 
-  - Last write wins (or optimistic locking TBD)
+  - Last write wins (no optimistic locking)
   - No data corruption
   - Status reflects latest change
 
@@ -389,4 +389,3 @@ CREATE TABLE workflow_node_states (
 - Test with realistic data volumes
 - Mock database failures for error handling tests
 - Test workflow execution persistence
-

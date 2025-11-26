@@ -11,13 +11,25 @@ def test_fetch_roadmap_for_project(client: TestClient, project: dict) -> None:
     }
     with each node/edge respecting the domain shapes.
     """
-    # The backend service does not currently have a /api/projects/{projectId}/roadmap endpoint.
-    # It has /api/workflows/graphs
-    # The prompt implies roadmap is under project, but the implementation is separate.
-    # I will adapt the test to the existing implementation for now, which is /api/workflows/graphs.
-    # The backend's workflow_service.py initializes a 'default_retrieval_graph'.
-    # I will fetch this default graph.
-    resp = client.get("/api/workflows/graphs/default_retrieval_graph")
+    project_id = project["id"]
+    create_payload = {
+        "name": "Roadmap Graph",
+        "description": "Graph created in test",
+        "nodes": [
+            {"id": "n1", "label": "Start", "x": 0, "y": 0},
+            {"id": "n2", "label": "Next", "x": 1, "y": 1},
+        ],
+        "edges": [
+            {"id": "e-start", "source": "__start__", "target": "n1"},
+            {"id": "e1", "source": "n1", "target": "n2"},
+            {"id": "e-end", "source": "n2", "target": "__end__"},
+        ],
+    }
+    created = client.post(f"/api/projects/{project_id}/workflows/graphs", json=create_payload)
+    assert created.status_code == 201
+    graph_id = created.json()["id"]
+
+    resp = client.get(f"/api/projects/{project_id}/workflows/graphs/{graph_id}")
     assert resp.status_code == 200
 
     data = resp.json()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.db import db_session
 from app.domain.models import MessageResponse  # Keep MessageResponse if still needed
 from app.domain.system_metrics import SystemStatus
 from app.services.system_metrics_service import get_system_status
@@ -11,6 +12,16 @@ router = APIRouter(prefix="/system", tags=["system"])
 @router.get("/health", response_model=MessageResponse, summary="Basic liveness probe")
 def health_check() -> MessageResponse:
     return MessageResponse(message="ok")
+
+
+@router.get("/ready", response_model=MessageResponse, summary="Readiness probe with DB check")
+def readiness_check() -> MessageResponse:
+    """
+    Verify critical dependencies (currently SQLite) are reachable.
+    """
+    with db_session() as conn:
+        conn.execute("SELECT 1")
+    return MessageResponse(message="ready")
 
 
 @router.get(

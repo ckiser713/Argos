@@ -8,6 +8,7 @@ import {
   createIdeaCluster,
   listIdeaTickets,
   createIdeaTicket,
+  updateIdeaTicket,
 } from "../lib/cortexApi";
 import type { IdeaTicket, IdeaCandidate, IdeaCluster } from "../domain/types";
 import type { PaginatedResponse } from "../domain/api-types";
@@ -171,6 +172,23 @@ export function useCreateIdeaTicket(projectId: string) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (payload: Partial<IdeaTicket>) => createIdeaTicket(projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ideaTicketsQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: ideasQueryKey({ projectId }) });
+    },
+  });
+
+  return mutation;
+}
+
+/**
+ * Update an idea ticket.
+ */
+export function useUpdateIdeaTicket(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ ticketId, payload }: { ticketId: string; payload: { status?: string; priority?: string } }) =>
+      updateIdeaTicket(projectId, ticketId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ideaTicketsQueryKey(projectId) });
       queryClient.invalidateQueries({ queryKey: ideasQueryKey({ projectId }) });

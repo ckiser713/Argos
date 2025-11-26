@@ -16,15 +16,23 @@ class ConnectionManager:
         # project_id -> set of websockets
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         self._lock = asyncio.Lock()
+        self.max_connections_per_project = 100
+        self.send_timeout_seconds = 2.0
 
     async def connect(self, websocket: WebSocket, project_id: str):
         """Add a WebSocket connection for a project."""
         await websocket.accept()
         async with self._lock:
+            existing = self.active_connections.get(project_id, set())
+            if len(existing) >= self.max_connections_per_project:
+                await websocket.send_json({"error": "too_many_connections"})
+                await websocket.close(code=1013)
+                return False
             if project_id not in self.active_connections:
                 self.active_connections[project_id] = set()
             self.active_connections[project_id].add(websocket)
         logger.info(f"WebSocket connected for project {project_id}")
+        return True
 
     async def disconnect(self, websocket: WebSocket, project_id: str):
         """Remove a WebSocket connection."""
@@ -44,7 +52,7 @@ class ConnectionManager:
             disconnected = set()
             for connection in self.active_connections[project_id]:
                 try:
-                    await connection.send_json(event)
+                    await asyncio.wait_for(connection.send_json(event), timeout=self.send_timeout_seconds)
                 except Exception as e:
                     logger.warning(f"Failed to send event to connection: {e}")
                     disconnected.add(connection)
