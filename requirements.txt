@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+# Do NOT include sqlite3 — it's part of the Python standard library

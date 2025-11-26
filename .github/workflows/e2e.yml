@@ -41,7 +41,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           cd backend
-          pip install -r requirements.txt || pip install fastapi uvicorn pydantic pydantic-settings sqlite3
+          pip install -r requirements.txt || pip install fastapi uvicorn pydantic pydantic-settings
 
       - name: Install frontend dependencies
         run: |
