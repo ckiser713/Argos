@@ -44,3 +44,11 @@ node_modules
 .logs/
 *.log
 node_modules
+node_modules
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+ops/qdrant_storage/
