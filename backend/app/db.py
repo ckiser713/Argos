@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 from app.config import get_settings
+
+SCHEMA_VERSION = "2024-06-01"
 
 
 def _db_path() -> Path:
@@ -78,6 +81,8 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
+                deleted_at TEXT,
+                message TEXT,
                 error_message TEXT,
                 canonical_document_id TEXT,
                 FOREIGN KEY(project_id) REFERENCES projects(id),
@@ -345,6 +350,24 @@ def init_db() -> None:
                 FOREIGN KEY(ticket_id) REFERENCES idea_tickets(id)
             );
             CREATE INDEX IF NOT EXISTS idx_gap_suggestions_report ON gap_suggestions(report_id);
+
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );
             """
         )
+        existing = conn.execute("SELECT version FROM schema_migrations WHERE version = ?", (SCHEMA_VERSION,)).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
+            )
         conn.commit()
+
+
+def get_schema_version() -> str:
+    """Return the latest applied schema version."""
+    with db_session() as conn:
+        row = conn.execute("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").fetchone()
+        return row["version"] if row else SCHEMA_VERSION

@@ -447,6 +447,21 @@ export async function createIdeaTicket(
   );
 }
 
+/** Update an idea ticket. */
+export async function updateIdeaTicket(
+  projectId: string,
+  ticketId: string,
+  payload: { status?: string; priority?: string }
+): Promise<IdeaTicket> {
+  return http<IdeaTicket>(
+    `/api/projects/${encodeURIComponent(projectId)}/ideas/tickets/${encodeURIComponent(ticketId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+    }
+  );
+}
+
 /** List mission control tasks. */
 export async function listMissionControlTasks(
   projectId: string,

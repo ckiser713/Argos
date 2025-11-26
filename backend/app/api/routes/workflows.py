@@ -1,12 +1,19 @@
 import asyncio
 from typing import List, Optional
 
-from app.domain.models import WorkflowGraph, WorkflowRun, WorkflowRunStatus
+from app.domain.models import WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowRunStatus
 from app.services.workflow_service import workflow_service
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class WorkflowGraphPayload(BaseModel):
+    name: str
+    description: Optional[str] = None
+    nodes: List[WorkflowNode]
+    edges: List[WorkflowEdge]
 
 
 class CreateWorkflowRunRequest(BaseModel):
@@ -31,16 +38,38 @@ def list_workflow_graphs(project_id: str) -> List[WorkflowGraph]:
     return workflow_service.list_graphs(project_id=project_id)
 
 
+@router.post(
+    "/projects/{project_id}/workflows/graphs",
+    response_model=WorkflowGraph,
+    status_code=201,
+    summary="Create a workflow graph",
+)
+def create_workflow_graph(project_id: str, body: WorkflowGraphPayload) -> WorkflowGraph:
+    return workflow_service.create_graph(project_id=project_id, graph_data=body.model_dump())
+
+
 @router.get(
     "/projects/{project_id}/workflows/graphs/{workflow_id}",
     response_model=WorkflowGraph,
     summary="Get a workflow graph by ID",
 )
 def get_workflow_graph(project_id: str, workflow_id: str) -> WorkflowGraph:
-    graph = workflow_service.get_graph(workflow_id)
+    graph = workflow_service.get_graph(workflow_id, project_id=project_id)
     if not graph:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return graph
+
+
+@router.put(
+    "/projects/{project_id}/workflows/graphs/{workflow_id}",
+    response_model=WorkflowGraph,
+    summary="Update a workflow graph",
+)
+def update_workflow_graph(project_id: str, workflow_id: str, body: WorkflowGraphPayload) -> WorkflowGraph:
+    try:
+        return workflow_service.update_graph(project_id=project_id, workflow_id=workflow_id, graph_data=body.model_dump())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Workflow not found")
 
 
 @router.post(
@@ -49,7 +78,7 @@ def get_workflow_graph(project_id: str, workflow_id: str) -> WorkflowGraph:
 def create_workflow_run(
     project_id: str, body: CreateWorkflowRunRequest, background_tasks: BackgroundTasks
 ) -> WorkflowRun:
-    graph = workflow_service.get_graph(body.workflow_id)
+    graph = workflow_service.get_graph(body.workflow_id, project_id=project_id)
     if not graph:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
@@ -78,8 +107,8 @@ def list_workflow_runs(project_id: str, workflow_id: Optional[str] = None) -> Li
     "/projects/{project_id}/workflows/runs/{run_id}", response_model=WorkflowRun, summary="Get a workflow run by ID"
 )
 def get_workflow_run(project_id: str, run_id: str) -> WorkflowRun:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
     return run
 
@@ -96,8 +125,8 @@ async def execute_workflow_run(
     body: Optional[ExecuteWorkflowRunRequest] = None,
     background_tasks: BackgroundTasks = None,
 ) -> WorkflowRun:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
 
     if run.status == WorkflowRunStatus.RUNNING:
@@ -122,15 +151,15 @@ async def execute_workflow_run(
     else:
         asyncio.create_task(workflow_service.execute_workflow_run(run_id))
 
-    return workflow_service.get_run(run_id)
+    return workflow_service.get_run(run_id, project_id=project_id)
 
 
 @router.post(
     "/projects/{project_id}/workflows/runs/{run_id}/cancel", response_model=WorkflowRun, summary="Cancel a workflow run"
 )
 async def cancel_workflow_run(project_id: str, run_id: str) -> WorkflowRun:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
 
     try:
@@ -143,8 +172,8 @@ async def cancel_workflow_run(project_id: str, run_id: str) -> WorkflowRun:
     "/projects/{project_id}/workflows/runs/{run_id}/pause", response_model=WorkflowRun, summary="Pause a workflow run"
 )
 async def pause_workflow_run(project_id: str, run_id: str) -> WorkflowRun:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
 
     try:
@@ -162,8 +191,8 @@ async def pause_workflow_run(project_id: str, run_id: str) -> WorkflowRun:
 async def resume_workflow_run(
     project_id: str, run_id: str, body: Optional[ResumeWorkflowRunRequest] = None
 ) -> WorkflowRun:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
 
     try:
@@ -174,8 +203,8 @@ async def resume_workflow_run(
 
 @router.get("/projects/{project_id}/workflows/runs/{run_id}/status", summary="Get workflow run execution status")
 def get_workflow_run_status(project_id: str, run_id: str) -> dict:
-    run = workflow_service.get_run(run_id)
-    if not run:
+    run = workflow_service.get_run(run_id, project_id=project_id)
+    if not run or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="Workflow run not found")
 
     try:

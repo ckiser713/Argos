@@ -36,9 +36,15 @@ class WorkflowService:
                 rows = conn.execute("SELECT * FROM workflow_graphs").fetchall()
             return [self._row_to_graph(row) for row in rows]
 
-    def get_graph(self, workflow_id: str) -> Optional[WorkflowGraph]:
+    def get_graph(self, workflow_id: str, project_id: Optional[str] = None) -> Optional[WorkflowGraph]:
         with db_session() as conn:
-            row = conn.execute("SELECT * FROM workflow_graphs WHERE id = ?", (workflow_id,)).fetchone()
+            query = "SELECT * FROM workflow_graphs WHERE id = ?"
+            params = [workflow_id]
+            if project_id:
+                query += " AND project_id = ?"
+                params.append(project_id)
+
+            row = conn.execute(query, params).fetchone()
             if row:
                 return self._row_to_graph(row)
         return None
@@ -53,6 +59,7 @@ class WorkflowService:
 
         graph = WorkflowGraph(
             id=graph_id,
+            project_id=project_id,
             name=graph_data.get("name", "Untitled Workflow"),
             description=graph_data.get("description"),
             nodes=[WorkflowNode(**node) for node in nodes],
@@ -85,6 +92,50 @@ class WorkflowService:
 
         return graph
 
+    def update_graph(self, project_id: str, workflow_id: str, graph_data: dict) -> WorkflowGraph:
+        now = datetime.now(timezone.utc)
+
+        # Ensure graph exists and belongs to project
+        existing = self.get_graph(workflow_id, project_id=project_id)
+        if not existing:
+            raise ValueError("Workflow graph not found")
+
+        nodes = graph_data.get("nodes", [])
+        edges = graph_data.get("edges", [])
+        updated_graph = WorkflowGraph(
+            id=workflow_id,
+            project_id=project_id,
+            name=graph_data.get("name", existing.name),
+            description=graph_data.get("description", existing.description),
+            nodes=[WorkflowNode(**node) for node in nodes],
+            edges=[WorkflowEdge(**edge) for edge in edges],
+        )
+
+        with db_session() as conn:
+            conn.execute(
+                """
+                UPDATE workflow_graphs
+                SET name = ?, description = ?, graph_json = ?, updated_at = ?
+                WHERE id = ? AND project_id = ?
+                """,
+                (
+                    updated_graph.name,
+                    updated_graph.description or "",
+                    json.dumps(
+                        {
+                            "nodes": [n.model_dump() for n in updated_graph.nodes],
+                            "edges": [e.model_dump() for e in updated_graph.edges],
+                        }
+                    ),
+                    now.isoformat(),
+                    workflow_id,
+                    project_id,
+                ),
+            )
+            conn.commit()
+
+        return updated_graph
+
     def list_runs(self, project_id: Optional[str] = None, workflow_id: Optional[str] = None) -> List[WorkflowRun]:
         with db_session() as conn:
             query = "SELECT * FROM workflow_runs WHERE 1=1"
@@ -102,9 +153,15 @@ class WorkflowService:
             rows = conn.execute(query, params).fetchall()
             return [self._row_to_run(row) for row in rows]
 
-    def get_run(self, run_id: str) -> Optional[WorkflowRun]:
+    def get_run(self, run_id: str, project_id: Optional[str] = None) -> Optional[WorkflowRun]:
         with db_session() as conn:
-            row = conn.execute("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
+            query = "SELECT * FROM workflow_runs WHERE id = ?"
+            params = [run_id]
+            if project_id:
+                query += " AND project_id = ?"
+                params.append(project_id)
+
+            row = conn.execute(query, params).fetchone()
             if row:
                 return self._row_to_run(row)
         return None
@@ -120,6 +177,7 @@ class WorkflowService:
 
         run = WorkflowRun(
             id=run_id,
+            project_id=project_id,
             workflow_id=workflow_id,
             status=WorkflowRunStatus.PENDING,
             started_at=now,
@@ -156,6 +214,12 @@ class WorkflowService:
         finished: bool | None = None,
         output_data: Optional[dict] = None,
     ) -> Optional[WorkflowRun]:
+        terminal_statuses = {
+            WorkflowRunStatus.COMPLETED,
+            WorkflowRunStatus.FAILED,
+            WorkflowRunStatus.CANCELLED,
+        }
+
         with db_session() as conn:
             updates = []
             params = []
@@ -169,7 +233,7 @@ class WorkflowService:
             if output_data:
                 updates.append("output_json = ?")
                 params.append(json.dumps(output_data))
-            if finished:
+            if finished or (status in terminal_statuses):
                 updates.append("finished_at = ?")
                 params.append(datetime.now(timezone.utc).isoformat())
 
@@ -213,7 +277,7 @@ class WorkflowService:
         node_id: str,
         *,
         status: WorkflowNodeStatus,
-        progress: float,
+        progress: float = 0.0,
         messages: Optional[List[str]] = None,
         error: Optional[str] = None,
         started: bool = False,
@@ -307,7 +371,7 @@ class WorkflowService:
             logger.error(f"Workflow run {run_id} not found")
             return
 
-        workflow_graph = self.get_graph(run.workflow_id)
+        workflow_graph = self.get_graph(run.workflow_id, project_id=run.project_id)
         if not workflow_graph:
             self.update_run_status(run_id, WorkflowRunStatus.FAILED, last_message="Workflow graph not found")
             return
@@ -334,8 +398,8 @@ class WorkflowService:
         )
 
         try:
-            # Compile graph
-            compiler = WorkflowGraphCompiler()
+            # Compile graph with workflow service reference for node state tracking
+            compiler = WorkflowGraphCompiler(workflow_service=self)
             compiled_graph = compiler.compile(workflow_graph)
 
             # Get input data
@@ -614,6 +678,7 @@ class WorkflowService:
         graph_data = json.loads(row["graph_json"])
         return WorkflowGraph(
             id=row["id"],
+            project_id=row["project_id"],
             name=row["name"],
             description=row.get("description"),
             nodes=[WorkflowNode(**node) for node in graph_data.get("nodes", [])],
@@ -623,6 +688,7 @@ class WorkflowService:
     def _row_to_run(self, row) -> WorkflowRun:
         return WorkflowRun(
             id=row["id"],
+            project_id=row["project_id"],
             workflow_id=row["workflow_id"],
             status=WorkflowRunStatus(row["status"]),
             started_at=datetime.fromisoformat(row["started_at"]),
@@ -634,16 +700,23 @@ class WorkflowService:
         )
 
     def _row_to_node_state(self, row) -> WorkflowNodeState:
+        messages: List[str] = []
         if row.get("messages_json"):
             try:
-                _ = json.loads(row["messages_json"])  # Parse to validate, but don't store
-            except (json.JSONDecodeError, ValueError):
-                pass
+                loaded = json.loads(row["messages_json"])
+                if isinstance(loaded, list):
+                    messages = [str(m) for m in loaded]
+            except (json.JSONDecodeError, ValueError, TypeError):
+                messages = []
 
         return WorkflowNodeState(
             node_id=row["node_id"],
             status=WorkflowNodeStatus(row["status"]),
             progress=row.get("progress", 0.0),
+            messages=messages,
+            started_at=datetime.fromisoformat(row["started_at"]) if row.get("started_at") else None,
+            completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
+            error=row.get("error"),
         )
 
 

@@ -20,6 +20,7 @@ def test_get_agent_run(client: TestClient, project: dict) -> None:
     project_id = project["id"]
     # First create a run
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -30,13 +31,14 @@ def test_get_agent_run(client: TestClient, project: dict) -> None:
         assert resp.status_code == 200
         data = resp.json()
         assert "id" in data
-        assert data["projectId"] == project_id
+        assert data["project_id"] == project_id
 
 
 def test_list_agent_run_steps(client: TestClient, project: dict) -> None:
     """Test GET /api/projects/{projectId}/agent-runs/{runId}/steps"""
     project_id = project["id"]
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -53,6 +55,7 @@ def test_list_agent_run_messages(client: TestClient, project: dict) -> None:
     """Test GET /api/projects/{projectId}/agent-runs/{runId}/messages"""
     project_id = project["id"]
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -69,6 +72,7 @@ def test_list_agent_run_node_states(client: TestClient, project: dict) -> None:
     """Test GET /api/projects/{projectId}/agent-runs/{runId}/node-states"""
     project_id = project["id"]
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -85,6 +89,7 @@ def test_append_agent_run_message(client: TestClient, project: dict) -> None:
     """Test POST /api/projects/{projectId}/agent-runs/{runId}/messages"""
     project_id = project["id"]
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -106,6 +111,7 @@ def test_cancel_agent_run(client: TestClient, project: dict) -> None:
     """Test POST /api/projects/{projectId}/agent-runs/{runId}/cancel"""
     project_id = project["id"]
     payload = {
+        "project_id": project_id,
         "agent_id": "project_manager",
         "input_prompt": "Test query",
     }
@@ -115,4 +121,3 @@ def test_cancel_agent_run(client: TestClient, project: dict) -> None:
         resp = client.post(f"/api/projects/{project_id}/agent-runs/{run_id}/cancel")
         # Should succeed or return 400 if already completed
         assert resp.status_code in (200, 400)
-

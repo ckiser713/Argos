@@ -23,7 +23,7 @@ class IngestService:
         source_id: Optional[str] = None,
     ) -> PaginatedResponse:
         with db_session() as conn:
-            query = "SELECT * FROM ingest_jobs WHERE project_id = ?"
+            query = "SELECT * FROM ingest_jobs WHERE project_id = ? AND deleted_at IS NULL"
             params = [project_id]
 
             if status:
@@ -50,7 +50,7 @@ class IngestService:
                 next_cursor = rows[limit]["id"]
 
             # Get total count
-            count_query = "SELECT COUNT(*) as total FROM ingest_jobs WHERE project_id = ?"
+            count_query = "SELECT COUNT(*) as total FROM ingest_jobs WHERE project_id = ? AND deleted_at IS NULL"
             count_params = [project_id]
             if status:
                 count_query += " AND status = ?"
@@ -69,7 +69,7 @@ class IngestService:
 
     def get_job(self, job_id: str) -> Optional[IngestJob]:
         with db_session() as conn:
-            row = conn.execute("SELECT * FROM ingest_jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ingest_jobs WHERE id = ? AND deleted_at IS NULL", (job_id,)).fetchone()
             if row:
                 return self._row_to_job(row)
         return None
@@ -116,8 +116,8 @@ class IngestService:
             conn.execute(
                 """
                 INSERT INTO ingest_jobs
-                (id, project_id, source_id, original_filename, status, created_at, updated_at, stage, progress)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, project_id, source_id, original_filename, status, created_at, updated_at, stage, progress, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job.id,
@@ -129,6 +129,7 @@ class IngestService:
                     job.updated_at.isoformat(),
                     job.stage,
                     job.progress,
+                    job.message,
                 ),
             )
             conn.commit()
@@ -164,8 +165,16 @@ class IngestService:
         return job
 
     def delete_job(self, job_id: str) -> None:
+        now = datetime.now(timezone.utc)
         with db_session() as conn:
-            conn.execute("DELETE FROM ingest_jobs WHERE id = ?", (job_id,))
+            conn.execute(
+                """
+                UPDATE ingest_jobs
+                SET deleted_at = ?, status = ?
+                WHERE id = ?
+                """,
+                (now.isoformat(), IngestStatus.CANCELLED.value, job_id),
+            )
             conn.commit()
 
     def process_job(self, job_id: str):
@@ -275,10 +284,10 @@ class IngestService:
             if progress is not None:
                 updates.append("progress = ?")
                 params.append(progress)
-            if message:
-                updates.append("error_message = ?")
+            if message is not None:
+                updates.append("message = ?")
                 params.append(message)
-            if error_message:
+            if error_message is not None:
                 updates.append("error_message = ?")
                 params.append(error_message)
             if completed_at:
@@ -322,9 +331,10 @@ class IngestService:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
             completed_at=datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None,
+            deleted_at=datetime.fromisoformat(row["deleted_at"]) if row.get("deleted_at") else None,
             status=IngestStatus(row["status"]),
             progress=row.get("progress", 0.0),
-            message=row.get("error_message"),
+            message=row.get("message"),
             error_message=row.get("error_message"),
             canonical_document_id=row.get("canonical_document_id"),
         )

@@ -2,7 +2,7 @@ from typing import List, Sequence, TypedDict
 
 from app.config import get_settings
 from app.services.rag_service import rag_service
-# from app.services.roadmap_service import create_roadmap_nodes_from_intent  # Function not yet implemented
+from app.services.roadmap_service import create_roadmap_nodes_from_intent
 from app.tools.n8n import trigger_n8n_workflow
 try:
     from langchain.tools import tool
@@ -23,9 +23,12 @@ def search_knowledge(query: str) -> str:
 @tool
 def create_roadmap(intent: str, project_id: str) -> str:
     """Creates a roadmap for a given intent. The project_id must be passed."""
-    # TODO: Implement create_roadmap_nodes_from_intent
-    # return str(create_roadmap_nodes_from_intent(project_id, intent))
-    return f"Created roadmap nodes for intent: {intent}"
+    try:
+        nodes = create_roadmap_nodes_from_intent(project_id, intent)
+        node_labels = [node.label for node in nodes]
+        return f"Created {len(nodes)} roadmap nodes: {', '.join(node_labels)}"
+    except Exception as e:
+        return f"Error creating roadmap: {str(e)}"
 
 
 tools = [search_knowledge, create_roadmap, trigger_n8n_workflow]

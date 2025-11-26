@@ -51,7 +51,8 @@ def get_agent_run(project_id: str, run_id: str) -> AgentRun:
 
 @router.post("/projects/{project_id}/agent-runs", response_model=AgentRun, summary="Start an agent run")
 async def create_agent_run(project_id: str, request: AgentRunRequest, background_tasks: BackgroundTasks):
-    if request.project_id != project_id:
+    request_project_id = request.project_id or project_id
+    if request.project_id and request.project_id != project_id:
         raise HTTPException(status_code=400, detail="Project ID mismatch")
 
     agent = agent_service.get_agent(request.agent_id)
@@ -59,7 +60,7 @@ async def create_agent_run(project_id: str, request: AgentRunRequest, background
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Create DB Record
-    run = agent_service.create_run_record(request)
+    run = agent_service.create_run_record(request.model_copy(update={"project_id": request_project_id}))
 
     # Offload Execution
     background_tasks.add_task(agent_service.execute_run, run.id)

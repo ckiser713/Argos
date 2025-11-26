@@ -150,8 +150,7 @@ Comprehensive test specification for Context API endpoints, covering POST/PATCH 
 - **Setup**: Add pinned context item
 - **Action**: DELETE request
 - **Expected**: 
-  - Item removed successfully
-  - Pinned status doesn't prevent deletion (or prevents if TBD)
+  - Item removed successfully (pinned does not block deletion)
 
 ### 5. Context Budget Management
 
@@ -331,4 +330,3 @@ Comprehensive test specification for Context API endpoints, covering POST/PATCH 
 - Test concurrent operations for race conditions
 - Use transaction rollback for data cleanup
 - Test performance with many context items (100+)
-

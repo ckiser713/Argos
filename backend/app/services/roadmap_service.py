@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Set
@@ -15,6 +16,9 @@ from app.domain.models import (
     RoadmapNodePriority,
     RoadmapNodeStatus,
 )
+from app.services.llm_service import generate_text
+
+logger = logging.getLogger(__name__)
 
 
 class RoadmapService:
@@ -406,3 +410,139 @@ class RoadmapService:
 
 
 roadmap_service = RoadmapService()
+
+
+def create_roadmap_nodes_from_intent(project_id: str, intent: str) -> List[RoadmapNode]:
+    """
+    Generate roadmap nodes from a natural language intent using LLM.
+    
+    Args:
+        project_id: The project ID to create nodes for
+        intent: Natural language description of what roadmap nodes should be created
+        
+    Returns:
+        List of created RoadmapNode objects
+    """
+    logger.info(
+        "roadmap_service.create_roadmap_nodes_from_intent.start",
+        extra={"project_id": project_id, "intent": intent[:100]},
+    )
+    
+    # Generate structured roadmap plan using LLM
+    prompt = f"""Given the following intent, create a structured roadmap with multiple nodes.
+Break down the intent into logical, sequential steps that can be tracked independently.
+
+Intent: {intent}
+
+Generate a JSON array of roadmap nodes. Each node should have:
+- label: A short, descriptive title (required)
+- description: A detailed description of what needs to be done (optional)
+- status: One of ["pending", "in_progress", "blocked", "done"] (default: "pending")
+- priority: One of ["low", "medium", "high"] (optional)
+- depends_on_ids: Array of node labels this node depends on (optional, for sequencing)
+
+Return ONLY a valid JSON array, no markdown formatting, no explanation.
+Example format:
+[
+  {{
+    "label": "Setup database schema",
+    "description": "Create initial database tables and migrations",
+    "status": "pending",
+    "priority": "high"
+  }},
+  {{
+    "label": "Implement API endpoints",
+    "description": "Create REST API endpoints for the feature",
+    "status": "pending",
+    "priority": "high",
+    "depends_on_ids": ["Setup database schema"]
+  }}
+]"""
+
+    try:
+        # Generate roadmap structure using LLM
+        llm_response = generate_text(
+            prompt=prompt,
+            project_id=project_id,
+            base_temperature=0.3,
+            max_tokens=2000,
+            json_mode=True,
+        )
+        
+        # Parse JSON response
+        # Remove markdown code blocks if present
+        llm_response = llm_response.strip()
+        if llm_response.startswith("```json"):
+            llm_response = llm_response[7:]
+        if llm_response.startswith("```"):
+            llm_response = llm_response[3:]
+        if llm_response.endswith("```"):
+            llm_response = llm_response[:-3]
+        llm_response = llm_response.strip()
+        
+        nodes_data = json.loads(llm_response)
+        if not isinstance(nodes_data, list):
+            raise ValueError("LLM response is not a JSON array")
+        
+        # Create nodes and resolve dependencies
+        created_nodes: List[RoadmapNode] = []
+        label_to_id_map: dict[str, str] = {}
+        
+        # First pass: create all nodes without dependencies
+        for node_data in nodes_data:
+            node_id = str(uuid.uuid4())
+            label = node_data.get("label", "Untitled Node")
+            label_to_id_map[label] = node_id
+            
+            node_payload = {
+                "label": label,
+                "description": node_data.get("description"),
+                "status": node_data.get("status", "pending"),
+                "priority": node_data.get("priority"),
+            }
+            
+            node = roadmap_service.create_node(project_id, node_payload)
+            created_nodes.append(node)
+        
+        # Second pass: update nodes with resolved dependency IDs
+        for i, node_data in enumerate(nodes_data):
+            depends_on_labels = node_data.get("depends_on_ids", [])
+            if depends_on_labels:
+                depends_on_ids = [
+                    label_to_id_map[label]
+                    for label in depends_on_labels
+                    if label in label_to_id_map
+                ]
+                if depends_on_ids:
+                    # Update the node with dependencies
+                    roadmap_service.update_node(
+                        project_id,
+                        created_nodes[i].id,
+                        {"depends_on_ids": depends_on_ids},
+                    )
+                    # Refresh the node object
+                    created_nodes[i] = roadmap_service.get_node(project_id, created_nodes[i].id)
+        
+        logger.info(
+            "roadmap_service.create_roadmap_nodes_from_intent.success",
+            extra={
+                "project_id": project_id,
+                "nodes_created": len(created_nodes),
+                "node_ids": [n.id for n in created_nodes],
+            },
+        )
+        
+        return created_nodes
+        
+    except json.JSONDecodeError as e:
+        logger.error(
+            "roadmap_service.create_roadmap_nodes_from_intent.json_parse_error",
+            extra={"project_id": project_id, "error": str(e), "response": llm_response[:500]},
+        )
+        raise ValueError(f"Failed to parse LLM response as JSON: {e}")
+    except Exception as e:
+        logger.exception(
+            "roadmap_service.create_roadmap_nodes_from_intent.error",
+            extra={"project_id": project_id, "error": str(e)},
+        )
+        raise ValueError(f"Failed to create roadmap nodes from intent: {e}")

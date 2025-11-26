@@ -46,6 +46,12 @@ class AgentService:
                 description="Turns ideas and research into roadmaps.",
                 capabilities=["planning", "decomposition", "timeline_synthesis"],
             ),
+            "project_manager": AgentProfile(
+                id="project_manager",
+                name="Project Manager",
+                description="Coordinates execution and keeps stakeholders updated.",
+                capabilities=["planning", "coordination", "status_reporting"],
+            ),
         }
 
     def list_agents(self) -> List[AgentProfile]:
@@ -119,11 +125,17 @@ class AgentService:
         if not run:
             return None
 
+        terminal_statuses = {
+            AgentRunStatus.COMPLETED,
+            AgentRunStatus.FAILED,
+            AgentRunStatus.CANCELLED,
+        }
+
         if status is not None:
             run.status = status
         if output_summary is not None:
             run.output_summary = output_summary
-        if finished:
+        if finished or (status in terminal_statuses):
             run.finished_at = datetime.now(timezone.utc)
 
         with db_session() as conn:
@@ -425,101 +437,119 @@ class AgentService:
             return
         self.update_run(run_id, status=AgentRunStatus.RUNNING)
 
-        try:
-            # Track node states during LangGraph execution
-            from app.graphs.project_manager_graph import app as langgraph_app
+        max_attempts = 2
+        timeout_seconds = 30
+        backoff_seconds = 2
+        last_error: Exception | None = None
 
-            # Initialize node states
-            self.update_node_state(run_id, "agent", status="running", started=True)
+        for attempt in range(1, max_attempts + 1):
+            try:
+                refreshed_run = self.get_run(run_id) or run
+                await asyncio.wait_for(self._execute_run_once(refreshed_run), timeout=timeout_seconds)
+                return
+            except asyncio.TimeoutError:
+                last_error = TimeoutError("Agent execution timed out")
+            except Exception as e:  # pylint: disable=broad-except
+                last_error = e
 
-            # Stream events from LangGraph
-            async for event in langgraph_app.astream_events(
-                {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id},
-                version="v1",
-            ):
-                # Track node execution
-                if event.get("event") == "on_chain_start":
-                    node_name = event.get("name", "")
-                    if node_name in ["agent", "tools"]:
-                        node_state = self.update_node_state(
-                            run_id,
-                            node_name,
-                            status="running",
-                            started=True,
-                            progress=0.0,
-                        )
-                        # Emit node started event
-                        if node_state:
-                            asyncio.create_task(
-                                emit_agent_event(
-                                    run.project_id,
-                                    "agent.step.started",
-                                    node_state_data=node_state.model_dump(),
-                                )
+            if attempt < max_attempts:
+                await asyncio.sleep(backoff_seconds * attempt)
+                continue
+
+        # Only reached if all attempts failed
+        error_msg = self._sanitize_error(last_error)
+        self.update_run(run_id, output_summary=error_msg, status=AgentRunStatus.FAILED, finished=True)
+        self.update_node_state(run_id, "agent", status="failed", error=error_msg, completed=True)
+        # Event emission handled in update_run
+
+    async def _execute_run_once(self, run: AgentRun) -> None:
+        """Single attempt at executing the agent graph."""
+        from app.graphs.project_manager_graph import app as langgraph_app
+
+        self.update_node_state(run.id, "agent", status="running", started=True, progress=0.0)
+
+        async for event in langgraph_app.astream_events(
+            {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id},
+            version="v1",
+        ):
+            if event.get("event") == "on_chain_start":
+                node_name = event.get("name", "")
+                if node_name in ["agent", "tools"]:
+                    node_state = self.update_node_state(
+                        run.id,
+                        node_name,
+                        status="running",
+                        started=True,
+                        progress=0.0,
+                    )
+                    if node_state:
+                        asyncio.create_task(
+                            emit_agent_event(
+                                run.project_id,
+                                "agent.step.started",
+                                node_state_data=node_state.model_dump(),
                             )
-
-                elif event.get("event") == "on_chain_end":
-                    node_name = event.get("name", "")
-                    if node_name in ["agent", "tools"]:
-                        node_state = self.update_node_state(
-                            run_id,
-                            node_name,
-                            status="completed",
-                            completed=True,
-                            progress=1.0,
                         )
-                        # Emit node completed event
-                        if node_state:
-                            asyncio.create_task(
-                                emit_agent_event(
-                                    run.project_id,
-                                    "agent.step.completed",
-                                    node_state_data=node_state.model_dump(),
-                                )
-                            )
 
-                elif event.get("event") == "on_chain_error":
-                    node_name = event.get("name", "")
-                    error_msg = str(event.get("error", "Unknown error"))
-                    if node_name in ["agent", "tools"]:
-                        node_state = self.update_node_state(
-                            run_id,
-                            node_name,
-                            status="failed",
-                            error=error_msg,
-                            completed=True,
+            elif event.get("event") == "on_chain_end":
+                node_name = event.get("name", "")
+                if node_name in ["agent", "tools"]:
+                    node_state = self.update_node_state(
+                        run.id,
+                        node_name,
+                        status="completed",
+                        completed=True,
+                        progress=1.0,
+                    )
+                    if node_state:
+                        asyncio.create_task(
+                            emit_agent_event(
+                                run.project_id,
+                                "agent.step.completed",
+                                node_state_data=node_state.model_dump(),
+                            )
                         )
-                        # Emit node failed event
-                        if node_state:
-                            asyncio.create_task(
-                                emit_agent_event(
-                                    run.project_id,
-                                    "agent.step.failed",
-                                    node_state_data=node_state.model_dump(),
-                                    error=error_msg,
-                                )
+
+            elif event.get("event") == "on_chain_error":
+                node_name = event.get("name", "")
+                error_msg = self._sanitize_error(event.get("error", "Unknown error"))
+                if node_name in ["agent", "tools"]:
+                    node_state = self.update_node_state(
+                        run.id,
+                        node_name,
+                        status="failed",
+                        error=error_msg,
+                        completed=True,
+                    )
+                    if node_state:
+                        asyncio.create_task(
+                            emit_agent_event(
+                                run.project_id,
+                                "agent.step.failed",
+                                node_state_data=node_state.model_dump(),
+                                error=error_msg,
                             )
+                        )
 
-            # Get final state
-            final_state = await langgraph_app.ainvoke(
-                {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id}
-            )
+        final_state = await langgraph_app.ainvoke(
+            {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id}
+        )
 
-            self.update_run(
-                run_id,
-                output_summary=final_state["messages"][-1].content if final_state.get("messages") else None,
-                status=AgentRunStatus.COMPLETED,
-                finished=True,
-            )
-            # Event emission handled in update_run
-        except Exception as e:
-            import traceback
+        self.update_run(
+            run.id,
+            output_summary=final_state["messages"][-1].content if final_state.get("messages") else None,
+            status=AgentRunStatus.COMPLETED,
+            finished=True,
+        )
+        # Event emission handled in update_run
 
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            self.update_run(run_id, output_summary=error_msg, status=AgentRunStatus.FAILED, finished=True)
-            # Mark all nodes as failed
-            node_state = self.update_node_state(run_id, "agent", status="failed", error=str(e), completed=True)
-            # Event emission handled in update_run
+    def _sanitize_error(self, error: Exception | str | None) -> str:
+        """Return a safe, minimal error string for client consumption."""
+        if error is None:
+            return "Unknown error"
+        if isinstance(error, Exception):
+            return str(error) or error.__class__.__name__
+        return str(error)
 
     def _row_to_run(self, row) -> AgentRun:
         context_item_ids = []

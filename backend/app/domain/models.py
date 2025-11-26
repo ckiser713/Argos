@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,8 @@ class WorkflowNode(BaseModel):
     label: str
     x: float
     y: float
+    type: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 class WorkflowEdge(BaseModel):
@@ -64,6 +66,7 @@ class WorkflowEdge(BaseModel):
 
 class WorkflowGraph(BaseModel):
     id: str
+    project_id: str
     name: str
     description: Optional[str] = None
     nodes: List[WorkflowNode]
@@ -81,6 +84,7 @@ class WorkflowRunStatus(str, Enum):
 
 class WorkflowRun(BaseModel):
     id: str
+    project_id: str
     workflow_id: str
     status: WorkflowRunStatus
     started_at: datetime
@@ -103,6 +107,10 @@ class WorkflowNodeState(BaseModel):
     node_id: str
     status: WorkflowNodeStatus
     progress: float = Field(ge=0.0, le=1.0)
+    messages: List[str] = Field(default_factory=list)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
 
 
 # -------- Ingestion --------
@@ -127,6 +135,7 @@ class IngestJob(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     status: IngestStatus
     progress: float = Field(ge=0.0, le=1.0)
     message: Optional[str] = None
@@ -171,7 +180,7 @@ class AgentRun(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    project_id: str
+    project_id: Optional[str] = None
     agent_id: str
     input_prompt: str
     context_item_ids: List[str] = Field(default_factory=list)
