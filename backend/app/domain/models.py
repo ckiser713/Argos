@@ -4,7 +4,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from app.domain.common import to_camel
+
+from pydantic import BaseModel, ConfigDict, Field
 
 # -------- Core / System --------
 
@@ -18,6 +20,15 @@ class ContextItemType(str, Enum):
     CHAT = "chat"
     OTHER = "other"
 
+    @classmethod
+    def _missing_(cls, value: object) -> 'ContextItemType':
+        if isinstance(value, str):
+            normalized = value.lower()
+            for member in cls:
+                if member.value == normalized:
+                    return member
+        return super()._missing_(value)
+
 
 class ContextItem(BaseModel):
     id: str
@@ -28,6 +39,8 @@ class ContextItem(BaseModel):
     canonical_document_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
 
 class ContextBudget(BaseModel):
     project_id: str
@@ -36,14 +49,35 @@ class ContextBudget(BaseModel):
     available_tokens: int
     items: List[ContextItem] = Field(default_factory=list)
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class ContextItemCreate(BaseModel):
+    id: Optional[str] = None
+    name: str
+    type: ContextItemType
+    tokens: int = Field(ge=0)
+    pinned: bool = False
+    canonical_document_id: Optional[str] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
 
 class AddContextItemsRequest(BaseModel):
-    items: List[ContextItem]
+    items: List[ContextItemCreate]
 
 
 class AddContextItemsResponse(BaseModel):
     items: List[ContextItem]
     budget: ContextBudget
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class RemoveContextItemResponse(BaseModel):
+    budget: ContextBudget
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
 # -------- Workflows / Graphs --------

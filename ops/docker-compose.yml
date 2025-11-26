@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.vllm
+      args:
+        - HF_TOKEN=${HF_TOKEN:-}
     devices:
       - "/dev/kfd"
       - "/dev/dri"
@@ -32,3 +34,4 @@ services:
     environment:
       - HIP_VISIBLE_DEVICES=0
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_TOKEN=${HF_TOKEN:-}

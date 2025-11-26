@@ -38,3 +38,9 @@ result
 result-*
 .direnv/
 *.nix.bak
+node_modules
+
+# Logs
+.logs/
+*.log
+node_modules

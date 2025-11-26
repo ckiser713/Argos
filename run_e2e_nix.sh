@@ -61,7 +61,9 @@ echo "=========================================="
 echo "Step 3: Installing Playwright Browsers"
 echo "=========================================="
 echo "Installing Playwright browsers..."
-pnpm exec playwright install --with-deps || echo "⚠ Playwright browser installation had issues, continuing..."
+if ! pnpm exec playwright install; then
+    echo "⚠ Playwright browser installation had issues, continuing..."
+fi
 
 echo ""
 echo "=========================================="
@@ -93,4 +95,3 @@ echo "=========================================="
 echo "E2E Testing Complete!"
 echo "=========================================="
 E2E_SETUP
-

@@ -421,6 +421,7 @@ export type GetContextResponse = ContextBudget;
 
 export interface AddContextItemsRequest {
   items: {
+    id?: ID;
     canonicalDocumentId?: ID;
     name: string;
     type: ContextItemType;

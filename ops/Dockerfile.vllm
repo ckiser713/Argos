@@ -12,6 +12,10 @@ FROM rocm/pytorch:rocm7.1_ubuntu22.04_py3.11_pytorch_2.9.1
 # Install build deps
 RUN apt-get update && apt-get install -y git build-essential && rm -rf /var/lib/apt/lists/*
 
+# Accept HF_TOKEN as build argument for authenticated Hugging Face downloads
+ARG HF_TOKEN
+ENV HF_TOKEN=${HF_TOKEN}
+
 # Install vLLM from source (optimized for ROCm) - custom build
 RUN pip uninstall -y torch torchvision || true
 RUN pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/rocm7.1

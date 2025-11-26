@@ -18,9 +18,14 @@ def _db_path() -> Path:
     return path
 
 
+def _dict_row_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, object]:
+    """Return query results as simple dicts so callers can safely use .get()."""
+    return {column[0]: row[idx] for idx, column in enumerate(cursor.description)}
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path(), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = _dict_row_factory
     return conn
 
 
@@ -31,6 +36,19 @@ def db_session() -> Iterator[sqlite3.Connection]:
         yield conn
     finally:
         conn.close()
+
+
+def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
+    """Add any ingest_jobs columns that existed in newer schema versions."""
+    required_columns = {
+        "deleted_at": "deleted_at TEXT",
+        "message": "message TEXT",
+        "error_message": "error_message TEXT",
+    }
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ingest_jobs)")}
+    for column_name, definition in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE ingest_jobs ADD COLUMN {definition}")
 
 
 def init_db() -> None:
@@ -357,6 +375,7 @@ def init_db() -> None:
             );
             """
         )
+        _ensure_ingest_job_columns(conn)
         existing = conn.execute("SELECT version FROM schema_migrations WHERE version = ?", (SCHEMA_VERSION,)).fetchone()
         if not existing:
             conn.execute(

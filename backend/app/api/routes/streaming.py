@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import date, datetime
+from enum import Enum
+from uuid import UUID
 
 from app.services.agent_service import agent_service
 from app.services.ingest_service import ingest_service
@@ -16,9 +19,22 @@ logger = logging.getLogger("cortex.streaming")
 router = APIRouter()
 
 
+def _json_default(obj: object) -> str:
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, Enum):
+        return obj.value
+    return str(obj)
+
+
 async def _send_json(websocket: WebSocket, payload) -> None:
     """Helper to send JSON over WebSocket."""
-    await websocket.send_text(payload if isinstance(payload, str) else json.dumps(payload))
+    if isinstance(payload, str):
+        await websocket.send_text(payload)
+    else:
+        await websocket.send_text(json.dumps(payload, default=_json_default))
 
 
 async def _wait_for_disconnect(websocket: WebSocket) -> None:
