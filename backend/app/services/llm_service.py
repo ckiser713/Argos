@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 import openai
@@ -13,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+# Initialize OpenAI client (for vLLM/Ollama API backend)
 client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
@@ -23,6 +26,55 @@ def get_llm_client() -> openai.OpenAI:
 def _call_underlying_llm(
     prompt: str, *, temperature: float, max_tokens: int, model: str = None, json_mode: bool = False, **kwargs
 ) -> str:
+    """
+    Call the underlying LLM backend (OpenAI API or llama.cpp).
+    
+    Backend selection is controlled by CORTEX_LLM_BACKEND:
+    - "openai" (default): Use OpenAI-compatible API (vLLM/Ollama)
+    - "llama_cpp": Use local llama.cpp binary
+    """
+    backend = settings.llm_backend.lower()
+    
+    if backend == "llama_cpp":
+        # Use llama.cpp service
+        try:
+            from app.services.llama_cpp_service import get_llama_cpp_service
+            
+            llama_service = get_llama_cpp_service()
+            
+            # llama.cpp doesn't support json_mode directly, but we can try to parse JSON
+            response = llama_service.generate(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            
+            # If json_mode requested, try to extract JSON from response
+            if json_mode:
+                # Simple heuristic: look for JSON object in response
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    return json_match.group(0)
+                # If no JSON found, wrap response in JSON object
+                return f'{{"response": {json.dumps(response)}}}'
+            
+            return response
+            
+        except ImportError:
+            logger.warning(
+                "llama_cpp_service not available, falling back to OpenAI API",
+                extra={"backend": backend}
+            )
+            # Fall through to OpenAI API
+        except Exception as e:
+            logger.error(
+                "llama_cpp_service error, falling back to OpenAI API",
+                extra={"error": str(e), "backend": backend}
+            )
+            # Fall through to OpenAI API
+    
+    # Default: Use OpenAI-compatible API (vLLM/Ollama)
     target_model = model or settings.llm_model_name
 
     try:
@@ -36,6 +88,7 @@ def _call_underlying_llm(
         )
         return response.choices[0].message.content
     except Exception as e:
+        logger.error("OpenAI API error", extra={"error": str(e)})
         return f"LLM Error: {str(e)}"
 
 

@@ -8,6 +8,7 @@ Pydantic models and in-memory stub implementations.
 
 - Python **3.11+**
 - Recommended: virtual environment (e.g. `venv` or `uv`)
+- **ROCm 7.1.0** (for AMD GPU inference - optional but recommended)
 
 ### Install dependencies
 
@@ -17,7 +18,63 @@ source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 pip install "fastapi[standard]" uvicorn pydantic pydantic-settings
 ```
+
 If you later add database, model runtimes, or other infra, extend pip deps here.
+
+### ROCm Integration (Optional)
+
+Cortex supports ROCm-optimized inference engines for AMD GPUs. The ROCm artifacts are located at `~/rocm/py311-tor290/`.
+
+#### Option A: vLLM Docker Image (Recommended - Primary Inference Engine)
+
+The pre-built vLLM Docker image provides the main inference engine:
+
+```bash
+# Load pre-built ROCm vLLM image
+./ops/load_rocm_image.sh
+
+# Update ops/docker-compose.yml to use the pre-built image:
+#   inference-engine:
+#     image: vllm-rocm-strix:latest
+#     # Comment out 'build:' section
+
+# Start inference engine
+docker-compose -f ops/docker-compose.yml up -d inference-engine
+```
+
+The inference engine will be available at `http://localhost:11434/v1` (OpenAI-compatible API).
+
+#### Option B: llama.cpp Local Binary (Alternative Backend)
+
+For local inference without Docker, use the llama.cpp binaries:
+
+```bash
+# Set environment variables
+export CORTEX_LLM_BACKEND=llama_cpp
+export CORTEX_LLAMA_CPP_BINARY=~/rocm/py311-tor290/bin/llama-cpp
+export CORTEX_LLAMA_CPP_MODEL_PATH=/path/to/your/model.gguf
+
+# Run backend (it will use llama.cpp instead of API)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Note**: You need GGUF model files. Download compatible models from HuggingFace or convert your own.
+
+#### Option C: PyTorch Wheels (For Custom PyTorch Tools Only)
+
+If you need custom PyTorch-based tools (not required for standard inference):
+
+```bash
+# Install ROCm-enabled PyTorch wheels
+./backend/scripts/install_rocm_wheels.sh
+
+# Verify installation
+python3 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'ROCm: {torch.version.hip}')"
+```
+
+**Note**: The main inference engine (vLLM) runs in Docker and doesn't need these wheels. Only install if you're building custom PyTorch tools.
+
+For more details, see `ROCM_INTEGRATION_MAP.md` in the project root.
 
 ## 2. Run the server
 From the project root (where the `app/` package lives):

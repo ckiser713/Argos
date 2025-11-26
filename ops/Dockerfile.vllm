@@ -1,10 +1,19 @@
+# ROCm vLLM Dockerfile
+# 
+# RECOMMENDED: Use pre-built image (faster, optimized)
+#   1. Load pre-built image: ./ops/load_rocm_image.sh
+#   2. Update docker-compose.yml to use: image: vllm-rocm-strix:latest
+#
+# FALLBACK: Build from source (slower, requires network)
+#   Use this Dockerfile to build from base ROCm PyTorch image
+
 FROM rocm/pytorch:rocm7.1_ubuntu22.04_py3.11_pytorch_2.9.1
 
 # Install build deps
-RUN apt-get update && apt-get install -y git build-essential
+RUN apt-get update && apt-get install -y git build-essential && rm -rf /var/lib/apt/lists/*
 
 # Install vLLM from source (optimized for ROCm) - custom build
-RUN pip uninstall -y torch torchvision
+RUN pip uninstall -y torch torchvision || true
 RUN pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/rocm7.1
 # vLLM and llama.cpp provided by custom builds - assume installed or add here
 RUN pip install vllm --no-build-isolation  # Update to latest or custom
