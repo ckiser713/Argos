@@ -18,6 +18,7 @@ from app.domain.system_metrics import (
     SystemStatus,
     SystemStatusLiteral,
 )
+from app.services.model_warmup_service import model_warmup_service
 
 # ---------------------------------------------------------------------------
 # Config / stubs
@@ -311,6 +312,18 @@ def get_system_status() -> SystemStatus:
     memory = get_memory_metrics()
     context = get_context_metrics()
     active_agent_runs = _get_active_agent_runs()
+
+    if not model_warmup_service.is_ready():
+        reason_msg = model_warmup_service.status_reason() or "Model lanes are still warming up."
+        return SystemStatus(
+            status="warming_up",
+            reason=reason_msg,
+            gpu=gpu,
+            cpu=cpu,
+            memory=memory,
+            context=context,
+            active_agent_runs=active_agent_runs,
+        )
 
     status: SystemStatusLiteral = "nominal"
     reasons: list[str] = []

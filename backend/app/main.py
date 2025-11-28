@@ -1,3 +1,6 @@
+import logging
+import os
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,11 +24,30 @@ from app.api.routes import (
 from app.config import get_settings
 from app.db import init_db
 from app.services.auth_service import verify_token
+from app.services.model_warmup_service import build_lane_health_endpoints, model_warmup_service
 
+# ... (rest of the imports)
 
 def create_app() -> FastAPI:
     settings = get_settings()
     init_db()
+
+    # --- Startup Logging ---
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info("==================================================")
+    logger.info("    Cortex Backend Service Booting Up")
+    logger.info("==================================================")
+    logger.info(f"CORTEX_ENV: {settings.cortex_env}")
+    logger.info(f"LLM Backend: {settings.llm_backend}")
+    logger.info("--- Lane URLs ---")
+    logger.info(f"  Orchestrator: {settings.lane_orchestrator_url}")
+    logger.info(f"  Coder: {settings.lane_coder_url}")
+    logger.info(f"  Super Reader: {settings.lane_super_reader_url}")
+    logger.info(f"  Fast RAG: {settings.lane_fast_rag_url}")
+    logger.info(f"  Governance: {settings.lane_governance_url}")
+    logger.info("-------------------")
+    # --- End Startup Logging ---
 
     app = FastAPI(
         title=settings.app_name,
@@ -33,6 +55,9 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url="/api/redoc",
     )
+    
+    # ... (rest of the create_app function)
+
 
     # CORS for local frontend dev
     app.add_middleware(
@@ -43,11 +68,30 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    def check_nix_environment():
+        """Verify that non-local environments run inside Nix shell."""
+        settings = get_settings()
+        if settings.cortex_env != "local":
+            if not os.environ.get("IN_NIX_SHELL"):
+                logger.critical("CRITICAL: Non-local environment started outside of Nix shell.")
+                raise RuntimeError(
+                    "FATAL: Non-local environments must be run within the Nix shell. "
+                    "Set IN_NIX_SHELL environment variable or run via 'nix develop'."
+                )
+            else:
+                logger.info("Nix environment check passed.")
+
     # Skip auth in test environment
     if settings.debug or getattr(settings, 'skip_auth', False):
         auth_deps = []
     else:
         auth_deps = [Depends(verify_token)]
+
+    @app.on_event("startup")
+    async def initialize_warmup_monitor() -> None:
+        endpoints = build_lane_health_endpoints(settings)
+        model_warmup_service.start_monitoring(endpoints)
 
     # Routers grouped by resource
     app.include_router(auth.router, prefix="/api", tags=["auth"])

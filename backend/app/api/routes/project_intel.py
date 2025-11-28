@@ -24,41 +24,19 @@ router = APIRouter(prefix="/projects", tags=["project-intel"])
 
 # We assume you have a way to fetch ChatSegments per project.
 # Adjust this import / function name to your actual implementation.
-try:  # pragma: no cover - integration point
-    from app.domain.chat import ChatSegment  # Assuming ChatSegment is in app.domain.chat
+from app.db import db_session
+from app.domain.chat import ChatSegment  # Assuming ChatSegment is in app.domain.chat
 
-    # from app.repos.chat_segments_repo import list_segments_for_project # Original comment
-    # For now, let's create a stub function as chat_segments_repo is not provided
-    _chat_segments_store: Dict[str, List[ChatSegment]] = {}
 
-    class DummyChatSegment(ChatSegment):  # Creating a dummy ChatSegment
-        id: str = "dummy_id"
-        text: str = "dummy text"
-        chat_id: str = "dummy_chat_id"
-        project_id: str = "dummy_project_id"
+def list_segments_for_project(project_id: str) -> List[ChatSegment]:
+    """Fetch all chat segments for a given project from the database."""
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT id, project_id, chat_id, text, created_at FROM chat_segments WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+        return [ChatSegment(**row) for row in rows]
 
-    def list_segments_for_project(project_id: str) -> List[ChatSegment]:
-        logger.warning(f"Using dummy list_segments_for_project for project {project_id}")
-        if project_id == "test-project-rebuild":  # Simulate some data for testing
-            return [
-                DummyChatSegment(
-                    id="seg1",
-                    text="we should add a new feature for context management",
-                    chat_id="chat1",
-                    project_id=project_id,
-                ),
-                DummyChatSegment(
-                    id="seg2",
-                    text="refactor the old auth module",
-                    chat_id="chat1",
-                    project_id=project_id,
-                ),
-            ]
-        return []
-
-except ImportError:  # pragma: no cover
-    list_segments_for_project = None  # type: ignore[assignment]
-    logger.warning("ChatSegment domain model not found. Project Intel features may be limited.")
 
 
 # ---- schemas for PATCH ----

@@ -49,7 +49,7 @@ const WORKFLOW_EDGES: Edge[] = [
 ];
 
 const AppContent: React.FC = () => {
-  const [systemStatus, setSystemStatus] = useState<'nominal' | 'warning' | 'critical'>('nominal');
+  const [systemStatus, setSystemStatus] = useState<'nominal' | 'warning' | 'critical' | 'warming_up'>('nominal');
   const [activeTab, setActiveTab] = useState('mission_control'); 
   const [vram, setVram] = useState(42);
   const [logs, setLogs] = useState<string[]>([
@@ -235,6 +235,11 @@ const AppContent: React.FC = () => {
           </motion.div>
         );
         
+      import { ReactFlowProvider } from 'reactflow';
+// ... other imports
+
+// ... inside AppContent component, in the renderContent function
+
       case 'strategy':
         return (
           <motion.div 
@@ -244,7 +249,9 @@ const AppContent: React.FC = () => {
              animate="animate"
              exit="exit"
            >
-            <StrategyDeck />
+            <ReactFlowProvider>
+              <StrategyDeck />
+            </ReactFlowProvider>
           </motion.div>
         );
 

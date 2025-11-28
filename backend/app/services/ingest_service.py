@@ -5,21 +5,99 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+from enum import Enum
+from pydantic import BaseModel, Field
 
 from app.db import db_session
 from app.domain.common import PaginatedResponse
 from app.domain.models import IngestJob, IngestRequest, IngestStatus
 from app.services.rag_service import rag_service
 from app.services.streaming_service import emit_ingest_event
-from app.services.chat_parser_service import chat_parser_service
 from app.services.idea_service import idea_service
 from app.services.repo_service import repo_service
 
+from langchain.chains import create_extraction_chain_pydantic
+from langchain_openai import ChatOpenAI
+
+
 logger = logging.getLogger(__name__)
+
+# --- Pydantic Models for AI-driven Extraction ---
+
+class DocumentType(str, Enum):
+    CHAT_EXPORT = "chat_export"
+    TECHNICAL_DOCS = "technical_docs"
+    SOURCE_CODE = "source_code"
+    OTHER = "other"
+
+class DocumentMetadata(BaseModel):
+    document_type: DocumentType = Field(
+        ...,
+        description="The type of the document, e.g., chat transcript, source code, or technical documentation.",
+    )
+    summary: str = Field(
+        ...,
+        description="A concise, one-sentence summary of the document's content.",
+    )
+    detected_topics: List[str] = Field(
+        default_factory=list,
+        description="A list of key topics or technologies mentioned in the document.",
+    )
+
+class ChatMessage(BaseModel):
+    sender: str
+    timestamp: str
+    content: str
+
+class ChatExport(BaseModel):
+    messages: List[ChatMessage]
+
+# --- End Pydantic Models ---
 
 
 class IngestService:
+    def __init__(self):
+        # Initialize the LLM. Assumes OPENAI_API_KEY is in the environment.
+        # For production, consider a more robust configuration management.
+        self.llm = ChatOpenAI(model="gpt-4-turbo", temperature=0)
+        
+        # Create the extraction chains
+        self.metadata_extraction_chain = create_extraction_chain_pydantic(
+            pydantic_schema=DocumentMetadata, llm=self.llm
+        )
+        self.chat_extraction_chain = create_extraction_chain_pydantic(
+            pydantic_schema=ChatExport, llm=self.llm
+        )
+
+    async def _get_document_metadata(self, content: str) -> Optional[DocumentMetadata]:
+        """Uses an LLM chain to extract metadata from document content."""
+        loop = asyncio.get_running_loop()
+        try:
+            # LangChain's predict is synchronous, so run it in an executor
+            extracted_data = await loop.run_in_executor(
+                None, self.metadata_extraction_chain.invoke, {"input": content}
+            )
+            if extracted_data and extracted_data.get("text"):
+                return extracted_data["text"][0]
+        except Exception as e:
+            logger.error(f"Failed to extract document metadata: {e}")
+        return None
+
+    async def _parse_chat_export_with_ai(self, content: str) -> Optional[ChatExport]:
+        """Uses a specialized LLM chain to parse a chat export into structured messages."""
+        loop = asyncio.get_running_loop()
+        try:
+            extracted_data = await loop.run_in_executor(
+                None, self.chat_extraction_chain.invoke, {"input": content}
+            )
+            if extracted_data and extracted_data.get("text"):
+                return extracted_data["text"][0]
+        except Exception as e:
+            logger.error(f"Failed to parse chat export with AI: {e}")
+        return None
+
+
     def list_jobs(
         self,
         project_id: str,
@@ -187,29 +265,7 @@ class IngestService:
             )
             conn.commit()
 
-    from __future__ import annotations
-
-import asyncio
-import logging
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
-
-from app.db import db_session
-from app.domain.common import PaginatedResponse
-from app.domain.models import IngestJob, IngestRequest, IngestStatus
-from app.services.rag_service import rag_service
-from app.services.streaming_service import emit_ingest_event
-from app.services.chat_parser_service import chat_parser_service
-from app.services.idea_service import idea_service
-from app.services.repo_service import repo_service
-
-logger = logging.getLogger(__name__)
-
-
-class IngestService:
-    # ... (list_jobs, get_job, create_job, cancel_job, delete_job methods remain the same)
+    # duplicate imports removed; methods continue
     
     async def process_job(self, job_id: str):
         job = self.get_job(job_id)
@@ -217,74 +273,76 @@ class IngestService:
             return
 
         loop = asyncio.get_running_loop()
-
-        await self.update_job(job_id, status=IngestStatus.RUNNING, progress=0.1, message="Processing...")
+        await self.update_job(job_id, status=IngestStatus.RUNNING, progress=0.1, message="Analyzing file type...")
 
         try:
             file_path = job.source_path
-            
-            # This is a blocking I/O check, run in executor
             file_exists = await loop.run_in_executor(None, Path(file_path).exists)
 
             if not file_exists:
                 await self.update_job(job_id, status=IngestStatus.FAILED, message=f"File not found: {file_path}")
                 return
 
-            text = ""
-            is_chat_export = self._is_chat_export(file_path)
+            text_to_process = ""
             is_repo = self._is_repository(file_path)
 
             if is_repo:
+                # Handle repositories separately as they are directories
+                await self.update_job(job_id, progress=0.2, message="Indexing repository...")
                 try:
-                    stats = await loop.run_in_executor(
-                        None, 
-                        repo_service.index_repository,
-                        job.project_id,
-                        file_path
-                    )
+                    stats = await loop.run_in_executor(None, repo_service.index_repository, job.project_id, file_path)
                     await self.update_job(job_id, progress=0.7, message=f"Indexed {stats['files_indexed']} files.")
-                    text = await loop.run_in_executor(None, self._extract_repo_documentation, file_path)
+                    text_to_process = await loop.run_in_executor(None, self._extract_repo_documentation, file_path)
                 except Exception as e:
                     logger.error(f"Repo indexing failed: {e}")
                     await self.update_job(job_id, progress=0.5, message=f"Repo indexing error: {str(e)}")
 
-            elif is_chat_export:
-                # Assuming chat parsing is also potentially blocking
-                try:
-                    parsed_data = await loop.run_in_executor(
-                        None,
-                        chat_parser_service.parse_chat_export,
-                        file_path,
-                        job.project_id
-                    )
-                    # ... (idea creation logic remains, could also be made async if it has I/O)
-                    text = "\n\n".join([msg.get("content", "") for msg in parsed_data.get("conversations", [])])
-                    await self.update_job(job_id, progress=0.5, message=f"Parsed chat export.")
-                except Exception as e:
-                    logger.error(f"Chat parsing failed: {e}")
-                    is_chat_export = False
-            
-            if not text: # If not a repo or chat, or if they failed and produced no text
-                text = await self._read_file_content(file_path)
+            else:
+                # For files, use AI to determine type and extract content
+                content_preview = await self._read_file_content(file_path, limit=2000)
+                if content_preview is None:
+                    await self.update_job(job_id, status=IngestStatus.FAILED, message=f"Could not read file: {file_path}")
+                    return
 
-            if text is None:
-                await self.update_job(job_id, status=IngestStatus.FAILED, message=f"Could not read file: {file_path}")
+                doc_metadata = await self._get_document_metadata(content_preview)
+
+                if doc_metadata and doc_metadata.document_type == DocumentType.CHAT_EXPORT:
+                    await self.update_job(job_id, progress=0.3, message="Parsing chat export...")
+                    full_content = await self._read_file_content(file_path)
+                    if not full_content:
+                        await self.update_job(job_id, status=IngestStatus.FAILED, message="Failed to read full chat export.")
+                        return
+
+                    parsed_chat = await self._parse_chat_export_with_ai(full_content)
+                    if parsed_chat:
+                        text_to_process = "\n\n".join([f"{msg.sender} ({msg.timestamp}): {msg.content}" for msg in parsed_chat.messages])
+                        await self.update_job(job_id, progress=0.5, message=f"Successfully parsed chat with {len(parsed_chat.messages)} messages.")
+                    else:
+                        await self.update_job(job_id, progress=0.4, message="AI parsing failed, falling back to basic text extraction.")
+                        text_to_process = full_content
+                else:
+                    doc_type_msg = f"Detected document type: {doc_metadata.document_type.value if doc_metadata else 'other'}."
+                    await self.update_job(job_id, progress=0.3, message=doc_type_msg)
+                    text_to_process = await self._read_file_content(file_path)
+
+            if not text_to_process:
+                await self.update_job(job_id, status=IngestStatus.FAILED, message="No text could be extracted from the source.")
                 return
 
+            await self.update_job(job_id, progress=0.7, message="Indexing document content...")
             metadata = {"source": job.source_path, "job_id": job_id}
             
-            # rag_service might be CPU bound for chunking
             chunks_created = await loop.run_in_executor(
                 None,
                 rag_service.ingest_document,
                 job.project_id,
                 f"ingest_{job_id}",
-                text,
+                text_to_process,
                 metadata
             )
             
             if chunks_created > 0:
-                await self.update_job(job_id, progress=0.8, message=f"Indexed {chunks_created} chunks.")
+                await self.update_job(job_id, progress=0.9, message=f"Indexed {chunks_created} chunks.")
 
             await self.update_job(
                 job_id,
@@ -298,7 +356,7 @@ class IngestService:
             logger.exception(f"Error processing job {job_id}")
             await self.update_job(job_id, status=IngestStatus.FAILED, message=str(e), error_message=str(e))
 
-    async def _read_file_content(self, file_path: str) -> Optional[str]:
+    async def _read_file_content(self, file_path: str, limit: Optional[int] = None) -> Optional[str]:
         loop = asyncio.get_running_loop()
         try:
             if file_path.lower().endswith(".pdf"):
@@ -309,7 +367,9 @@ class IngestService:
                     with open(file_path, "rb") as f:
                         reader = pypdf.PdfReader(f)
                         for page in reader.pages:
-                            text += page.extract_text()
+                            text += page.extract_text() or ""
+                            if limit and len(text) >= limit:
+                                return text[:limit]
                     return text
                 
                 return await loop.run_in_executor(None, read_pdf)
@@ -317,10 +377,10 @@ class IngestService:
                 def read_text():
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
-                            return f.read()
-                    except: # Fallback for other encodings
+                            return f.read(limit)
+                    except UnicodeDecodeError:
                         with open(file_path, "r", encoding="latin-1") as f:
-                            return f.read()
+                            return f.read(limit)
                 return await loop.run_in_executor(None, read_text)
         except Exception as e:
             logger.error(f"Failed to read file content for {file_path}: {e}")
@@ -336,10 +396,6 @@ class IngestService:
         error_message: Optional[str] = None,
         completed_at: Optional[datetime] = None,
     ) -> Optional[IngestJob]:
-        # This method interacts with the DB, so it should also be async
-        # For simplicity in this refactor, we'll make it async but keep the blocking DB call.
-        # In a real scenario, you'd use an async DB driver (e.g., asyncpg, databases).
-        
         def db_update():
             with db_session() as conn:
                 updates = []
@@ -348,8 +404,22 @@ class IngestService:
                 if status:
                     updates.append("status = ?")
                     params.append(status.value)
-                # ... (rest of the update logic)
+                if progress is not None:
+                    updates.append("progress = ?")
+                    params.append(progress)
+                if message:
+                    updates.append("message = ?")
+                    params.append(message)
+                if error_message:
+                    updates.append("error_message = ?")
+                    params.append(error_message)
+                if completed_at:
+                    updates.append("completed_at = ?")
+                    params.append(completed_at.isoformat())
                 
+                if not updates:
+                    return self.get_job(job_id)
+
                 updates.append("updated_at = ?")
                 params.append(datetime.now(timezone.utc).isoformat())
                 params.append(job_id)
@@ -361,13 +431,10 @@ class IngestService:
 
         updated_job = await asyncio.get_running_loop().run_in_executor(None, db_update)
 
-        if updated_job and status:
-            await emit_ingest_event(updated_job.project_id, f"ingest.job.{status.value}", updated_job.model_dump())
+        if updated_job:
+             asyncio.create_task(emit_ingest_event(updated_job.project_id, "ingest.job.updated", updated_job.model_dump()))
         
         return updated_job
-
-    # ... (other methods like _row_to_job, _is_chat_export, etc. remain the same)
-
 
     def _row_to_job(self, row) -> IngestJob:
         return IngestJob(
@@ -389,46 +456,10 @@ class IngestService:
             canonical_document_id=row["canonical_document_id"] if "canonical_document_id" in row.keys() else None,
         )
 
-    def _is_chat_export(self, file_path: str) -> bool:
-        """Check if file is a chat export based on filename patterns."""
-        filename_lower = file_path.lower()
-        chat_patterns = [
-            "chat", "conversation", "export", "history", "messages",
-            "claude", "chatgpt", "gpt", "bard", "gemini",
-        ]
-        return any(pattern in filename_lower for pattern in chat_patterns)
-
     def _is_repository(self, file_path: str) -> bool:
         """Check if path is a git repository."""
         path_obj = Path(file_path)
         return path_obj.is_dir() and (path_obj / ".git").exists()
-
-    def _should_use_deep_ingest(self, file_path: str) -> bool:
-        """
-        Determine if file requires deep ingest (SUPER_READER lane).
-        
-        Deep ingest is used for:
-        - Large files (>50MB)
-        - Git repositories (monorepo analysis)
-        - Files that require extensive context analysis
-        """
-        import os
-        if not os.path.exists(file_path):
-            return False
-        
-        # Check file size (>50MB suggests large content)
-        if os.path.isfile(file_path):
-            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-            if file_size_mb > 50:
-                logger.info(f"File {file_path} is {file_size_mb:.1f}MB, using deep ingest")
-                return True
-        
-        # Check if it's a repository (always use deep ingest for repos)
-        if self._is_repository(file_path):
-            logger.info(f"Repository detected at {file_path}, using deep ingest")
-            return True
-        
-        return False
 
     def _extract_repo_documentation(self, repo_path: str) -> str:
         """Extract documentation files from repository for RAG."""
@@ -436,7 +467,6 @@ class IngestService:
         doc_files = []
         doc_patterns = ["README.md", "README.txt", "docs/", "*.md"]
 
-        # Look for README files
         for pattern in ["README.md", "README.txt", "README.rst"]:
             readme_path = repo_path_obj / pattern
             if readme_path.exists():
@@ -446,7 +476,6 @@ class IngestService:
                 except Exception:
                     pass
 
-        # Look for docs directory
         docs_dir = repo_path_obj / "docs"
         if docs_dir.exists():
             for doc_file in docs_dir.rglob("*.md"):

@@ -58,5 +58,6 @@ ops/models/
 # This prevents committing downloaded model binaries into the repo
 ops/models/*
 
-# Ignore core folder (may contain large files / artifacts)
+# Ignore core folder and core dump files (may contain large files / artifacts)
 core/
+core

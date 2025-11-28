@@ -38,7 +38,7 @@ class ContextMetrics(BaseModel):
     used_tokens: int = Field(..., ge=0, description="Tokens currently consumed.")
 
 
-SystemStatusLiteral = Literal["nominal", "warning", "critical"]
+SystemStatusLiteral = Literal["nominal", "warning", "critical", "warming_up"]
 
 
 class SystemStatus(BaseModel):

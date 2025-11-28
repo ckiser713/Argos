@@ -194,6 +194,7 @@ class AgentProfile(BaseModel):
 class AgentRunStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    PENDING_INPUT = "pending_input"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -380,13 +381,18 @@ class RoadmapNodePriority(str, Enum):
     HIGH = "high"
 
 
+class RoadmapNodeType(str, Enum):
+    TASK = "task"
+    DECISION = "decision"
+    MILESTONE = "milestone"
+
+
 class RoadmapNode(BaseModel):
     id: str
     project_id: str
     label: str
+    node_type: RoadmapNodeType = Field(default=RoadmapNodeType.TASK)
     description: Optional[str] = None
-    status: RoadmapNodeStatus
-    priority: Optional[RoadmapNodePriority] = None
     start_date: Optional[datetime] = None
     target_date: Optional[datetime] = None
     depends_on_ids: List[str] = Field(default_factory=list)
@@ -394,6 +400,7 @@ class RoadmapNode(BaseModel):
     idea_id: Optional[str] = None
     ticket_id: Optional[str] = None
     mission_control_task_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 

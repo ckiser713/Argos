@@ -8,6 +8,7 @@ from app.config import get_settings
 from fastapi import APIRouter
 import requests
 from typing import Dict, Any
+import os
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -89,6 +90,13 @@ def get_model_lanes():
 def get_model_status():
     lanes_info = get_model_lanes().get('lanes', {})
     status: Dict[str, bool] = {}
+    # Support a test-only override to mark lanes available without real models.
+    # When `CORTEX_E2E_MOCK_LANES` is set to a truthy value, return True for all lanes.
+    mock_lanes = os.environ.get('CORTEX_E2E_MOCK_LANES')
+    if mock_lanes and mock_lanes != "0":
+        for lane in lanes_info.keys():
+            status[lane] = True
+        return {'status': status}
     for lane, info in lanes_info.items():
         url = info.get('url')
         if url:

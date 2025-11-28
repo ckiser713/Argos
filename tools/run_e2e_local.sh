@@ -17,6 +17,9 @@ fi
 export CORTEX_SKIP_AUTH=1
 export PLAYWRIGHT_BASE_URL=http://localhost:5173
 export PLAYWRIGHT_API_BASE=http://127.0.0.1:8000
+# For local E2E runs, allow tests to run without having real LLM models by
+# mocking lanes availability. Tests requiring real models should set this to 0.
+export CORTEX_E2E_MOCK_LANES=1
 
 # Install Node deps
 pnpm install --silent

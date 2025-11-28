@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from langchain.messages import HumanMessage
+from langchain.messages import HumanMessage, ToolMessage
 
 from app.db import db_session
 from app.domain.common import PaginatedResponse
@@ -159,6 +159,7 @@ class AgentService:
                 AgentRunStatus.COMPLETED: "agent.run.completed",
                 AgentRunStatus.FAILED: "agent.run.failed",
                 AgentRunStatus.CANCELLED: "agent.run.cancelled",
+                AgentRunStatus.PENDING_INPUT: "agent.run.pending_input",
             }
             event_type = event_type_map.get(status, "agent.run.updated")
             try:
@@ -473,12 +474,55 @@ class AgentService:
 
     async def _execute_run_once(self, run: AgentRun) -> None:
         """Single attempt at executing the agent graph."""
-        from app.graphs.project_manager_graph import app as langgraph_app
+        inputs = {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id}
+        await self._process_run_events(run, inputs)
 
-        self.update_node_state(run.id, "agent", status="running", started=True, progress=0.0)
+    async def resume_run(self, run_id: str, user_approval: bool):
+        run = self.get_run(run_id)
+        if not run or run.status != AgentRunStatus.PENDING_INPUT:
+            # Or raise an error
+            return None
+
+        from app.graphs.project_manager_graph import app as langgraph_app
+        config = {"configurable": {"thread_id": run_id}}
+
+        if not user_approval:
+            return self.cancel_run(run_id)
+
+
+        self.update_run(run_id, status=AgentRunStatus.RUNNING)
+
+        max_attempts = 2
+        timeout_seconds = 30
+        backoff_seconds = 2
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                refreshed_run = self.get_run(run_id) or run
+                await asyncio.wait_for(self._process_run_events(refreshed_run, None), timeout=timeout_seconds)
+                return self.get_run(run_id)
+            except asyncio.TimeoutError:
+                last_error = TimeoutError("Agent execution timed out")
+            except Exception as e:  # pylint: disable=broad-except
+                last_error = e
+
+            if attempt < max_attempts:
+                await asyncio.sleep(backoff_seconds * attempt)
+                continue
+        
+        error_msg = self._sanitize_error(last_error)
+        self.update_run(run_id, output_summary=error_msg, status=AgentRunStatus.FAILED, finished=True)
+        return self.get_run(run_id)
+
+    async def _process_run_events(self, run: AgentRun, inputs: Optional[dict]):
+        """Process a single run of the agent graph, handling events and state."""
+        from app.graphs.project_manager_graph import app as langgraph_app
+        config = {"configurable": {"thread_id": run.id}}
 
         async for event in langgraph_app.astream_events(
-            {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id},
+            inputs,
+            config=config,
             version="v1",
         ):
             if event.get("event") == "on_chain_start":
@@ -501,7 +545,7 @@ class AgentService:
                                 )
                             )
                         except RuntimeError:
-                            pass  # Ignore event emission errors if no event loop is running
+                            pass
 
             elif event.get("event") == "on_chain_end":
                 node_name = event.get("name", "")
@@ -523,7 +567,7 @@ class AgentService:
                                 )
                             )
                         except RuntimeError:
-                            pass  # Ignore event emission errors if no event loop is running
+                            pass
 
             elif event.get("event") == "on_chain_error":
                 node_name = event.get("name", "")
@@ -547,19 +591,22 @@ class AgentService:
                                 )
                             )
                         except RuntimeError:
-                            pass  # Ignore event emission errors if no event loop is running
+                            pass
+        
+        final_state = await langgraph_app.get_state(config)
 
-        final_state = await langgraph_app.ainvoke(
-            {"messages": [HumanMessage(content=run.input_prompt or "")], "project_id": run.project_id}
-        )
+        if not final_state.next:
+            self.update_run(
+                run.id,
+                output_summary=final_state.values["messages"][-1].content
+                if final_state.values.get("messages")
+                else None,
+                status=AgentRunStatus.COMPLETED,
+                finished=True,
+            )
+        else:
+            self.update_run(run.id, status=AgentRunStatus.PENDING_INPUT)
 
-        self.update_run(
-            run.id,
-            output_summary=final_state["messages"][-1].content if final_state.get("messages") else None,
-            status=AgentRunStatus.COMPLETED,
-            finished=True,
-        )
-        # Event emission handled in update_run
 
     def _sanitize_error(self, error: Exception | str | None) -> str:
         """Return a safe, minimal error string for client consumption."""

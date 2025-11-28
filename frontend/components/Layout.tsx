@@ -17,7 +17,11 @@ import {
   Lightbulb,
   ClipboardList,
   Settings,
-  Map
+  Map,
+  FileText,
+  Architecture,
+  Combine,
+  Construction
 } from 'lucide-react';
 import { useSound } from './SoundManager';
 import { ContextPrism, ContextItem } from './ContextPrism';
@@ -29,7 +33,7 @@ interface LayoutProps {
   currentModel?: string;
   vramUsage?: number; // percentage 0-100
   contextUsage?: { used: number; total: number; unit: string };
-  systemStatus?: 'nominal' | 'warning' | 'critical';
+  systemStatus?: 'nominal' | 'warning' | 'critical' | 'warming_up';
   activeTab?: string;
   onTabChange?: (tab: string) => void;
   // Footer Props
@@ -37,6 +41,77 @@ interface LayoutProps {
   contextItems?: ContextItem[];
   onEjectContext?: (id: string) => void;
 }
+
+const LifecycleStage = ({
+  icon,
+  label,
+  active,
+  completed,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  completed: boolean;
+}) => (
+  <div className="flex flex-col items-center gap-1.5 text-center w-20">
+    <div
+      className={`
+        relative w-8 h-8 flex items-center justify-center rounded-full border transition-all duration-300
+        ${
+          active
+            ? 'bg-cyan/20 border-cyan shadow-[0_0_12px_rgba(0,240,255,0.7)]'
+            : completed
+            ? 'bg-green-500/20 border-green-500'
+            : 'bg-white/5 border-white/10'
+        }
+      `}
+    >
+      {icon}
+      {completed && !active && (
+        <div className="absolute inset-0 bg-green-500/30 rounded-full animate-ping-slow"></div>
+      )}
+    </div>
+    <span
+      className={`text-[10px] font-mono uppercase tracking-wider transition-colors duration-300 ${
+        active || completed ? 'text-white' : 'text-gray-500'
+      }`}
+    >
+      {label}
+    </span>
+  </div>
+);
+
+const BlueprintLifecycle = ({ currentStage = 1 }: { currentStage: number }) => {
+  const stages = [
+    { icon: <Lightbulb size={14} />, label: 'Ideation' },
+    { icon: <FileText size={14} />, label: 'Spec' },
+    { icon: <Architecture size={14} />, label: 'Architecture' },
+    { icon: <Construction size={14} />, label: 'Build' },
+  ];
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex items-center">
+        <div className="absolute w-full h-0.5 bg-white/10 top-1/2 -translate-y-1/2 left-0 right-0 transform -translate-y-3.5"></div>
+        <div
+          className="absolute h-0.5 bg-gradient-to-r from-cyan to-purple top-1/2 -translate-y-1/2 left-0 right-0 transform -translate-y-3.5 transition-all duration-500"
+          style={{ width: `${((currentStage - 1) / (stages.length - 1)) * 100}%` }}
+        ></div>
+        <div className="flex justify-between w-full">
+          {stages.map((stage, index) => (
+            <LifecycleStage
+              key={stage.label}
+              icon={stage.icon}
+              label={stage.label}
+              active={index + 1 === currentStage}
+              completed={index < currentStage}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const Layout: React.FC<LayoutProps> = ({ 
   children,
@@ -52,6 +127,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [isDraftMode, setIsDraftMode] = useState(true);
   const { isEnabled, toggleSound, playClick } = useSound();
 
   // Calculate percentages for the header bar
@@ -75,6 +151,20 @@ export const Layout: React.FC<LayoutProps> = ({
     playClick();
     setIsConfigOpen(true);
   };
+
+  const isWarmingUp = systemStatus === 'warming_up';
+  const statusDotClasses = (() => {
+    switch (systemStatus) {
+      case 'warning':
+        return 'bg-amber shadow-amber';
+      case 'critical':
+        return 'bg-red-500 shadow-red-500';
+      case 'warming_up':
+        return 'bg-amber/90 shadow-[0_0_12px_rgba(250,204,21,0.7)]';
+      default:
+        return 'bg-green-500 shadow-green-500';
+    }
+  })();
 
   return (
     <div className="flex h-screen w-full bg-void text-white font-sans overflow-hidden selection:bg-cyan selection:text-black">
@@ -201,8 +291,18 @@ export const Layout: React.FC<LayoutProps> = ({
            </div>
 
            <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-              <div className={`w-2 h-2 rounded-full shadow-[0_0_10px] transition-colors duration-300 ${systemStatus === 'warning' ? 'bg-amber shadow-amber' : 'bg-green-500 shadow-green-500'}`}></div>
-              {!isSidebarCollapsed && <span className="font-mono text-xs text-gray-400">SYS_ONLINE</span>}
+              <div
+                className={`w-2 h-2 rounded-full transition-colors duration-300 ${statusDotClasses}`}
+              ></div>
+              {!isSidebarCollapsed && (
+                isWarmingUp ? (
+                  <span className="rounded-full border border-amber/60 bg-amber/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-amber">
+                    WARMING UP
+                  </span>
+                ) : (
+                  <span className="font-mono text-xs text-gray-400">SYS_ONLINE</span>
+                )
+              )}
            </div>
         </div>
       </aside>
@@ -224,6 +324,68 @@ export const Layout: React.FC<LayoutProps> = ({
            </div>
 
            <div className="flex items-center gap-6 md:gap-8 ml-auto">
+              {/* Draft Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <span className={`font-mono text-xs uppercase ${isDraftMode ? 'text-cyan' : 'text-gray-500'}`}>
+                  {isDraftMode ? 'Draft Mode' : 'Ops Mode'}
+                </span>
+                <button
+                  onClick={() => setIsDraftMode(!isDraftMode)}
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+                    isDraftMode ? 'bg-cyan/30' : 'bg-white/10'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                      isDraftMode ? 'translate-x-5 bg-cyan' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {isDraftMode ? (
+                <BlueprintLifecycle currentStage={2} />
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1.5 w-32 md:w-48">
+                     <div className="flex justify-between text-[10px] font-mono uppercase text-gray-400">
+                        <span className="tracking-wider">Ctx Window</span>
+                        <span>{contextUsage.used}{contextUsage.unit}</span>
+                     </div>
+                     <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                        <div 
+                          className="h-full bg-gradient-to-r from-cyan to-blue-600 shadow-neon-cyan relative" 
+                          style={{ width: `${contextPercent}%` }}
+                        >
+                          <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white mix-blend-overlay"></div>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 pl-6 border-l border-white/10">
+                     <div className="relative w-10 h-10 flex items-center justify-center">
+                        <svg className="w-full h-full transform -rotate-90">
+                           <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent" className="text-white/5" />
+                           <circle 
+                              cx="20" cy="20" r="16" 
+                              stroke={vramStroke}
+                              strokeWidth="3" 
+                              fill="transparent" 
+                              strokeDasharray={100} 
+                              strokeDashoffset={100 - vramUsage} 
+                              className="transition-all duration-700 ease-out"
+                              strokeLinecap="round"
+                           />
+                        </svg>
+                        <Cpu size={14} className="absolute text-gray-500" />
+                     </div>
+                     <div className="hidden lg:flex flex-col">
+                        <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">Shared Mem</span>
+                        <span className={`text-sm font-bold font-mono ${vramColor}`}>{vramUsage}%</span>
+                     </div>
+                  </div>
+                </>
+              )}
               {/* Settings Trigger */}
               <button 
                 onClick={handleConfigOpen}
@@ -232,44 +394,6 @@ export const Layout: React.FC<LayoutProps> = ({
               >
                 <Settings size={20} className="group-hover:rotate-90 transition-transform duration-500" />
               </button>
-
-              <div className="flex flex-col gap-1.5 w-32 md:w-48">
-                 <div className="flex justify-between text-[10px] font-mono uppercase text-gray-400">
-                    <span className="tracking-wider">Ctx Window</span>
-                    <span>{contextUsage.used}{contextUsage.unit}</span>
-                 </div>
-                 <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                    <div 
-                      className="h-full bg-gradient-to-r from-cyan to-blue-600 shadow-neon-cyan relative" 
-                      style={{ width: `${contextPercent}%` }}
-                    >
-                      <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white mix-blend-overlay"></div>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="flex items-center gap-4 pl-6 border-l border-white/10">
-                 <div className="relative w-10 h-10 flex items-center justify-center">
-                    <svg className="w-full h-full transform -rotate-90">
-                       <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent" className="text-white/5" />
-                       <circle 
-                          cx="20" cy="20" r="16" 
-                          stroke={vramStroke}
-                          strokeWidth="3" 
-                          fill="transparent" 
-                          strokeDasharray={100} 
-                          strokeDashoffset={100 - vramUsage} 
-                          className="transition-all duration-700 ease-out"
-                          strokeLinecap="round"
-                       />
-                    </svg>
-                    <Cpu size={14} className="absolute text-gray-500" />
-                 </div>
-                 <div className="hidden lg:flex flex-col">
-                    <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">Shared Mem</span>
-                    <span className={`text-sm font-bold font-mono ${vramColor}`}>{vramUsage}%</span>
-                 </div>
-              </div>
            </div>
         </header>
 

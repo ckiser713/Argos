@@ -378,6 +378,16 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_gap_suggestions_report ON gap_suggestions(report_id);
 
+            CREATE TABLE IF NOT EXISTS chat_segments (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_segments_project ON chat_segments(project_id);
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
