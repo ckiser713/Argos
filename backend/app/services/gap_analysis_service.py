@@ -96,7 +96,20 @@ class GapAnalysisService:
         suggestions: List[GapSuggestion] = []
 
         for ticket in tickets:
-            code_chunks = await self.code_search.search_related_code(ticket, top_k=self.config.top_k)
+            # Handle both sync and async code search
+            if hasattr(self.code_search, 'search_related_code'):
+                if callable(getattr(self.code_search.search_related_code, '__call__', None)):
+                    # Check if it's async
+                    import inspect
+                    if inspect.iscoroutinefunction(self.code_search.search_related_code):
+                        code_chunks = await self.code_search.search_related_code(ticket, top_k=self.config.top_k)
+                    else:
+                        code_chunks = self.code_search.search_related_code(ticket, top_k=self.config.top_k)
+                else:
+                    code_chunks = []
+            else:
+                code_chunks = []
+                
             status, confidence = self._classify_status(code_chunks)
             logger.debug(
                 "Ticket %s classified as %s (confidence=%.3f, matches=%d)",
@@ -174,7 +187,10 @@ class GapAnalysisService:
 class ProjectIntelTicketProvider(IdeaTicketProvider):
     async def list_tickets_for_project(self, project_id: str) -> Sequence[IdeaTicket]:
         # Connects to the existing project_intel_repo
-        return project_intel_repo.list_tickets(project_id)
+        # Make it async-compatible
+        from app.services.idea_service import idea_service
+        result = idea_service.list_tickets(project_id, limit=1000)
+        return result.items if hasattr(result, 'items') else []
 
 
 class LLMCoderClient(CoderLLMClient):
@@ -201,8 +217,9 @@ class LLMCoderClient(CoderLLMClient):
         return llm_service.generate_text(
             prompt=prompt,
             project_id=ticket.project_id,
-            base_temperature=0.0,
-            model="gpt-4o",
+            lane=llm_service.ModelLane.CODER,
+            temperature=0.0,
+            max_tokens=1000,
         )
 
 

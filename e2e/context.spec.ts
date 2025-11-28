@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Context Management', () => {
   test('should get context budget', async ({ api, testProject }) => {
@@ -51,7 +51,7 @@ test.describe('Context Management', () => {
     
     // Update the item
     const response = await api.patch(
-      `http://localhost:8000/api/projects/${testProject.id}/context/items/${itemId}`,
+      `${API_BASE_URL}/projects/${testProject.id}/context/items/${itemId}`,
       {
         data: { pinned: true },
       }
@@ -80,7 +80,7 @@ test.describe('Context Management', () => {
     
     // Remove the item
     const response = await api.delete(
-      `http://localhost:8000/api/projects/${testProject.id}/context/items/${itemId}`
+      `${API_BASE_URL}/projects/${testProject.id}/context/items/${itemId}`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -97,7 +97,7 @@ test.describe('Context Management', () => {
     
     // Try to add items that exceed budget
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/context/items`,
+      `${API_BASE_URL}/projects/${testProject.id}/context/items`,
       {
         data: {
           items: [

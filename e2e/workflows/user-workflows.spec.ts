@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures';
-import { ApiHelpers } from '../utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from '../utils/api-helpers';
 import { TestDataFactory } from '../utils/test-data-factory';
 
 test.describe('Complete User Workflows', () => {
@@ -19,7 +19,7 @@ test.describe('Complete User Workflows', () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Step 3: Run agent
-      const agentsResponse = await api.get('http://localhost:8000/api/profiles');
+      const agentsResponse = await api.get(`${API_BASE_URL}/profiles`);
       const agents = await agentsResponse.json();
       
       if (agents.length > 0) {
@@ -161,3 +161,4 @@ test.describe('Complete User Workflows', () => {
     }
   });
 });
+

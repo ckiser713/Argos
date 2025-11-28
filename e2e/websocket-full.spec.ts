@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, WS_BASE_URL } from './utils/api-helpers';
 
 /**
  * Full WebSocket/Streaming Tests
@@ -8,7 +8,7 @@ import { ApiHelpers } from './utils/api-helpers';
  */
 test.describe('WebSocket Full Implementation', () => {
   test('should connect to WebSocket endpoint', async ({ page, testProject }) => {
-    const wsUrl = `ws://localhost:8000/api/stream/events?project_id=${testProject.id}`;
+    const wsUrl = `${WS_BASE_URL}/events?project_id=${testProject.id}`;
     
     // Use Playwright's WebSocket support
     const wsPromise = page.waitForEvent('websocket', (ws) => {
@@ -98,7 +98,7 @@ test.describe('WebSocket Full Implementation', () => {
   });
 
   test('should handle WebSocket reconnection', async ({ page, testProject }) => {
-    const wsUrl = `ws://localhost:8000/api/stream/events?project_id=${testProject.id}`;
+    const wsUrl = `${WS_BASE_URL}/events?project_id=${testProject.id}`;
     
     const wsPromise = page.waitForEvent('websocket');
     const apiHelpers = new ApiHelpers(page.request);
@@ -157,7 +157,7 @@ test.describe('WebSocket Full Implementation', () => {
 
   test('should handle WebSocket errors gracefully', async ({ page, testProject }) => {
     // Try to connect to invalid WebSocket URL
-    const invalidUrl = `ws://localhost:8000/api/stream/invalid`;
+    const invalidUrl = `${WS_BASE_URL}/invalid`;
     
     // This should fail gracefully
     try {

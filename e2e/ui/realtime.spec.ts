@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures';
-import { ApiHelpers } from '../utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from '../utils/api-helpers';
 
 test.describe('Real-time UI Tests', () => {
   test('should handle WebSocket connection in UI', async ({ authenticatedPage, testProject }) => {
@@ -53,7 +53,7 @@ test.describe('Real-time UI Tests', () => {
     const apiHelpers = new ApiHelpers(api);
     
     // Get available agents
-    const agentsResponse = await api.get('http://localhost:8000/api/profiles');
+    const agentsResponse = await api.get(`${API_BASE_URL}/profiles`);
     const agents = await agentsResponse.json();
     
     if (agents.length > 0) {
@@ -117,4 +117,5 @@ test.describe('Real-time UI Tests', () => {
     await expect(body).toBeVisible();
   });
 });
+
 

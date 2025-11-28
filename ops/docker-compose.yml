@@ -11,15 +11,17 @@ services:
   inference-engine:
     # Option 1: Use pre-built ROCm image (recommended - faster, optimized)
     # First run: ./ops/load_rocm_image.sh
-    # Then uncomment the line below and comment out the 'build:' section
-    # image: vllm-rocm-strix:latest
+    # Then use the image below (default)
+    image: vllm-rocm-strix:latest
     
     # Option 2: Build from source (fallback - slower, requires network)
-    build:
-      context: .
-      dockerfile: Dockerfile.vllm
-      args:
-        - HF_TOKEN=${HF_TOKEN:-}
+    # Uncomment below and comment out 'image:' line above to build from source
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.vllm
+    #   args:
+    #     - HF_TOKEN=${HF_TOKEN:-}
+    
     devices:
       - "/dev/kfd"
       - "/dev/dri"
@@ -35,3 +37,39 @@ services:
       - HIP_VISIBLE_DEVICES=0
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
       - HF_TOKEN=${HF_TOKEN:-}
+      # Memory optimization for 128GB unified memory
+      # GPU memory utilization: 0.45 = ~48GB for vLLM (leaving ~64GB for llama.cpp)
+      - GPU_MEMORY_UTILIZATION=0.45
+      # Max model length: 32768 tokens (can be increased if needed)
+      - MAX_MODEL_LEN=32768
+    # Health check for inference engine
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures';
-import { ApiHelpers } from '../utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from '../utils/api-helpers';
 import { TestDataFactory } from '../utils/test-data-factory';
 
 test.describe('Cross-Feature Integration', () => {
@@ -59,7 +59,7 @@ test.describe('Cross-Feature Integration', () => {
       expect(knode).toHaveProperty('id');
       
       // Step 3: Run agent with knowledge context
-      const agentsResponse = await api.get('http://localhost:8000/api/profiles');
+      const agentsResponse = await api.get(`${API_BASE_URL}/profiles`);
       const agents = await agentsResponse.json();
       
       if (agents.length > 0) {
@@ -138,7 +138,7 @@ test.describe('Cross-Feature Integration', () => {
       expect(run).toHaveProperty('id');
       
       // Step 3: Create agent run (simulating workflow triggering agent)
-      const agentsResponse = await api.get('http://localhost:8000/api/profiles');
+      const agentsResponse = await api.get(`${API_BASE_URL}/profiles`);
       const agents = await agentsResponse.json();
       
       if (agents.length > 0) {
@@ -159,3 +159,4 @@ test.describe('Cross-Feature Integration', () => {
     }
   });
 });
+

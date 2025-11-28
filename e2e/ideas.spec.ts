@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 import { TestDataFactory } from './utils/test-data-factory';
 
 test.describe('Ideas API', () => {
@@ -155,7 +155,7 @@ test.describe('Ideas API', () => {
   test('should handle invalid idea candidate ID', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/ideas/candidates/invalid-id`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/ideas/candidates/invalid-id`, {
       data: { title: 'Updated' },
     });
     expect(response.status()).toBe(404);
@@ -164,10 +164,11 @@ test.describe('Ideas API', () => {
   test('should handle invalid task ID', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/tasks/invalid-id`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/tasks/invalid-id`, {
       data: { title: 'Updated' },
     });
     expect(response.status()).toBe(404);
   });
 });
+
 

@@ -119,6 +119,19 @@ export async function createIngestJob(
   );
 }
 
+/** Upload a file to create an ingest job via multipart/form-data. */
+export async function uploadIngestFile(projectId: string, file: File): Promise<{ filename: string; job_id: string }> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  return http<{ filename: string; job_id: string }>(
+    `/api/projects/${encodeURIComponent(projectId)}/ingest/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+}
+
 /** Cancel an ingest job. */
 export async function cancelIngestJob(projectId: string, jobId: string): Promise<IngestJob> {
   return http<IngestJob>(
@@ -155,6 +168,21 @@ export async function fetchRoadmap(projectId: string): Promise<RoadmapGraph> {
     `/api/projects/${encodeURIComponent(projectId)}/roadmap`,
     {
       method: "GET",
+    }
+  );
+}
+
+/** Generate roadmap from project intent. */
+export async function generateRoadmap(
+  projectId: string,
+  intent?: string,
+  useExistingIdeas: boolean = true
+): Promise<RoadmapGraph> {
+  return http<RoadmapGraph>(
+    `/api/projects/${encodeURIComponent(projectId)}/roadmap/generate`,
+    {
+      method: "POST",
+      body: { intent, use_existing_ideas: useExistingIdeas },
     }
   );
 }
@@ -584,6 +612,19 @@ export async function updateKnowledgeNode(
   );
 }
 
+/** Delete a knowledge node. */
+export async function deleteKnowledgeNode(
+  projectId: string,
+  nodeId: string
+): Promise<void> {
+  return http<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/knowledge-graph/nodes/${encodeURIComponent(nodeId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
 /** Create a knowledge edge. */
 export async function createKnowledgeEdge(
   projectId: string,
@@ -622,6 +663,16 @@ export async function searchKnowledge(
     {
       method: "POST",
       body: { query, ...params },
+    }
+  );
+}
+
+/** Auto-link documents based on semantic similarity. */
+export async function autoLinkDocuments(projectId: string): Promise<{ links_created: number }> {
+  return http<{ links_created: number }>(
+    `/api/projects/${encodeURIComponent(projectId)}/knowledge-graph/auto-link`,
+    {
+      method: "POST",
     }
   );
 }
@@ -680,4 +731,132 @@ export async function removeContextItem(
       method: "DELETE",
     }
   );
+}
+
+/* ============================================================================
+ * Gap Analysis
+ * ==========================================================================*/
+
+export interface GapReport {
+  id: string;
+  projectId: string;
+  ticketIds: string[];
+  repoPaths: string[];
+  gaps: Array<{
+    ticketId: string;
+    requirement: string;
+    codeMatches: Array<{
+      filePath: string;
+      codeSnippet: string;
+      similarity: number;
+    }>;
+    missingFeatures: string[];
+    confidence: number;
+  }>;
+  generatedAt: string;
+}
+
+/** Generate gap analysis report. */
+export async function generateGapReport(
+  projectId: string,
+  params: { ticketIds?: string[]; repoPaths?: string[] }
+): Promise<GapReport> {
+  return http<GapReport>(
+    `/api/projects/${encodeURIComponent(projectId)}/gap-analysis/generate`,
+    {
+      method: "POST",
+      body: params,
+    }
+  );
+}
+
+/** Search code in repositories. */
+export async function searchCode(
+  projectId: string,
+  query: string,
+  params?: { limit?: number; repoPath?: string }
+): Promise<Array<{ filePath: string; codeSnippet: string; similarity: number }>> {
+  return http<Array<{ filePath: string; codeSnippet: string; similarity: number }>>(
+    `/api/projects/${encodeURIComponent(projectId)}/gap-analysis/search-code`,
+    {
+      method: "POST",
+      body: { query, ...params },
+    }
+  );
+}
+
+/* ============================================================================
+ * n8n Workflows
+ * ==========================================================================*/
+
+export interface N8nWorkflow {
+  id: string;
+  name: string;
+  active: boolean;
+  nodes: unknown[];
+  connections: unknown;
+  settings: unknown;
+  staticData: unknown;
+  tags: Array<{ id: string; name: string }>;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface N8nWorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  webhook_path: string;
+  input_schema: {
+    type: string;
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface N8nWorkflowExecution {
+  id: string;
+  workflowId: string;
+  finished: boolean;
+  mode: string;
+  retryOf: string | null;
+  retrySuccessId: string | null;
+  startedAt: string;
+  stoppedAt: string | null;
+  waitTill: string | null;
+}
+
+/** List available n8n workflows. */
+export async function listN8nWorkflows(): Promise<N8nWorkflow[]> {
+  return http<N8nWorkflow[]>("/api/n8n/workflows", {
+    method: "GET",
+  });
+}
+
+/** Get n8n workflow details. */
+export async function getN8nWorkflow(workflowId: string): Promise<N8nWorkflow> {
+  return http<N8nWorkflow>(`/api/n8n/workflows/${encodeURIComponent(workflowId)}`, {
+    method: "GET",
+  });
+}
+
+/** Get n8n workflow executions. */
+export async function getN8nWorkflowExecutions(
+  workflowId: string,
+  params?: { limit?: number }
+): Promise<N8nWorkflowExecution[]> {
+  return http<N8nWorkflowExecution[]>(
+    `/api/n8n/workflows/${encodeURIComponent(workflowId)}/executions`,
+    {
+      method: "GET",
+      query: params,
+    }
+  );
+}
+
+/** Get n8n workflow templates. */
+export async function getN8nWorkflowTemplates(): Promise<N8nWorkflowTemplate[]> {
+  return http<N8nWorkflowTemplate[]>("/api/n8n/templates", {
+    method: "GET",
+  });
 }

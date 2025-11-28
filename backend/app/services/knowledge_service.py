@@ -225,6 +225,32 @@ class KnowledgeService:
 
             return updated_node
 
+    def delete_node(self, project_id: str, node_id: str) -> None:
+        """Delete a knowledge node and its embeddings from Qdrant."""
+        with db_session() as conn:
+            # Check node exists
+            existing = conn.execute(
+                "SELECT * FROM knowledge_nodes WHERE id = ? AND project_id = ?", (node_id, project_id)
+            ).fetchone()
+            if not existing:
+                raise ValueError("Knowledge node not found")
+
+            # Delete all edges connected to this node
+            conn.execute(
+                "DELETE FROM knowledge_edges WHERE project_id = ? AND (source = ? OR target = ?)",
+                (project_id, node_id, node_id),
+            )
+
+            # Delete the node
+            conn.execute(
+                "DELETE FROM knowledge_nodes WHERE id = ? AND project_id = ?",
+                (node_id, project_id),
+            )
+            conn.commit()
+
+        # Delete from Qdrant
+        qdrant_service.delete_knowledge_node(project_id=project_id, node_id=node_id)
+
     def list_edges(
         self,
         project_id: str,
@@ -422,6 +448,158 @@ class KnowledgeService:
             weight=row.get("weight"),
             label=row.get("label"),
             created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+        )
+
+    def auto_link_documents(
+        self,
+        project_id: str,
+        similarity_threshold: float = 0.7,
+    ) -> List[KnowledgeEdge]:
+        """
+        Automatically create knowledge edges between documents with high semantic similarity.
+        This implements contextual linking between PDFs, repos, and other documents.
+        
+        Args:
+            project_id: Project ID
+            similarity_threshold: Minimum similarity score to create a link (0.0-1.0)
+            
+        Returns:
+            List of created edges
+        """
+        logger.info(
+            "knowledge_service.auto_link_documents.start",
+            extra={"project_id": project_id, "threshold": similarity_threshold},
+        )
+
+        # Get all nodes for the project
+        nodes_response = self.list_nodes(project_id, limit=1000)
+        nodes = nodes_response.items
+
+        if len(nodes) < 2:
+            logger.info("Not enough nodes to create links")
+            return []
+
+        created_edges = []
+
+        # Use Qdrant to find similar nodes
+        try:
+            for i, node_a in enumerate(nodes):
+                if not node_a.summary and not node_a.text:
+                    continue
+
+                # Search for similar nodes
+                search_request = KnowledgeSearchRequest(
+                    query=node_a.title + " " + (node_a.summary or ""),
+                    max_results=10,
+                )
+                similar_nodes = self.search(project_id, search_request)
+
+                for node_b in similar_nodes:
+                    # Skip self and already linked nodes
+                    if node_b.id == node_a.id:
+                        continue
+
+                    # Check if edge already exists
+                    with db_session() as conn:
+                        existing = conn.execute(
+                            """
+                            SELECT id FROM knowledge_edges
+                            WHERE project_id = ? AND (
+                                (source = ? AND target = ?) OR
+                                (source = ? AND target = ?)
+                            )
+                            """,
+                            (project_id, node_a.id, node_b.id, node_b.id, node_a.id),
+                        ).fetchone()
+                        if existing:
+                            continue
+
+                    # Get similarity score from metadata
+                    similarity_score = node_b.metadata.get("similarity_score", 0.0) if node_b.metadata else 0.0
+
+                    if similarity_score >= similarity_threshold:
+                        # Create bidirectional edge
+                        try:
+                            edge = self.create_edge(
+                                project_id,
+                                {
+                                    "source": node_a.id,
+                                    "target": node_b.id,
+                                    "type": "related_to",
+                                    "weight": similarity_score,
+                                    "label": f"Auto-linked (similarity: {similarity_score:.2f})",
+                                },
+                            )
+                            created_edges.append(edge)
+                            logger.debug(
+                                f"Auto-linked {node_a.title} <-> {node_b.title} (score: {similarity_score:.2f})"
+                            )
+                        except ValueError as e:
+                            # Edge might already exist, skip
+                            logger.debug(f"Skipping edge creation: {e}")
+
+            logger.info(
+                "knowledge_service.auto_link_documents.success",
+                extra={"project_id": project_id, "edges_created": len(created_edges)},
+            )
+
+        except Exception as e:
+            logger.error(f"Auto-linking failed: {e}")
+
+        return created_edges
+
+    def link_document_to_repo(
+        self,
+        project_id: str,
+        document_node_id: str,
+        repo_node_id: str,
+        link_strength: Optional[float] = None,
+    ) -> KnowledgeEdge:
+        """
+        Manually create a link between a document (PDF) and a repository node.
+        If link_strength is None, calculates it based on semantic similarity.
+        
+        Args:
+            project_id: Project ID
+            document_node_id: ID of document node
+            repo_node_id: ID of repository node
+            link_strength: Optional strength score (0.0-1.0)
+            
+        Returns:
+            Created knowledge edge
+        """
+        doc_node = self.get_node(project_id, document_node_id)
+        repo_node = self.get_node(project_id, repo_node_id)
+
+        if not doc_node:
+            raise ValueError(f"Document node not found: {document_node_id}")
+        if not repo_node:
+            raise ValueError(f"Repository node not found: {repo_node_id}")
+
+        # Calculate similarity if not provided
+        if link_strength is None:
+            # Use Qdrant search to find similarity
+            search_request = KnowledgeSearchRequest(
+                query=doc_node.title + " " + (doc_node.summary or ""),
+                max_results=10,
+            )
+            similar_nodes = self.search(project_id, search_request)
+            for node in similar_nodes:
+                if node.id == repo_node_id:
+                    link_strength = node.metadata.get("similarity_score", 0.5) if node.metadata else 0.5
+                    break
+            else:
+                link_strength = 0.5  # Default
+
+        return self.create_edge(
+            project_id,
+            {
+                "source": document_node_id,
+                "target": repo_node_id,
+                "type": "inspired_by",
+                "weight": link_strength,
+                "label": f"Document → Repository (strength: {link_strength:.2f})",
+            },
         )
 
 

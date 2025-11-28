@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Knowledge Graph', () => {
   test('should create a knowledge node', async ({ api, testProject }) => {
@@ -13,7 +13,7 @@ test.describe('Knowledge Graph', () => {
     
     expect(node).toHaveProperty('id');
     expect(node.title).toBe('Test Concept');
-    expect(node.projectId).toBe(testProject.id);
+    expect(node.project_id ?? node.projectId).toBe(testProject.id);
   });
 
   test('should get knowledge graph', async ({ api, testProject }) => {
@@ -28,7 +28,7 @@ test.describe('Knowledge Graph', () => {
     
     // Get graph
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/knowledge-graph`
+      `${API_BASE_URL}/projects/${testProject.id}/knowledge-graph`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -70,7 +70,7 @@ test.describe('Knowledge Graph', () => {
     });
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/knowledge-graph/nodes/${createdNode.id}`
+      `${API_BASE_URL}/projects/${testProject.id}/knowledge-graph/nodes/${createdNode.id}`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -88,7 +88,7 @@ test.describe('Knowledge Graph', () => {
     });
     
     const response = await api.patch(
-      `http://localhost:8000/api/projects/${testProject.id}/knowledge-graph/nodes/${node.id}`,
+      `${API_BASE_URL}/projects/${testProject.id}/knowledge-graph/nodes/${node.id}`,
       {
         data: {
           title: 'Updated Node',
@@ -119,7 +119,7 @@ test.describe('Knowledge Graph', () => {
     
     // Create edge
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/knowledge-graph/edges`,
+      `${API_BASE_URL}/projects/${testProject.id}/knowledge-graph/edges`,
       {
         data: {
           source: node1.id,

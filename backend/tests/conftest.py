@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import uuid
-from backend.app.config import get_settings
+from app.config import get_settings
 from fastapi.testclient import TestClient
 
 

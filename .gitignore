@@ -52,3 +52,11 @@ node_modules
 *.db-wal
 *.db-shm
 ops/qdrant_storage/
+ops/models/
+
+# Model downloads directory
+# This prevents committing downloaded model binaries into the repo
+ops/models/*
+
+# Ignore core folder (may contain large files / artifacts)
+core/

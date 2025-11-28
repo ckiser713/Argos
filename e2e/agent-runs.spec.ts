@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Agent Runs', () => {
   test('should create an agent run', async ({ api, testProject }) => {
@@ -12,8 +12,8 @@ test.describe('Agent Runs', () => {
     );
     
     expect(run).toHaveProperty('id');
-    expect(run.projectId).toBe(testProject.id);
-    expect(run.agentId).toBe('project_manager');
+    expect(run.project_id ?? run.projectId).toBe(testProject.id);
+    expect(run.agent_id ?? run.agentId).toBe('project_manager');
     expect(run.status).toBeDefined();
   });
 
@@ -29,7 +29,7 @@ test.describe('Agent Runs', () => {
     const run = await apiHelpers.getAgentRun(testProject.id, createdRun.id);
     
     expect(run.id).toBe(createdRun.id);
-    expect(run.projectId).toBe(testProject.id);
+    expect(run.project_id ?? run.projectId).toBe(testProject.id);
   });
 
   test('should list agent runs', async ({ api, testProject }) => {
@@ -44,7 +44,7 @@ test.describe('Agent Runs', () => {
     
     // List runs
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -62,7 +62,7 @@ test.describe('Agent Runs', () => {
     );
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs/${run.id}/steps`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs/${run.id}/steps`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -80,7 +80,7 @@ test.describe('Agent Runs', () => {
     );
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs/${run.id}/messages`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs/${run.id}/messages`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -98,7 +98,7 @@ test.describe('Agent Runs', () => {
     );
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs/${run.id}/node-states`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs/${run.id}/node-states`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -116,7 +116,7 @@ test.describe('Agent Runs', () => {
     );
     
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs/${run.id}/cancel`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs/${run.id}/cancel`
     );
     
     // Should succeed or return 400 if already completed

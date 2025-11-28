@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Roadmap', () => {
   test('should create a roadmap node', async ({ api, testProject }) => {
@@ -14,7 +14,7 @@ test.describe('Roadmap', () => {
     
     expect(node).toHaveProperty('id');
     expect(node.label).toBe('Phase 1: Setup');
-    expect(node.projectId).toBe(testProject.id);
+    expect(node.project_id ?? node.projectId).toBe(testProject.id);
   });
 
   test('should list roadmap nodes', async ({ api, testProject }) => {
@@ -43,7 +43,7 @@ test.describe('Roadmap', () => {
     });
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/roadmap/nodes/${createdNode.id}`
+      `${API_BASE_URL}/projects/${testProject.id}/roadmap/nodes/${createdNode.id}`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -60,10 +60,10 @@ test.describe('Roadmap', () => {
     });
     
     const response = await api.patch(
-      `http://localhost:8000/api/projects/${testProject.id}/roadmap/nodes/${node.id}`,
+      `${API_BASE_URL}/projects/${testProject.id}/roadmap/nodes/${node.id}`,
       {
-        data: {
-          status: 'ACTIVE',
+          data: {
+            status: 'active',
           label: 'Updated Node',
         },
       }
@@ -71,7 +71,7 @@ test.describe('Roadmap', () => {
     
     expect(response.ok()).toBeTruthy();
     const updatedNode = await response.json();
-    expect(updatedNode.status).toBe('ACTIVE');
+    expect((updatedNode.status ?? '').toString().toUpperCase()).toBe('ACTIVE');
     expect(updatedNode.label).toBe('Updated Node');
   });
 
@@ -84,7 +84,7 @@ test.describe('Roadmap', () => {
     });
     
     const response = await api.delete(
-      `http://localhost:8000/api/projects/${testProject.id}/roadmap/nodes/${node.id}`
+      `${API_BASE_URL}/projects/${testProject.id}/roadmap/nodes/${node.id}`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -106,7 +106,7 @@ test.describe('Roadmap', () => {
     
     // Create edge
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/roadmap/edges`,
+      `${API_BASE_URL}/projects/${testProject.id}/roadmap/edges`,
       {
         data: {
           from_node_id: node1.id,
@@ -118,8 +118,8 @@ test.describe('Roadmap', () => {
     
     expect(response.ok()).toBeTruthy();
     const edge = await response.json();
-    expect(edge.fromNodeId).toBe(node1.id);
-    expect(edge.toNodeId).toBe(node2.id);
+    expect(edge.from_node_id ?? edge.fromNodeId).toBe(node1.id);
+    expect(edge.to_node_id ?? edge.toNodeId).toBe(node2.id);
   });
 });
 

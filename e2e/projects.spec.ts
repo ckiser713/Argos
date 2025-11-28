@@ -16,17 +16,15 @@ test.describe('Projects', () => {
 
   test('should list projects', async ({ api }) => {
     const apiHelpers = new ApiHelpers(api);
-    
+
     // Create a test project
     const project = await apiHelpers.createProject('List Test Project');
-    
+
     // List projects
-    const response = await api.get('http://localhost:8000/api/projects');
-    expect(response.ok()).toBeTruthy();
-    const projects = await response.json();
-    
+    const projects = await apiHelpers.listProjects();
+
     expect(Array.isArray(projects.items || projects)).toBeTruthy();
-    
+
     // Cleanup
     await apiHelpers.deleteProject(project.id);
   });
@@ -36,9 +34,7 @@ test.describe('Projects', () => {
     
     const createdProject = await apiHelpers.createProject('Get Test Project');
     
-    const response = await api.get(`http://localhost:8000/api/projects/${createdProject.id}`);
-    expect(response.ok()).toBeTruthy();
-    const project = await response.json();
+    const project = await apiHelpers.getProject(createdProject.id);
     
     expect(project.id).toBe(createdProject.id);
     expect(project.name).toBe('Get Test Project');

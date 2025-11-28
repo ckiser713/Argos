@@ -1,8 +1,12 @@
 import type { APIRequestContext } from '@playwright/test';
+import { expect } from '@playwright/test';
 
-const API_BASE_URL =
-  (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACKEND_URL || 'http://localhost:8000')
+export const API_BASE_URL =
+  (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACKEND_URL || 'http://127.0.0.1:8000')
     .replace(/\/(?:api|api\/docs)?$/i, '') + '/api';
+
+  // WebSocket endpoints live under the `/api/stream` prefix
+  export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api(?!\/stream)/, '/api/stream');
 
 export class ApiHelpers {
   constructor(private api: APIRequestContext) {}
@@ -24,6 +28,18 @@ export class ApiHelpers {
   async deleteProject(projectId: string) {
     const response = await this.api.delete(`${API_BASE_URL}/projects/${projectId}`);
     return response.ok();
+  }
+
+  async listProjects() {
+    const response = await this.api.get(`${API_BASE_URL}/projects`);
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
+  }
+
+  async getProject(projectId: string) {
+    const response = await this.api.get(`${API_BASE_URL}/projects/${projectId}`);
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
   }
 
   async createIngestJob(projectId: string, sourcePath: string) {
@@ -449,10 +465,51 @@ export class ApiHelpers {
     }
     return await response.json();
   }
+
+  // AI Models API helpers
+  async testModelInference(lane: string, prompt: string, projectId: string) {
+    const response = await this.api.post(`${API_BASE_URL}/projects/${projectId}/ai/test-inference`, {
+      data: {
+        lane,
+        prompt,
+        max_tokens: 500,
+        temperature: 0.7,
+      },
+    });
+    if (!response.ok()) {
+      const errorText = await response.text();
+      throw new Error(`Failed to test model inference: ${response.status()} ${errorText}`);
+    }
+    return await response.json();
+  }
+
+  async getModelStatus() {
+    const response = await this.api.get(`${API_BASE_URL}/system/models/status`);
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
+  }
+
+  async validateModelLane(lane: string, projectId: string) {
+    const response = await this.api.post(`${API_BASE_URL}/projects/${projectId}/ai/validate-lane`, {
+      data: { lane },
+    });
+    if (!response.ok()) {
+      const errorText = await response.text();
+      throw new Error(`Failed to validate model lane: ${response.status()} ${errorText}`);
+    }
+    return await response.json();
+  }
+
+  async getEmbeddingModels() {
+    const response = await this.api.get(`${API_BASE_URL}/system/models/embeddings`);
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
+  }
+
+  async getLaneModels() {
+    const response = await this.api.get(`${API_BASE_URL}/system/models/lanes`);
+    expect(response.ok()).toBeTruthy();
+    return await response.json();
+  }
 }
-
-import { expect } from '@playwright/test';
-
-// Re-export expect for convenience
-export { expect };
 

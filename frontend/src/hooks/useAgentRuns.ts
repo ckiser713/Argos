@@ -135,6 +135,7 @@ export function useAgentRunNodeStates(projectId: string, runId: string) {
     queryKey: agentRunNodeStatesQueryKey(projectId, runId),
     queryFn: () => listAgentRunNodeStates(projectId, runId),
     enabled: !!projectId && !!runId,
+    refetchInterval: 2000, // Poll every 2 seconds for updates
   });
 
   return {
@@ -144,3 +145,7 @@ export function useAgentRunNodeStates(projectId: string, runId: string) {
     refetch: query.refetch,
   };
 }
+
+// Export streaming hook
+export { useAgentStream } from "./useAgentStream";
+export type { AgentStreamEvent, UseAgentStreamOptions } from "./useAgentStream";

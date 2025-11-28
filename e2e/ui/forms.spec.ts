@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures';
-import { ApiHelpers } from '../utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from '../utils/api-helpers';
 
 test.describe('Form Interactions', () => {
   test('should handle project creation form interactions', async ({ authenticatedPage, api }) => {
@@ -28,7 +28,7 @@ test.describe('Form Interactions', () => {
     const apiHelpers = new ApiHelpers(api);
     
     // Try to create project with invalid data
-    const response = await api.post('http://localhost:8000/api/projects', {
+    const response = await api.post(`${API_BASE_URL}/projects`, {
       data: {
         // Missing required 'name' field
         description: 'Test',
@@ -135,7 +135,7 @@ test.describe('Form Interactions', () => {
     const apiHelpers = new ApiHelpers(api);
     
     // First get available agents
-    const agentsResponse = await api.get('http://localhost:8000/api/profiles');
+    const agentsResponse = await api.get(`${API_BASE_URL}/profiles`);
     const agents = await agentsResponse.json();
     
     if (agents.length > 0) {
@@ -147,4 +147,5 @@ test.describe('Form Interactions', () => {
     }
   });
 });
+
 

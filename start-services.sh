@@ -37,6 +37,10 @@ trap cleanup SIGINT SIGTERM EXIT
 start_backend() {
     echo "Starting Backend..."
     cd "$PROJECT_ROOT/backend"
+        # Ensure Poetry is configured to use Python 3.11 if the helper script exists
+        if [ -f "$PROJECT_ROOT/tools/ensure_python311_poetry.sh" ]; then
+            "$PROJECT_ROOT/tools/ensure_python311_poetry.sh"
+        fi
     poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload \
         > "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!

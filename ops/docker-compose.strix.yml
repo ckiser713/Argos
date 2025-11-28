@@ -1,21 +1,81 @@
+version: '3.8'
+
 services:
-  # The Brain & Coder
+  # The Brain & Coder (Service A: "The Fast Lane")
   inference-vllm:
     image: vllm-rocm-strix:latest
+    container_name: cortex-vllm-fast-lane
     devices:
       - /dev/kfd
       - /dev/dri
+    group_add:
+      - video
+      - render
     environment:
       - VLLM_GPU_MEMORY_UTILIZATION=0.40
+      - VLLM_MAX_MODEL_LEN=32768
+      - VLLM_HOST=0.0.0.0
+      - VLLM_PORT=8000
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_TOKEN=${HF_TOKEN:-}
     ports:
       - "8000:8000"
+    volumes:
+      - ./models:/models
+      - ./models/vllm:/root/.cache/huggingface
+    shm_size: '16gb'
+    deploy:
+      resources:
+        limits:
+          memory: 48G
+        reservations:
+          memory: 48G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - cortex-network
 
-  # The Super-Reader
+  # The Super-Reader (Service B: "The Deep Lane")
   inference-llamacpp:
     image: ghcr.io/ggerganov/llama.cpp:full-rocm
+    container_name: cortex-llamacpp-deep-lane
     devices:
       - /dev/kfd
       - /dev/dri
-    command: -m /models/nemotron-4m.gguf -c 2000000 --port 8080 -ngl 99
+    group_add:
+      - video
+      - render
+    command: >
+      -m /models/nemotron-4m.gguf
+      -c 2000000
+      --port 8080
+      -ngl 99
+      --cache-type-k q8_0
+      --host 0.0.0.0
+    environment:
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
     ports:
       - "8080:8080"
+    volumes:
+      - ./models:/models
+      - ./models/gguf:/models/gguf
+    deploy:
+      resources:
+        limits:
+          memory: 64G
+        reservations:
+          memory: 64G
+    restart: unless-stopped
+    networks:
+      - cortex-network
+
+networks:
+  cortex-network:
+    driver: bridge

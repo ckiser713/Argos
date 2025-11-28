@@ -10,6 +10,7 @@ from app.api.routes import (
     ingest,
     knowledge,
     mode,
+    n8n,
     project_intel,
     projects,
     roadmap,
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis"], dependencies=auth_deps)
     app.include_router(roadmap.router, prefix="/api", tags=["roadmap"], dependencies=auth_deps)
     app.include_router(ideas.router, prefix="/api", tags=["ideas"], dependencies=auth_deps)
+    app.include_router(n8n.router, prefix="/api", tags=["n8n"], dependencies=auth_deps)
 
     return app
 

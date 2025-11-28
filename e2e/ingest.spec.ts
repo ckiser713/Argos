@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Ingest Jobs', () => {
   test('should create an ingest job', async ({ api, testProject }) => {
@@ -11,7 +11,7 @@ test.describe('Ingest Jobs', () => {
     );
     
     expect(job).toHaveProperty('id');
-    expect(job.projectId).toBe(testProject.id);
+    expect(job.project_id ?? job.projectId).toBe(testProject.id);
     expect(job.status).toBeDefined();
   });
 
@@ -42,7 +42,7 @@ test.describe('Ingest Jobs', () => {
     );
     
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs/${createdJob.id}`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs/${createdJob.id}`
     );
     
     expect(response.ok()).toBeTruthy();
@@ -59,12 +59,12 @@ test.describe('Ingest Jobs', () => {
     );
     
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs/${job.id}/cancel`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs/${job.id}/cancel`
     );
     
     expect(response.ok()).toBeTruthy();
     const cancelledJob = await response.json();
-    expect(cancelledJob.status).toBe('CANCELLED');
+    expect((cancelledJob.status ?? '').toString().toUpperCase()).toBe('CANCELLED');
   });
 
   test('should delete an ingest job', async ({ api, testProject }) => {
@@ -77,12 +77,12 @@ test.describe('Ingest Jobs', () => {
     
     // Cancel first (required for deletion)
     await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs/${job.id}/cancel`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs/${job.id}/cancel`
     );
     
     // Delete
     const deleteResponse = await api.delete(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs/${job.id}`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs/${job.id}`
     );
     
     expect(deleteResponse.status()).toBe(204);

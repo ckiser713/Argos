@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 /**
  * Edge Cases and Error Handling Tests
@@ -8,7 +8,7 @@ import { ApiHelpers } from './utils/api-helpers';
  */
 test.describe('Edge Cases and Error Handling', () => {
   test('should handle invalid project ID', async ({ api }) => {
-    const response = await api.get('http://localhost:8000/api/projects/invalid-project-id');
+    const response = await api.get(`${API_BASE_URL}/projects/invalid-project-id`);
     
     // Should return 404 or 400
     expect([404, 400]).toContain(response.status());
@@ -16,7 +16,7 @@ test.describe('Edge Cases and Error Handling', () => {
 
   test('should handle missing required fields', async ({ api, testProject }) => {
     // Try to create project without name
-    const response = await api.post('http://localhost:8000/api/projects', {
+    const response = await api.post(`${API_BASE_URL}/projects`, {
       data: {},
     });
     
@@ -28,13 +28,13 @@ test.describe('Edge Cases and Error Handling', () => {
     
     // Test with limit=0 (should fail)
     const response1 = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs?limit=0`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs?limit=0`
     );
     expect([400, 422]).toContain(response1.status());
     
     // Test with very large limit
     const response2 = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs?limit=1000`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs?limit=1000`
     );
     // Should either succeed with clamped limit or return 400
     expect([200, 400, 422]).toContain(response2.status());
@@ -99,7 +99,7 @@ test.describe('Edge Cases and Error Handling', () => {
 
   test('should handle deletion of non-existent resources', async ({ api, testProject }) => {
     const response = await api.delete(
-      `http://localhost:8000/api/projects/${testProject.id}/ingest/jobs/non-existent-id`
+      `${API_BASE_URL}/projects/${testProject.id}/ingest/jobs/non-existent-id`
     );
     
     expect(response.status()).toBe(404);
@@ -107,7 +107,7 @@ test.describe('Edge Cases and Error Handling', () => {
 
   test('should handle update of non-existent resources', async ({ api, testProject }) => {
     const response = await api.patch(
-      `http://localhost:8000/api/projects/${testProject.id}/roadmap/nodes/non-existent-id`,
+      `${API_BASE_URL}/projects/${testProject.id}/roadmap/nodes/non-existent-id`,
       {
         data: { status: 'ACTIVE' },
       }
@@ -125,7 +125,7 @@ test.describe('Edge Cases and Error Handling', () => {
     
     // Try to add item exceeding budget
     const response = await api.post(
-      `http://localhost:8000/api/projects/${testProject.id}/context/items`,
+      `${API_BASE_URL}/projects/${testProject.id}/context/items`,
       {
         data: {
           items: [
@@ -145,7 +145,7 @@ test.describe('Edge Cases and Error Handling', () => {
   test('should handle empty lists gracefully', async ({ api, testProject }) => {
     // List operations should return empty arrays, not errors
     const response = await api.get(
-      `http://localhost:8000/api/projects/${testProject.id}/agent-runs`
+      `${API_BASE_URL}/projects/${testProject.id}/agent-runs`
     );
     
     expect(response.ok()).toBeTruthy();

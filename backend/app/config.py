@@ -14,7 +14,12 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3002",
             "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:3002",
         ]
     )
 
@@ -39,10 +44,21 @@ class Settings(BaseSettings):
     lane_coder_model: str = Field(default="", env="CORTEX_LANE_CODER_MODEL")
     lane_super_reader_url: str = Field(default="", env="CORTEX_LANE_SUPER_READER_URL")
     lane_super_reader_model: str = Field(default="", env="CORTEX_LANE_SUPER_READER_MODEL")
+    lane_super_reader_model_path: str = Field(default="", env="CORTEX_LANE_SUPER_READER_MODEL_PATH")
+    lane_coder_model_path: str = Field(default="", env="CORTEX_LANE_CODER_MODEL_PATH")
     lane_fast_rag_url: str = Field(default="", env="CORTEX_LANE_FAST_RAG_URL")
     lane_fast_rag_model: str = Field(default="", env="CORTEX_LANE_FAST_RAG_MODEL")
+    lane_fast_rag_model_path: str = Field(default="", env="CORTEX_LANE_FAST_RAG_MODEL_PATH")
     lane_governance_url: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_URL")
     lane_governance_model: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_MODEL")
+    lane_governance_model_path: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_MODEL_PATH")
+    
+    # Optional: Per-lane backend selection (overrides auto-detection)
+    lane_orchestrator_backend: str = Field(default="", env="CORTEX_LANE_ORCHESTRATOR_BACKEND")
+    lane_coder_backend: str = Field(default="", env="CORTEX_LANE_CODER_BACKEND")
+    lane_super_reader_backend: str = Field(default="llama_cpp", env="CORTEX_LANE_SUPER_READER_BACKEND")
+    lane_fast_rag_backend: str = Field(default="", env="CORTEX_LANE_FAST_RAG_BACKEND")
+    lane_governance_backend: str = Field(default="llama_cpp", env="CORTEX_LANE_GOVERNANCE_BACKEND")
     
     # llama.cpp settings (when llm_backend="llama_cpp")
     llama_cpp_binary_path: str = Field(
@@ -53,8 +69,9 @@ class Settings(BaseSettings):
         default="",
         env="CORTEX_LLAMA_CPP_MODEL_PATH"
     )
-    llama_cpp_n_ctx: int = Field(default=4096, env="CORTEX_LLAMA_CPP_N_CTX")  # Context window size
+    llama_cpp_n_ctx: int = Field(default=4096, env="CORTEX_LLAMA_CPP_N_CTX")  # Context window size (can be up to 4M for ultra-long context)
     llama_cpp_n_threads: int = Field(default=4, env="CORTEX_LLAMA_CPP_N_THREADS")  # CPU threads
+    llama_cpp_n_gpu_layers: int = Field(default=99, env="CORTEX_LLAMA_CPP_N_GPU_LAYERS")  # GPU layers (99 = all layers for ROCm)
 
     # --- Execution mode defaults ---
     normal_mode_llm_temperature: float = Field(0.2, env="CORTEX_NORMAL_TEMP")
@@ -70,6 +87,13 @@ class Settings(BaseSettings):
 
     # Qdrant settings
     qdrant_url: str = Field(default="http://localhost:6333", env="CORTEX_QDRANT_URL")
+
+    # n8n settings
+    n8n_base_url: str = Field(default="http://localhost:5678", env="CORTEX_N8N_BASE_URL")
+    n8n_api_key: str = Field(default="", env="CORTEX_N8N_API_KEY")
+    n8n_webhook_timeout: int = Field(default=300, env="CORTEX_N8N_WEBHOOK_TIMEOUT")  # 5 minutes default
+    n8n_max_retries: int = Field(default=3, env="CORTEX_N8N_MAX_RETRIES")
+    n8n_retry_delay: float = Field(default=1.0, env="CORTEX_N8N_RETRY_DELAY")  # seconds
 
     # Hugging Face token for authenticated model downloads (optional, for private/gated models)
     # Note: huggingface-hub and sentence-transformers automatically use HF_TOKEN from environment

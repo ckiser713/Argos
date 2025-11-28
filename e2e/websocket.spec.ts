@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, WS_BASE_URL } from './utils/api-helpers';
 import WebSocket from 'ws';
 
 /**
@@ -14,7 +14,7 @@ test.describe('WebSocket/Streaming', () => {
     // Create an ingest job
     const job = await apiHelpers.createIngestJob(testProject.id, 'test-document.md');
     
-    const wsUrl = `ws://localhost:8000/api/stream/projects/${testProject.id}/ingest/${job.id}`;
+    const wsUrl = `${WS_BASE_URL}/projects/${testProject.id}/ingest/${job.id}`;
     const message = await waitForFirstMessage(wsUrl);
     expect(message).toHaveProperty('type');
     expect(message.job?.id).toBe(job.id);
@@ -30,7 +30,7 @@ test.describe('WebSocket/Streaming', () => {
       'Test query'
     );
 
-    const wsUrl = `ws://localhost:8000/api/stream/projects/${testProject.id}/agent-runs/${run.id}`;
+    const wsUrl = `${WS_BASE_URL}/projects/${testProject.id}/agent-runs/${run.id}`;
     const message = await waitForFirstMessage(wsUrl);
     expect(message).toHaveProperty('type');
     expect(message.run?.id).toBe(run.id);

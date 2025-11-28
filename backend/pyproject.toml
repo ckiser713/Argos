@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "FastAPI backend for Project Cortex"
 authors = ["Your Name <you@example.com>"]
 readme = "README-backend.md"
+packages = [ { include = "app" } ]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -14,6 +15,8 @@ pydantic-settings = "^2.3.4"
 python-jose = "^3.3.0"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 sentence-transformers = "^2.2.2"
+transformers = "^4.34.0"
+huggingface-hub = "^0.17.0"
 qdrant-client = "^1.7.3"
 pypdf = "^3.17.4"
 langgraph = "^1.0.0"

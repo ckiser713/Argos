@@ -25,6 +25,8 @@ services:
       - 5173:5173
     depends_on:
       - backend
+    environment:
+      - VITE_CORTEX_API_BASE_URL=http://backend:8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5173"]
       interval: 10s
@@ -44,9 +46,11 @@ services:
       - PLAYWRIGHT_BASE_URL=http://frontend:5173
       - PLAYWRIGHT_API_BASE=http://backend:8000/api
       - CORTEX_SKIP_AUTH=true
-    entrypoint: ["sh", "-c"]
+    entrypoint: ["bash", "-lc"]
     command:
-      - "pnpm install --silent && pnpm exec playwright install --with-deps || pnpm exec playwright install && pnpm exec playwright test --timeout=60000 --reporter=list --reporter=html"
+      - "bash /work/tools/entrypoint_playwright.sh"
+    restart: 'no'
+    tty: false
     # --- Keep these in the first `environment` block to avoid duplication
 
   qdrant:

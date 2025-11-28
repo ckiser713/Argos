@@ -77,7 +77,7 @@ Only needed if building custom PyTorch tools:
 ./backend/scripts/install_rocm_wheels.sh
 
 # Verify
-python3 -c "import torch; print(torch.version.hip)"
+python3.11 -c "import torch; print(torch.version.hip)"
 ```
 
 ## Troubleshooting

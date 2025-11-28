@@ -8,7 +8,7 @@ from app.domain.models import (
     RoadmapGraph,
     RoadmapNode,
 )
-from app.services.roadmap_service import roadmap_service
+from app.services.roadmap_service import roadmap_service, generate_roadmap_from_project_intent
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter()
@@ -120,3 +120,32 @@ def get_roadmap_graph(
     project_id: str,
 ) -> RoadmapGraph:
     return roadmap_service.get_graph(project_id)
+
+
+@router.post(
+    "/projects/{project_id}/roadmap/generate",
+    response_model=RoadmapGraph,
+    status_code=201,
+    summary="Generate roadmap from project intent",
+)
+def generate_roadmap(
+    project_id: str,
+    request: dict,
+) -> RoadmapGraph:
+    """
+    Generate a roadmap DAG from natural language intent.
+    Optionally incorporates existing project ideas and knowledge.
+    """
+    intent = request.get("intent")
+    use_existing_ideas = request.get("use_existing_ideas", True)
+    
+    try:
+        return generate_roadmap_from_project_intent(
+            project_id=project_id,
+            intent=intent,
+            use_existing_ideas=use_existing_ideas,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate roadmap: {str(e)}")

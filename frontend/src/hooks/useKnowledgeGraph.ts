@@ -6,6 +6,7 @@ import {
   getKnowledgeNodeNeighbors,
   createKnowledgeNode,
   updateKnowledgeNode,
+  deleteKnowledgeNode,
   createKnowledgeEdge,
   deleteKnowledgeEdge,
   searchKnowledge,
@@ -121,6 +122,21 @@ export function useUpdateKnowledgeNode(projectId: string) {
       queryClient.invalidateQueries({ queryKey: knowledgeGraphQueryKey(projectId) });
       queryClient.invalidateQueries({ queryKey: knowledgeNodeQueryKey(projectId, variables.nodeId) });
       queryClient.invalidateQueries({ queryKey: knowledgeNodeNeighborsQueryKey(projectId, variables.nodeId) });
+    },
+  });
+
+  return mutation;
+}
+
+/**
+ * Delete a knowledge node.
+ */
+export function useDeleteKnowledgeNode(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (nodeId: string) => deleteKnowledgeNode(projectId, nodeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: knowledgeGraphQueryKey(projectId) });
     },
   });
 

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 test.describe('Project Intel API', () => {
   test('should rebuild project intel', async ({ api, testProject }) => {
@@ -103,7 +103,7 @@ test.describe('Project Intel API', () => {
   test('should handle invalid ticket ID', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/ideas/tickets/invalid-id`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/ideas/tickets/invalid-id`, {
       data: { status: 'triaged' },
     });
     expect(response.status()).toBe(404);
@@ -112,10 +112,11 @@ test.describe('Project Intel API', () => {
   test('should require at least one field for ticket update', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/ideas/tickets/some-id`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/ideas/tickets/some-id`, {
       data: {},
     });
     expect(response.status()).toBe(400);
   });
 });
+
 

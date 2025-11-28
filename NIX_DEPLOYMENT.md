@@ -244,3 +244,4 @@ For production deployments:
 - `nix-deploy.sh` - Deployment script
 - `ops/docker-compose.yml` - Docker services configuration
 
+

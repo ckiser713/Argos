@@ -17,6 +17,8 @@ import { DecisionFlowMap } from './components/DecisionFlowMap';
 import { SoundProvider } from './components/SoundManager';
 import { ContextItem } from './components/ContextPrism';
 import { Activity, Shield, Cpu, Terminal, Wifi, Database } from 'lucide-react';
+import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
+import { useCortexStore } from '@src/state/cortexStore';
 import { Node, Edge } from 'reactflow';
 
 // Mock Context Data
@@ -63,6 +65,42 @@ const AppContent: React.FC = () => {
 
   // Context State
   const [contextItems, setContextItems] = useState<ContextItem[]>(INITIAL_CONTEXT_ITEMS);
+
+  // Load projects and set current project
+  const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
+  const { project: currentProject } = useCurrentProject();
+  const setCurrentProjectId = useCortexStore((s) => s.setCurrentProjectId);
+
+  // Set first project as current if none selected
+  useEffect(() => {
+    if (projects && projects.length > 0 && !currentProject) {
+      setCurrentProjectId(projects[0].id);
+    }
+  }, [projects, currentProject, setCurrentProjectId]);
+
+  // Show loading state while projects are loading
+  if (projectsLoading) {
+    return (
+      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan mx-auto mb-4"></div>
+          <p className="text-gray-400 font-mono">Loading projects...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if projects failed to load
+  if (projectsError) {
+    return (
+      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 mb-4">Failed to load projects</div>
+          <p className="text-gray-400 font-mono text-sm">{projectsError.message}</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleEjectContext = (id: string) => {
     setContextItems(prev => prev.filter(item => item.id !== id));
@@ -244,7 +282,9 @@ const AppContent: React.FC = () => {
                   <span className="flex items-center gap-1 text-xs font-mono text-purple"><div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[8px] border-b-purple"></div> CHAT</span>
                </div>
              </div>
-             <KnowledgeNexus />
+             <div className="flex items-center justify-center h-full bg-panel/50 rounded-xl">
+               <p className="text-gray-400 font-mono">Knowledge Nexus - Coming Soon</p>
+             </div>
           </motion.div>
         );
 

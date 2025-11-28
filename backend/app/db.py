@@ -41,6 +41,7 @@ def db_session() -> Iterator[sqlite3.Connection]:
 def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
     """Add any ingest_jobs columns that existed in newer schema versions."""
     required_columns = {
+        "source_path": "source_path TEXT",
         "deleted_at": "deleted_at TEXT",
         "message": "message TEXT",
         "error_message": "error_message TEXT",
@@ -49,6 +50,13 @@ def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
     for column_name, definition in required_columns.items():
         if column_name not in existing_columns:
             conn.execute(f"ALTER TABLE ingest_jobs ADD COLUMN {definition}")
+    # Backfill source_path for legacy rows using original_filename if present
+    if "source_path" in required_columns and "source_path" not in existing_columns:
+        try:
+            conn.execute("UPDATE ingest_jobs SET source_path = 'temp_uploads/' || original_filename WHERE source_path IS NULL OR source_path = ''")
+        except Exception:
+            # Ignore errors if data cannot be updated (e.g., missing columns)
+            pass
 
 
 def init_db() -> None:
@@ -88,6 +96,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS ingest_jobs (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
+                source_path TEXT,
                 source_id TEXT NOT NULL,
                 original_filename TEXT NOT NULL,
                 byte_size INTEGER NOT NULL DEFAULT 0,

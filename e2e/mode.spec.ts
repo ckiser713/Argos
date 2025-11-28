@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 import { TestDataFactory } from './utils/test-data-factory';
 
 test.describe('Mode API', () => {
@@ -77,7 +77,7 @@ test.describe('Mode API', () => {
   test('should require at least one field for update', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/mode`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/mode`, {
       data: {},
     });
     expect(response.status()).toBe(400);
@@ -86,7 +86,7 @@ test.describe('Mode API', () => {
   test('should validate temperature range', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/mode`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/mode`, {
       data: {
         llm_temperature: 3.0, // Invalid: should be <= 2.0
       },
@@ -97,7 +97,7 @@ test.describe('Mode API', () => {
   test('should validate validation passes range', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.patch(`http://localhost:8000/api/projects/${testProject.id}/mode`, {
+    const response = await api.patch(`${API_BASE_URL}/projects/${testProject.id}/mode`, {
       data: {
         validation_passes: 15, // Invalid: should be <= 10
       },
@@ -105,4 +105,5 @@ test.describe('Mode API', () => {
     expect(response.status()).toBe(422); // Validation error
   });
 });
+
 

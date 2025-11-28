@@ -88,7 +88,8 @@ async def upload_file(project_id: str, background_tasks: BackgroundTasks, file: 
     with file_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    job = ingest_service.create_job(project_id=project_id, request=IngestRequest(source_path=str(file_path)))
+    # Store absolute path for robustness across working directory changes
+    job = ingest_service.create_job(project_id=project_id, request=IngestRequest(source_path=str(file_path.resolve())))
     background_tasks.add_task(ingest_service.process_job, job.id)
 
     return {"filename": file.filename, "job_id": job.id}

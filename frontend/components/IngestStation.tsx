@@ -1,7 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, FileText, Cpu, Zap, X, Binary } from 'lucide-react';
 import { GlassCard } from './GlassCard';
-import { useIngestJobs, useDeleteIngestJob } from '../src/hooks/useIngestJobs';
+import { useIngestJobs, useDeleteIngestJob } from '@src/hooks/useIngestJobs';
+import { useCurrentProject } from '@src/hooks/useProjects';
+import { uploadIngestFile } from '@src/lib/cortexApi';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorDisplay } from '../src/components/ErrorDisplay';
 import { getErrorMessage } from '../src/lib/errorHandling';
@@ -20,7 +22,8 @@ export const IngestStation: React.FC = () => {
   const [isDeepScan, setIsDeepScan] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   
-  const projectId = "default_project";
+  const { project } = useCurrentProject();
+  const projectId = project?.id;
   const queryClient = useQueryClient();
   const { data: jobsData, isLoading, error, refetch } = useIngestJobs(projectId);
   const deleteMutation = useDeleteIngestJob(projectId);
@@ -52,45 +55,30 @@ export const IngestStation: React.FC = () => {
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     
     const droppedFiles = Array.from(e.dataTransfer.files);
-    if (droppedFiles.length > 0) {
+    if (droppedFiles.length > 0 && projectId) {
         const formData = new FormData();
-        formData.append("file", droppedFiles[0]);
-
-        fetch("/api/ingest/upload", {
-            method: "POST",
-            body: formData,
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log("Upload successful, job created:", data.job_id);
-            queryClient.invalidateQueries({ queryKey: ['ingestJobs', { projectId }] });
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log("Upload successful, job created:", data.job_id);
-            queryClient.invalidateQueries({ queryKey: ['ingestJobs', { projectId }] });
-            const toast = (window as any).__cortexToast;
-            if (toast) {
-                toast.success("File uploaded successfully");
-            }
-        })
-        .catch(error => {
-            console.error("Error uploading file:", error);
-            const toast = (window as any).__cortexToast;
-            if (toast) {
-                toast.error(`Upload failed: ${getErrorMessage(error)}`);
-            }
-        });
+        const file = droppedFiles[0];
+        try {
+          const data = await uploadIngestFile(projectId, file);
+          console.log("Upload successful, job created:", data.job_id);
+          queryClient.invalidateQueries({ queryKey: ['ingestJobs', { projectId }] });
+          const toast = (window as any).__cortexToast;
+          if (toast) toast.success("File uploaded successfully");
+        } catch (error) {
+          console.error("Error uploading file:", error);
+          const toast = (window as any).__cortexToast;
+          if (toast) {
+            toast.error(`Upload failed: ${getErrorMessage(error as Error)}`);
+          }
+        }
+      } else if (!projectId) {
+        const toast = (window as any).__cortexToast;
+        if (toast) toast.error('No project selected. Please pick a project to upload files.');
     }
   }, [queryClient, projectId]);
 
@@ -100,6 +88,11 @@ export const IngestStation: React.FC = () => {
 
   const confirmDelete = () => {
     if (deleteConfirm) {
+      if (!projectId) {
+        const toast = (window as any).__cortexToast;
+        if (toast) toast.error('No project selected. Cannot delete ingest job.');
+        return;
+      }
       deleteMutation.mutate(deleteConfirm, {
         onSuccess: () => {
           setDeleteConfirm(null);

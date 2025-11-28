@@ -2,35 +2,7 @@
 set -euo pipefail
 
 # Deploy the project, ingest a takeout directory, and monitor ingest jobs.
-# Usage:
-if [ "$WITH_INFERENCE" = "true" ]; then
-  echo "Starting inference stack (Qdrant + inference engine) via ops/docker-compose.yml..."
-  set +e
-  (cd "$ROOT_DIR/ops" && docker-compose up -d)
-  CI=$?
-  set -e
-  if [ "$CI" -ne 0 ]; then
-    echo "⚠ Failed to start the full inference engine via ops/docker-compose.yml (image/build not found)."
-    echo "⚠ Continuing without inference engine; Qdrant may not be available for embeddings."
-    # Try to bring up only qdrant if available in ops/docker-compose.yml
-    echo "Attempting to start qdrant only..."
-    set +e
-    (cd "$ROOT_DIR/ops" && docker-compose up -d qdrant) || true
-    set -e
-  fi
-  echo "Waiting for Qdrant to become healthy..."
-  for i in {1..60}; do
-    if curl -sS --fail http://localhost:6333/health >/dev/null 2>&1 ; then
-      echo "Qdrant ready"
-      break
-    fi
-    echo "Waiting for Qdrant..."
-    sleep 2
-  done
-fi
-
-#   bash tools/deploy_and_ingest.sh [--takeout ~/takeout] [--with-inference] [--api-url http://127.0.0.1:8000]
-
+# Usage: bash tools/deploy_and_ingest.sh [--takeout ~/takeout] [--with-inference] [--api-url http://127.0.0.1:8000]
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 API_URL="${API_URL:-http://127.0.0.1:8000}"
 TAKEOUT_DIR="${TAKEOUT_DIR:-$HOME/takeout}"
@@ -57,7 +29,17 @@ fi
 # Optionally start inference engine and qdrant using ops/docker-compose.yml
 if [ "$WITH_INFERENCE" = "true" ]; then
   echo "Starting inference stack (Qdrant + inference engine) via ops/docker-compose.yml..."
+  set +e
   (cd "$ROOT_DIR/ops" && docker-compose up -d)
+  CI=$?
+  set -e
+  if [ "$CI" -ne 0 ]; then
+    echo "⚠ Failed to start the full inference engine via ops/docker-compose.yml (image/build not found)."
+    echo "⚠ Continuing without inference engine; attempting to start qdrant only."
+    set +e
+    (cd "$ROOT_DIR/ops" && docker-compose up -d qdrant) || true
+    set -e
+  fi
   echo "Waiting for Qdrant to become healthy..."
   for i in {1..60}; do
     if curl -sS --fail http://localhost:6333/health >/dev/null 2>&1 ; then
@@ -144,29 +126,32 @@ if [ -z "$PROJECT_ID" ]; then
 else
   echo "Monitoring ingest jobs for project: $PROJECT_ID..."
   # Poll the ingest jobs and wait until none are RUNNING
-  while true; do
+    while true; do
     sleep 8
-    python3 - <<PY
-import requests,os
-api=os.environ.get('API_URL','${API_URL}')
-pid='${PROJECT_ID}'
-try:
+    read -r running statuses <<< $(python3 - <<PY
+  import requests,os,json
+  api=os.environ.get('API_URL','${API_URL}')
+  pid='${PROJECT_ID}'
+  try:
     r = requests.get(f"{api}/api/projects/{pid}/ingest/jobs")
     r.raise_for_status()
     items = r.json().get('items') or r.json()
     stat = {}
     for j in (items or []):
-        s = j.get('status','UNKNOWN')
-        stat[s] = stat.get(s,0)+1
-    print('Ingest job statuses:', stat)
+      s = j.get('status','UNKNOWN')
+      stat[s] = stat.get(s,0)+1
     running = stat.get('RUNNING',0) + stat.get('PENDING',0)
-    if running == 0:
-        print('No running ingest jobs')
-        break
-except Exception as e:
-    print('Failed to query ingest jobs:', e)
+    print(str(running), json.dumps(stat))
+  except Exception as e:
+    print('1', json.dumps({'error': str(e)}))
 PY
-  done
+  )
+    echo "Ingest job statuses: $statuses"
+    if [ "$running" -eq 0 ]; then
+      echo "No running ingest jobs"
+      break
+    fi
+    done
 fi
 
 echo "Deployment and ingestion completed. You can monitor logs:"

@@ -87,6 +87,22 @@ def update_knowledge_node(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.delete(
+    "/projects/{project_id}/knowledge-graph/nodes/{node_id}",
+    status_code=200,
+    summary="Delete knowledge node",
+)
+def delete_knowledge_node(
+    project_id: str,
+    node_id: str,
+):
+    try:
+        knowledge_service.delete_node(project_id, node_id)
+        return {"success": True}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post(
     "/projects/{project_id}/knowledge-graph/edges",
     response_model=KnowledgeEdge,
@@ -123,3 +139,46 @@ def search_knowledge(
     request: KnowledgeSearchRequest,
 ) -> List[KnowledgeNode]:
     return knowledge_service.search(project_id, request)
+
+
+@router.post(
+    "/projects/{project_id}/knowledge/auto-link",
+    response_model=List[KnowledgeEdge],
+    summary="Automatically link similar knowledge nodes",
+)
+def auto_link_knowledge_nodes(
+    project_id: str,
+    request: dict,
+) -> List[KnowledgeEdge]:
+    """
+    Automatically create knowledge edges between nodes with high semantic similarity.
+    """
+    similarity_threshold = request.get("similarity_threshold", 0.7)
+    return knowledge_service.auto_link_documents(project_id, similarity_threshold)
+
+
+@router.post(
+    "/projects/{project_id}/knowledge/link-document-to-repo",
+    response_model=KnowledgeEdge,
+    summary="Link a document node to a repository node",
+)
+def link_document_to_repo(
+    project_id: str,
+    request: dict,
+) -> KnowledgeEdge:
+    """
+    Manually create a link between a document (PDF) and a repository node.
+    """
+    document_node_id = request["document_node_id"]
+    repo_node_id = request["repo_node_id"]
+    link_strength = request.get("link_strength")
+    
+    try:
+        return knowledge_service.link_document_to_repo(
+            project_id,
+            document_node_id,
+            repo_node_id,
+            link_strength,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

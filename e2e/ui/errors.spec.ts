@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures';
-import { ApiHelpers } from '../utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from '../utils/api-helpers';
 
 test.describe('Error Handling UI Tests', () => {
   test('should handle API error messages in UI', async ({ authenticatedPage, api }) => {
@@ -7,7 +7,7 @@ test.describe('Error Handling UI Tests', () => {
     await authenticatedPage.waitForLoadState('networkidle');
 
     // Try to access a non-existent resource
-    const response = await api.get('http://localhost:8000/api/projects/invalid-project-id');
+    const response = await api.get(`${API_BASE_URL}/projects/invalid-project-id`);
     expect(response.status()).toBe(404);
 
     // Verify page is still functional
@@ -40,7 +40,7 @@ test.describe('Error Handling UI Tests', () => {
     await authenticatedPage.waitForLoadState('networkidle');
 
     // Try to create project with invalid data
-    const response = await api.post('http://localhost:8000/api/projects', {
+    const response = await api.post(`${API_BASE_URL}/projects`, {
       data: {
         // Invalid: missing required 'name' field
         description: 'Test',
@@ -59,7 +59,7 @@ test.describe('Error Handling UI Tests', () => {
     await authenticatedPage.waitForLoadState('networkidle');
 
     // Try to get non-existent resource
-    const response = await api.get('http://localhost:8000/api/projects/non-existent-id');
+    const response = await api.get(`${API_BASE_URL}/projects/non-existent-id`);
     expect(response.status()).toBe(404);
 
     // Verify page is still functional
@@ -100,7 +100,7 @@ test.describe('Error Handling UI Tests', () => {
     await authenticatedPage.waitForLoadState('networkidle');
 
     // Try invalid operation
-    const invalidResponse = await api.get(`http://localhost:8000/api/projects/${testProject.id}/workflows/graphs/invalid-id`);
+    const invalidResponse = await api.get(`${API_BASE_URL}/projects/${testProject.id}/workflows/graphs/invalid-id`);
     expect(invalidResponse.status()).toBe(404);
 
     // Then try valid operation
@@ -113,4 +113,5 @@ test.describe('Error Handling UI Tests', () => {
     await expect(body).toBeVisible();
   });
 });
+
 

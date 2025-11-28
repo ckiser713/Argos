@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchRoadmap,
+  generateRoadmap,
   listRoadmapNodes,
   createRoadmapNode,
   updateRoadmapNode,
@@ -151,6 +152,23 @@ export function useDeleteRoadmapEdge(projectId: string) {
     mutationFn: (edgeId: string) => deleteRoadmapEdge(projectId, edgeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: roadmapQueryKey(projectId) });
+    },
+  });
+
+  return mutation;
+}
+
+/**
+ * Generate roadmap from project intent.
+ */
+export function useGenerateRoadmap(projectId: string) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (params: { intent?: string; useExistingIdeas?: boolean }) =>
+      generateRoadmap(projectId, params.intent, params.useExistingIdeas ?? true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: roadmapQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: roadmapNodesQueryKey(projectId) });
     },
   });
 

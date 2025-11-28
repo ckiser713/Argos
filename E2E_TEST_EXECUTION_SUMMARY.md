@@ -68,6 +68,15 @@ sudo apt-get install libasound2t64
 pnpm e2e
 ```
 
+### Run All Tests via Docker Compose (recommended for CI)
+```bash
+# Optionally filter tests via PLAYWRIGHT_TEST_ARGS, e.g., run a single spec
+PLAYWRIGHT_TEST_ARGS="e2e/accessibility.spec.ts --project=chromium" \
+  docker-compose -f docker-compose.e2e.yml up --build --remove-orphans --abort-on-container-exit
+```
+
+Note: The Playwright runner container now exits when tests complete (it runs tests via an entrypoint script that ensures report servers are terminated), and Compose will stop backend/frontend services using `--abort-on-container-exit`.
+
 ### Run Specific Suites
 ```bash
 # API tests (working)

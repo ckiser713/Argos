@@ -31,6 +31,10 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     /* Increase timeout for slow environments */
     actionTimeout: 30000,
+    /* Ensure consistent device scaling for screenshots */
+    deviceScaleFactor: 1,
+    /* Default viewport to help visual regression tests remain stable */
+    viewport: { width: 1408, height: 864 },
     /* Visual comparison threshold */
     video: 'retain-on-failure',
   },
@@ -78,7 +82,7 @@ export default defineConfig({
     /* Tablet viewports */
     {
       name: 'Tablet Chrome',
-      use: { ...devices['iPad Pro'] },
+      use: { ...devices['iPad Pro'], deviceScaleFactor: 1 },
     },
   ],
 

@@ -16,7 +16,7 @@ from app.domain.models import (
     RoadmapNodePriority,
     RoadmapNodeStatus,
 )
-from app.services.llm_service import generate_text
+from app.services.llm_service import generate_text, ModelLane
 
 logger = logging.getLogger(__name__)
 
@@ -429,9 +429,9 @@ def create_roadmap_nodes_from_intent(project_id: str, intent: str) -> List[Roadm
         extra={"project_id": project_id, "intent": intent[:100]},
     )
     
-    # Generate structured roadmap plan using LLM
-    prompt = f"""Given the following intent, create a structured roadmap with multiple nodes.
-Break down the intent into logical, sequential steps that can be tracked independently.
+    # Generate structured roadmap plan using LLM with decision nodes support
+    prompt = f"""Given the following intent, create a structured roadmap as a Directed Acyclic Graph (DAG).
+Break down the intent into logical phases with decision nodes where technology choices are needed.
 
 Intent: {intent}
 
@@ -440,23 +440,47 @@ Generate a JSON array of roadmap nodes. Each node should have:
 - description: A detailed description of what needs to be done (optional)
 - status: One of ["pending", "in_progress", "blocked", "done"] (default: "pending")
 - priority: One of ["low", "medium", "high"] (optional)
-- depends_on_ids: Array of node labels this node depends on (optional, for sequencing)
+- node_type: One of ["task", "milestone", "decision"] (default: "task")
+  - "task": Regular work item
+  - "milestone": Major checkpoint or deliverable
+  - "decision": Point where a choice needs to be made (e.g., "Choose Database: PostgreSQL vs MongoDB")
+- depends_on_labels: Array of node labels this node depends on (for sequencing)
+- decision_options: If node_type is "decision", provide array of options (optional)
 
 Return ONLY a valid JSON array, no markdown formatting, no explanation.
 Example format:
 [
   {{
+    "label": "Phase 1: Setup",
+    "description": "Initial project setup and infrastructure",
+    "status": "pending",
+    "priority": "high",
+    "node_type": "milestone"
+  }},
+  {{
+    "label": "Choose Database",
+    "description": "Select database technology for the project",
+    "status": "pending",
+    "priority": "high",
+    "node_type": "decision",
+    "decision_options": ["PostgreSQL", "MongoDB", "SQLite"],
+    "depends_on_labels": ["Phase 1: Setup"]
+  }},
+  {{
     "label": "Setup database schema",
     "description": "Create initial database tables and migrations",
     "status": "pending",
-    "priority": "high"
+    "priority": "high",
+    "node_type": "task",
+    "depends_on_labels": ["Choose Database"]
   }},
   {{
     "label": "Implement API endpoints",
     "description": "Create REST API endpoints for the feature",
     "status": "pending",
     "priority": "high",
-    "depends_on_ids": ["Setup database schema"]
+    "node_type": "task",
+    "depends_on_labels": ["Setup database schema"]
   }}
 ]"""
 
@@ -465,7 +489,8 @@ Example format:
         llm_response = generate_text(
             prompt=prompt,
             project_id=project_id,
-            base_temperature=0.3,
+            lane=ModelLane.ORCHESTRATOR,
+            temperature=0.3,
             max_tokens=2000,
             json_mode=True,
         )
@@ -491,9 +516,7 @@ Example format:
         
         # First pass: create all nodes without dependencies
         for node_data in nodes_data:
-            node_id = str(uuid.uuid4())
             label = node_data.get("label", "Untitled Node")
-            label_to_id_map[label] = node_id
             
             node_payload = {
                 "label": label,
@@ -502,42 +525,64 @@ Example format:
                 "priority": node_data.get("priority"),
             }
             
+            # Store decision options in description if present
+            node_type = node_data.get("node_type", "task")
+            if node_type == "decision":
+                decision_options = node_data.get("decision_options", [])
+                if decision_options:
+                    options_text = "Options: " + ", ".join(decision_options)
+                    if node_payload.get("description"):
+                        node_payload["description"] += f"\n\n{options_text}"
+                    else:
+                        node_payload["description"] = options_text
+            
             node = roadmap_service.create_node(project_id, node_payload)
+            label_to_id_map[label] = node.id
             created_nodes.append(node)
         
-        # Second pass: update nodes with resolved dependency IDs
+        # Second pass: update nodes with resolved dependency IDs and create edges
         for i, node_data in enumerate(nodes_data):
-            depends_on_labels = node_data.get("depends_on_ids", [])
+            node = created_nodes[i]
+            depends_on_labels = node_data.get("depends_on_labels", node_data.get("depends_on_ids", []))
             if depends_on_labels:
                 depends_on_ids = [
                     label_to_id_map[label]
                     for label in depends_on_labels
                     if label in label_to_id_map
                 ]
+                
                 if depends_on_ids:
-                    # Update the node with dependencies
+                    # Update node with dependency IDs
                     roadmap_service.update_node(
                         project_id,
-                        created_nodes[i].id,
+                        node.id,
                         {"depends_on_ids": depends_on_ids},
                     )
-                    # Refresh the node object
-                    created_nodes[i] = roadmap_service.get_node(project_id, created_nodes[i].id)
+                    
+                    # Create edges for dependencies
+                    for dep_id in depends_on_ids:
+                        try:
+                            roadmap_service.create_edge(
+                                project_id,
+                                {
+                                    "from_node_id": dep_id,
+                                    "to_node_id": node.id,
+                                    "kind": "depends_on",
+                                },
+                            )
+                        except ValueError as e:
+                            # Edge might already exist, skip
+                            logger.debug(f"Skipping edge creation: {e}")
         
         logger.info(
             "roadmap_service.create_roadmap_nodes_from_intent.success",
-            extra={
-                "project_id": project_id,
-                "nodes_created": len(created_nodes),
-                "node_ids": [n.id for n in created_nodes],
-            },
+            extra={"project_id": project_id, "nodes_created": len(created_nodes)},
         )
         
         return created_nodes
-        
     except json.JSONDecodeError as e:
         logger.error(
-            "roadmap_service.create_roadmap_nodes_from_intent.json_parse_error",
+            "roadmap_service.create_roadmap_nodes_from_intent.json_error",
             extra={"project_id": project_id, "error": str(e), "response": llm_response[:500]},
         )
         raise ValueError(f"Failed to parse LLM response as JSON: {e}")
@@ -546,4 +591,93 @@ Example format:
             "roadmap_service.create_roadmap_nodes_from_intent.error",
             extra={"project_id": project_id, "error": str(e)},
         )
-        raise ValueError(f"Failed to create roadmap nodes from intent: {e}")
+        raise
+
+
+def generate_roadmap_from_project_intent(
+    project_id: str,
+    intent: Optional[str] = None,
+    use_existing_ideas: bool = True,
+) -> RoadmapGraph:
+    """
+    Generate a complete roadmap DAG from project intent, ideas, and knowledge.
+    This is the main entry point for dynamic roadmap generation.
+    
+    Args:
+        project_id: Project ID
+        intent: Optional natural language intent (if None, extracts from project ideas)
+        use_existing_ideas: Whether to incorporate existing idea tickets
+        
+    Returns:
+        RoadmapGraph with nodes and edges
+    """
+    logger.info(
+        "roadmap_service.generate_roadmap_from_project_intent.start",
+        extra={"project_id": project_id, "has_intent": intent is not None},
+    )
+    
+    # Gather context from project
+    from app.services.knowledge_service import knowledge_service
+    from app.services.idea_service import idea_service
+    
+    # Get project ideas if available
+    ideas_context = ""
+    if use_existing_ideas:
+        try:
+            tickets = idea_service.list_tickets(project_id, limit=20)
+            if tickets.items:
+                ideas_context = "\n".join([
+                    f"- {ticket.title}: {ticket.description or ''}"
+                    for ticket in tickets.items[:10]
+                ])
+        except Exception as e:
+            logger.warning(f"Failed to fetch ideas: {e}")
+    
+    # Get relevant knowledge nodes
+    knowledge_context = ""
+    try:
+        from app.domain.models import KnowledgeSearchRequest
+        # Search for relevant knowledge
+        search_request = KnowledgeSearchRequest(
+            query=intent or "project requirements",
+            max_results=5,
+        )
+        search_results = knowledge_service.search(project_id, search_request)
+        if search_results:
+            knowledge_context = "\n".join([
+                f"- {node.title}: {node.summary or ''}"
+                for node in search_results[:5]
+            ])
+    except Exception as e:
+        logger.warning(f"Failed to fetch knowledge: {e}")
+    
+    # Build comprehensive intent
+    if not intent:
+        intent = f"Create a roadmap based on the following project ideas:\n{ideas_context}"
+    
+    enhanced_intent = f"""{intent}
+
+Context from existing ideas:
+{ideas_context if ideas_context else "None"}
+
+Relevant knowledge:
+{knowledge_context if knowledge_context else "None"}
+
+Generate a comprehensive roadmap with:
+1. Sequential phases (setup, implementation, testing, deployment)
+2. Decision nodes where technology choices need to be made
+3. Proper dependencies between tasks
+4. Links to relevant research/knowledge where applicable"""
+    
+    # Generate roadmap nodes
+    nodes = create_roadmap_nodes_from_intent(project_id, enhanced_intent)
+    
+    # Get the complete graph
+    graph = roadmap_service.get_graph(project_id)
+    
+    logger.info(
+        "roadmap_service.generate_roadmap_from_project_intent.success",
+        extra={"project_id": project_id, "nodes": len(graph.nodes), "edges": len(graph.edges)},
+    )
+    
+    return graph

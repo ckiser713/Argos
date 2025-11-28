@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { X, FileText, GitCommit, MessageSquare, ExternalLink } from 'lucide-react';
 import { NeonButton } from './NeonButton';
+import { useKnowledgeGraph } from '@src/hooks/useKnowledgeGraph';
+import { useCurrentProject } from '@src/hooks/useProjects';
 
 // Types for our graph
 type NodeType = 'pdf' | 'repo' | 'chat';
@@ -31,7 +33,9 @@ export const KnowledgeNexus: React.FC = () => {
   const graphRef = useRef<any>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
+
+  const { project: currentProject } = useCurrentProject();
+  const { data: graphData, isLoading, error } = useKnowledgeGraph(currentProject?.id);
 
   // Handle Resize
   useEffect(() => {
@@ -47,12 +51,66 @@ export const KnowledgeNexus: React.FC = () => {
     window.addEventListener('resize', updateDimensions);
     updateDimensions();
 
-    // Initial data generation
-    const generatedData = generateMockData();
-    setData(generatedData);
-
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  // Transform API data to graph format
+  const transformedData = React.useMemo(() => {
+    if (!graphData) return { nodes: [], links: [] };
+
+    const nodes: Node[] = graphData.nodes.map(node => ({
+      id: node.id,
+      name: node.title || node.id,
+      type: node.type as NodeType,
+      val: 5 + (node.summary?.length || 0) / 100, // Size based on content
+      color: node.type === 'pdf' ? '#00f0ff' : node.type === 'repo' ? '#ffbf00' : '#bd00ff',
+      meta: `ID: ${node.id}`,
+      summary: node.summary
+    }));
+
+    const links: Link[] = graphData.edges.map(edge => ({
+      source: edge.source,
+      target: edge.target
+    }));
+
+    return { nodes, links };
+  }, [graphData]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan mx-auto mb-2"></div>
+          <p className="text-gray-400 font-mono text-sm">Loading knowledge graph...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="text-red-400 mb-2">Failed to load knowledge graph</div>
+          <p className="text-gray-400 font-mono text-sm">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state
+  if (!graphData || graphData.nodes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="text-gray-400 mb-2">No knowledge nodes found</div>
+          <p className="text-gray-500 font-mono text-sm">Ingest some documents to see the knowledge graph</p>
+        </div>
+      </div>
+    );
+  }
 
   // Custom Node Rendering
   const paintNode = (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -101,7 +159,7 @@ export const KnowledgeNexus: React.FC = () => {
           ref={graphRef}
           width={dimensions.width}
           height={dimensions.height}
-          graphData={data}
+          graphData={transformedData}
           nodeLabel="name"
           nodeColor="color"
           linkColor={() => 'rgba(0, 240, 255, 0.15)'}
@@ -193,46 +251,3 @@ export const KnowledgeNexus: React.FC = () => {
     </div>
   );
 };
-
-// --- Mock Data Generator ---
-
-function generateMockData(): GraphData {
-  const nodes: Node[] = [];
-  const links: Link[] = [];
-  
-  const types: NodeType[] = ['pdf', 'repo', 'chat'];
-  const colors = { pdf: '#00f0ff', repo: '#ffbf00', chat: '#bd00ff' };
-  
-  // Create 40 nodes
-  for (let i = 0; i < 40; i++) {
-    const type = types[Math.floor(Math.random() * types.length)];
-    const id = `node-${i}`;
-    nodes.push({
-      id,
-      name: `${type.toUpperCase()}_DATA_${Math.floor(Math.random() * 9000) + 1000}`,
-      type,
-      val: Math.random() * 5 + 5,
-      color: colors[type],
-      meta: `ID: ${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-      summary: "Contains semantic vectors related to system architecture and neural interface protocols. High relevance score detected."
-    });
-  }
-
-  // Create random links
-  for (let i = 0; i < 35; i++) {
-    const source = nodes[Math.floor(Math.random() * nodes.length)].id;
-    const target = nodes[Math.floor(Math.random() * nodes.length)].id;
-    if (source !== target) {
-      links.push({ source, target });
-    }
-  }
-
-  // Ensure central hub
-  const hub = nodes[0];
-  hub.val = 15; // Bigger hub
-  for (let i = 1; i < 8; i++) {
-    links.push({ source: hub.id, target: nodes[i].id });
-  }
-
-  return { nodes, links };
-}

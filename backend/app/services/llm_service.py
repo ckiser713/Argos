@@ -39,35 +39,50 @@ def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str]:
     Resolve base_url, model_name, and backend for the given lane.
     
     Returns (base_url, model_name, backend)
+    Raises ValueError if no configuration found and fallback fails
     """
     lane_name = lane.value.upper()
     
     # Check for lane-specific config
     base_url_attr = f"lane_{lane.value}_url"
     model_attr = f"lane_{lane.value}_model"
+    backend_attr = f"lane_{lane.value}_backend"
     
     base_url = getattr(settings, base_url_attr, "")
     model_name = getattr(settings, model_attr, "")
+    backend = getattr(settings, backend_attr, "")
     
     if base_url and model_name:
-        # Determine backend based on URL or default
-        if "8080" in base_url or lane == ModelLane.SUPER_READER:
-            backend = "llama_cpp"
-        else:
-            backend = "openai"
+        # Use explicit backend if configured, otherwise auto-detect
+        if not backend:
+            # Auto-detect backend from URL or lane type
+            if "8080" in base_url or lane == ModelLane.SUPER_READER:
+                backend = "llama_cpp"
+            else:
+                backend = "openai"
         return base_url, model_name, backend
     
-    # Fallback to default
-    fallback_lane = ModelLane(settings.llm_default_lane)
+    # Fallback to default lane
+    fallback_lane_name = settings.llm_default_lane
+    try:
+        fallback_lane = ModelLane(fallback_lane_name)
+    except ValueError:
+        fallback_lane = ModelLane.ORCHESTRATOR
+    
     if fallback_lane == lane:
+        # Already at fallback, use default config
         return settings.llm_base_url, settings.llm_model_name, settings.llm_backend
     
     # Recursive fallback
+    logger.warning(
+        f"Lane {lane.value} not configured, falling back to {fallback_lane.value}",
+        extra={"lane": lane.value, "fallback": fallback_lane.value}
+    )
     return resolve_lane_config(fallback_lane)
 
 
 def _call_underlying_llm(
-    prompt: str, *, temperature: float, max_tokens: int, base_url: str = None, model: str = None, backend: str = None, json_mode: bool = False, **kwargs
+    prompt: str, *, temperature: float, max_tokens: int, base_url: str = None, model: str = None, backend: str = None, lane: ModelLane = None, json_mode: bool = False, **kwargs
 ) -> str:
     """
     Call the underlying LLM backend (OpenAI API or llama.cpp).
@@ -81,7 +96,15 @@ def _call_underlying_llm(
         try:
             from app.services.llama_cpp_service import get_llama_cpp_service
             
-            llama_service = get_llama_cpp_service()
+            # Get lane-specific model path if available
+            model_path = None
+            if lane:
+                model_path_attr = f"lane_{lane.value}_model_path"
+                model_path = getattr(settings, model_path_attr, "")
+                if not model_path:
+                    model_path = None
+            
+            llama_service = get_llama_cpp_service(model_path=model_path)
             
             # llama.cpp doesn't support json_mode directly, but we can try to parse JSON
             response = llama_service.generate(
@@ -152,7 +175,7 @@ def generate_text(
     base_url, model_name, backend = resolve_lane_config(lane)
 
     # Use project-specific temperature, or provided, or default
-    effective_temperature = temperature if temperature is not None else settings_obj.llm_temperature
+    effective_temperature = settings_obj.llm_temperature if temperature is None else temperature
 
     logger.info(
         "llm_service.generate_text.start",
@@ -177,6 +200,7 @@ def generate_text(
         base_url=base_url,
         model=model_name,
         backend=backend,
+        lane=lane,
         json_mode=json_mode,
     )
 
@@ -211,6 +235,7 @@ def generate_text(
             base_url=base_url,
             model=model_name,
             backend=backend,
+            lane=lane,
         )
 
     return validated

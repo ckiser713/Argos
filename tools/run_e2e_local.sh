@@ -16,9 +16,13 @@ fi
 
 export CORTEX_SKIP_AUTH=1
 export PLAYWRIGHT_BASE_URL=http://localhost:5173
+export PLAYWRIGHT_API_BASE=http://127.0.0.1:8000
 
 # Install Node deps
 pnpm install --silent
+
+# Ensure Poetry is using Python 3.11 for backend
+"$ROOT_DIR/tools/ensure_python311_poetry.sh"
 
 # Install Playwright browsers (attempt to add host deps if needed)
 if ! pnpm exec playwright install --with-deps; then
@@ -28,7 +32,7 @@ fi
 
 # Start backend
 cd "$ROOT_DIR/backend"
-PYTHONPATH="$ROOT_DIR" poetry run uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+PYTHONPATH="$ROOT_DIR" poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd "$ROOT_DIR"
 

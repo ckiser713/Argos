@@ -7,6 +7,7 @@ Pydantic models and in-memory stub implementations.
 ## 1. Requirements
 
 - Python **3.11+**
+	- Recommended: run `tools/ensure_python311_poetry.sh` to set Poetry's virtualenv to Python 3.11 and install dependencies.
 - Recommended: virtual environment (e.g. `venv` or `uv`)
 - **ROCm 7.1.0** (for AMD GPU inference - optional but recommended)
 
@@ -17,6 +18,13 @@ python -m venv .venv
 source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 pip install "fastapi[standard]" uvicorn pydantic pydantic-settings
+```
+
+Note: If you use `pyenv` you can set the local Python version to 3.11.14 with:
+
+```bash
+pyenv install 3.11.14
+pyenv local 3.11.14
 ```
 
 If you later add database, model runtimes, or other infra, extend pip deps here.
@@ -58,7 +66,88 @@ export CORTEX_LLAMA_CPP_MODEL_PATH=/path/to/your/model.gguf
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Note**: You need GGUF model files. Download compatible models from HuggingFace or convert your own.
+### Download Models
+
+Cortex uses multiple Hugging Face models for different purposes:
+
+**Embedding Models (Vector Search):**
+- `all-MiniLM-L6-v2` (384d) - General purpose embeddings, always needed
+- `jinaai/jina-embeddings-v2-base-code` (768d) - Code-specific embeddings  
+- `microsoft/codebert-base` (768d) - Alternative code embeddings
+
+**Why multiple models?** The system uses a fallback chain for robustness:
+1. Try code-specific model first (better semantic understanding)
+2. Fall back to alternative code model
+3. Final fallback to general-purpose model
+
+**Lane Models (GGUF for llama.cpp):**
+- SUPER_READER: Long-context model for document analysis
+- GOVERNANCE: Compliance checking model
+
+To pre-download models:
+
+```bash
+# Download all embedding models (recommended for full functionality)
+python scripts/download_models.py
+
+# Download only essential models (saves ~2GB disk space)
+export CORTEX_DOWNLOAD_EMBEDDINGS_MINIMAL=true
+python scripts/download_models.py
+
+# Download specific lane models
+export CORTEX_DOWNLOAD_SUPER_READER=true
+export CORTEX_DOWNLOAD_GOVERNANCE=true
+python scripts/download_models.py
+```
+
+Models are cached in `~/.cache/huggingface/` and `~/cortex_models/` for reuse.
+
+### Model Lanes & Routing
+
+Cortex supports **Model Lanes** for routing requests to specialized models based on intent:
+
+| Lane | Purpose | Backend | Configuration |
+| :--- | :--- | :--- | :--- |
+| **ORCHESTRATOR** | Planning, agent coordination | vLLM | `CORTEX_LANE_ORCHESTRATOR_*` |
+| **CODER** | Code analysis, refactoring | vLLM | `CORTEX_LANE_CODER_*` |
+| **SUPER_READER** | Long-context reading | llama.cpp | `CORTEX_LANE_SUPER_READER_*` |
+| **FAST_RAG** | Retrieval & Q&A | vLLM/llama.cpp | `CORTEX_LANE_FAST_RAG_*` |
+| **GOVERNANCE** | Compliance checking | llama.cpp | `CORTEX_LANE_GOVERNANCE_*` |
+
+#### Configuration
+
+Set lane-specific URLs and models:
+
+```bash
+# Orchestrator (default lane)
+export CORTEX_LLM_BASE_URL="http://localhost:8000/v1"
+export CORTEX_LLM_MODEL="Qwen3-30B-Thinking"
+
+# Super-Reader (llama.cpp for long context)
+export CORTEX_LANE_SUPER_READER_URL="http://localhost:8080/v1"
+export CORTEX_LANE_SUPER_READER_MODEL="Nemotron-8B-UltraLong-4M"
+
+# Coder (vLLM for code tasks)
+export CORTEX_LANE_CODER_MODEL="Qwen3-Coder-30B-1M"
+```
+
+#### Usage in Code
+
+```python
+from app.services.llm_service import generate_text, ModelLane
+
+# Use orchestrator (default)
+response = generate_text("Plan this project", project_id="proj-123")
+
+# Use specific lane
+response = generate_text(
+    "Analyze this code", 
+    project_id="proj-123", 
+    lane=ModelLane.CODER
+)
+```
+
+The system automatically routes to the appropriate backend with fallback to the default lane if specialized models are unavailable.
 
 #### Option C: PyTorch Wheels (For Custom PyTorch Tools Only)
 
@@ -69,7 +158,7 @@ If you need custom PyTorch-based tools (not required for standard inference):
 ./backend/scripts/install_rocm_wheels.sh
 
 # Verify installation
-python3 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'ROCm: {torch.version.hip}')"
+python3.11 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'ROCm: {torch.version.hip}')"
 ```
 
 **Note**: The main inference engine (vLLM) runs in Docker and doesn't need these wheels. Only install if you're building custom PyTorch tools.

@@ -74,7 +74,7 @@ def test_generate_text_normal_mode_single_pass(dummy_llm: _DummyLLM) -> None:
         )
     )
 
-    result = llm_service.generate_text("hello", project_id=project_id, base_temperature=0.5)
+    result = llm_service.generate_text("hello", project_id=project_id)
     assert result.startswith("dummy-response")
 
     # Expect exactly one underlying LLM call.
@@ -96,7 +96,7 @@ def test_generate_text_paranoid_mode_checker_passes(dummy_llm: _DummyLLM) -> Non
         )
     )
 
-    _ = llm_service.generate_text("hello", project_id=project_id, base_temperature=0.7)
+    _ = llm_service.generate_text("hello", project_id=project_id)
 
     # Expect 1 primary pass + 2 checker passes.
     assert len(dummy_llm.calls) == 3

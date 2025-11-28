@@ -6,6 +6,14 @@ At a high level:
 
 - **Frontend**: React + TypeScript cyberpunk dashboard (glassmorphism, neon, node/graph UIs).
 - **Backend**: FastAPI + Python 3.11 with Pydantic-typed REST and streaming endpoints.
+    - Ensure Python 3.11 is used for backend development. Run `tools/ensure_python311_poetry.sh` to create a Poetry virtualenv on Python 3.11 and install backend dependencies.
+    If you'd like to make `python3` point to `python3.11` system-wide (requires sudo), run:
+
+    ```bash
+    sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+    sudo update-alternatives --config python3
+    ```
+    Only do this if you understand the implications and have no system-critical packages pinned to another Python version.
 - **Orchestration**: LangGraph for deterministic agent flows; n8n for side-band automations.
 - **Runtimes & Storage**: vLLM / llama.cpp / custom PyTorch (ROCm) for inference; Qdrant for vector search; PostgreSQL for metadata and state.
 

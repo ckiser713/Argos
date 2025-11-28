@@ -167,7 +167,7 @@ class QdrantCodeSearchBackend(CodeSearchBackend):
 
         return chunks
 
-    async def search_related_code(self, ticket: IdeaTicket, *, top_k: int) -> Sequence[CodeChunk]:
+    def search_related_code(self, ticket: IdeaTicket, *, top_k: int) -> Sequence[CodeChunk]:
         """
         Search for code chunks related to the ticket using hybrid search.
         """

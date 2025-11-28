@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 import { TestDataFactory } from './utils/test-data-factory';
 
 test.describe('Workflows API', () => {
@@ -177,15 +177,16 @@ test.describe('Workflows API', () => {
   test('should handle invalid workflow graph ID', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.get(`http://localhost:8000/api/projects/${testProject.id}/workflows/graphs/invalid-id`);
+    const response = await api.get(`${API_BASE_URL}/projects/${testProject.id}/workflows/graphs/invalid-id`);
     expect(response.status()).toBe(404);
   });
 
   test('should handle invalid workflow run ID', async ({ api, testProject }) => {
     const apiHelpers = new ApiHelpers(api);
     
-    const response = await api.get(`http://localhost:8000/api/projects/${testProject.id}/workflows/runs/invalid-id`);
+    const response = await api.get(`${API_BASE_URL}/projects/${testProject.id}/workflows/runs/invalid-id`);
     expect(response.status()).toBe(404);
   });
 });
+
 

@@ -199,7 +199,8 @@
           echo "Cortex Development Environment"
           echo "=========================================="
           echo ""
-          echo "Python: $(python3 --version)"
+          # Prefer Python 3.11 where available
+          echo "Python: $(python3.11 --version 2>/dev/null || python3 --version 2>/dev/null)"
           echo "Node.js: $(node --version)"
           echo "pnpm: $(pnpm --version)"
           echo "Poetry: $(poetry --version)"

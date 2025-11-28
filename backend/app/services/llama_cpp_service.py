@@ -29,6 +29,9 @@ class LlamaCppService:
         model_path: Optional[str] = None,
         n_ctx: Optional[int] = None,
         n_threads: Optional[int] = None,
+        n_gpu_layers: Optional[int] = None,
+        use_mmap: bool = True,
+        use_mlock: bool = False,
     ):
         """
         Initialize llama.cpp service.
@@ -36,13 +39,20 @@ class LlamaCppService:
         Args:
             binary_path: Path to llama-cpp binary (defaults to config)
             model_path: Path to GGUF model file (defaults to config)
-            n_ctx: Context window size (defaults to config)
+            n_ctx: Context window size (defaults to config, can be up to 4M for ultra-long context)
             n_threads: Number of CPU threads (defaults to config)
+            n_gpu_layers: Number of layers to offload to GPU (99 = all layers, for ROCm)
+            use_mmap: Use memory mapping for model loading (faster, less RAM)
+            use_mlock: Lock model in memory (prevents swapping, uses more RAM)
         """
         self.binary_path = Path(binary_path or settings.llama_cpp_binary_path)
         self.model_path = model_path or settings.llama_cpp_model_path
         self.n_ctx = n_ctx or settings.llama_cpp_n_ctx
         self.n_threads = n_threads or settings.llama_cpp_n_threads
+        # For ultra-long context (4M tokens), offload all layers to GPU
+        self.n_gpu_layers = n_gpu_layers if n_gpu_layers is not None else getattr(settings, "llama_cpp_n_gpu_layers", 99)
+        self.use_mmap = use_mmap
+        self.use_mlock = use_mlock
 
         if not self.binary_path.exists():
             raise FileNotFoundError(
@@ -105,12 +115,27 @@ class LlamaCppService:
             str(temperature),
             "--n-predict",
             str(max_tokens),
-            "--ctx-size",
-            str(self.n_ctx),
+            "-c",
+            str(self.n_ctx),  # Context window size (supports up to 4M for ultra-long context)
             "--threads",
             str(self.n_threads),
             "--no-display-prompt",  # Don't echo the prompt in output
         ]
+        
+        # GPU offloading for ROCm (offload all layers for ultra-long context)
+        if self.n_gpu_layers > 0:
+            cmd.extend(["-ngl", str(self.n_gpu_layers)])
+        
+        # Memory mapping options
+        if self.use_mmap:
+            cmd.append("--mmap")
+        if self.use_mlock:
+            cmd.append("--mlock")
+        
+        # KV cache quantization for ultra-long context (4M tokens)
+        # Use q8_0 quantization to fit 4M tokens in ~58GB
+        if self.n_ctx >= 1000000:  # 1M+ tokens
+            cmd.extend(["--cache-type-k", "q8_0"])
 
         # Add stop sequences if provided
         if stop:
@@ -223,14 +248,17 @@ class LlamaCppService:
         )
 
 
-# Global service instance (lazy initialization)
-_llama_cpp_service: Optional[LlamaCppService] = None
+# Global service instances (lazy initialization)
+_llama_cpp_services: dict[str, LlamaCppService] = {}
 
 
-def get_llama_cpp_service() -> LlamaCppService:
-    """Get or create global llama.cpp service instance."""
-    global _llama_cpp_service
-    if _llama_cpp_service is None:
-        _llama_cpp_service = LlamaCppService()
-    return _llama_cpp_service
+def get_llama_cpp_service(model_path: Optional[str] = None) -> LlamaCppService:
+    """Get or create llama.cpp service instance for the given model path."""
+    # Use model_path as key, fallback to default if None
+    key = model_path or "default"
+    
+    if key not in _llama_cpp_services:
+        _llama_cpp_services[key] = LlamaCppService(model_path=model_path)
+    
+    return _llama_cpp_services[key]
 

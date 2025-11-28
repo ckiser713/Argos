@@ -18,6 +18,9 @@ export interface TestFixtures {
 /**
  * API client fixture for making direct API calls
  */
+const API_BASE = (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACKEND_URL || 'http://127.0.0.1:8000')
+  .replace(/\/(?:api|api\/docs)?$/i, '') + '/api';
+
 export const test = base.extend<TestFixtures>({
   api: async ({ request }, use) => {
     // Use the same request context for API calls
@@ -27,13 +30,19 @@ export const test = base.extend<TestFixtures>({
   authenticatedPage: async ({ page, request }, use) => {
     // For now, we'll skip auth in tests
     // In production, you'd set up auth tokens here
+    // Ensure a consistent viewport for visual regression tests
+    try {
+      await page.setViewportSize({ width: 1408, height: 864 });
+    } catch (e) {
+      // some Playwright devices may throw if viewport cannot be set; ignore
+    }
     await page.goto('/');
     await use(page);
   },
 
   testProject: async ({ api }, use) => {
     // Create a test project
-    const response = await api.post('http://localhost:8000/api/projects', {
+    const response = await api.post(`${API_BASE}/projects`, {
       data: {
         name: `Test Project ${Date.now()}`,
         description: 'E2E test project',
@@ -47,7 +56,7 @@ export const test = base.extend<TestFixtures>({
     await use({ id: project.id, name: project.name });
 
     // Cleanup: delete the project after test
-    await api.delete(`http://localhost:8000/api/projects/${project.id}`).catch(() => {
+    await api.delete(`${API_BASE}/projects/${project.id}`).catch(() => {
       // Ignore cleanup errors
     });
   },
