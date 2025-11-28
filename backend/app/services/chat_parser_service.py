@@ -235,7 +235,7 @@ Respond with only: PROJECT_IDEA or CHIT_CHAT"""
                 max_tokens=10,
             )
 
-            return "PROJECT_IDEA" in response.upper()
+            return "PROJECT_IDEA" in response.response.upper()
         except Exception as e:
             logger.warning(f"LLM classification failed, using heuristic: {e}")
             # Fallback to heuristic

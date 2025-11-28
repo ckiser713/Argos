@@ -244,7 +244,7 @@ Return ONLY valid JSON, no markdown formatting."""
             )
             
             # Parse JSON response
-            response = response.strip()
+            response = response.response.strip()
             # Remove markdown code blocks if present
             if response.startswith("```json"):
                 response = response[7:]

@@ -319,7 +319,7 @@ Example format:
                 json_mode=True,
             )
 
-            llm_response = llm_response.strip().removeprefix("```json").removesuffix("```").strip()
+            llm_response = llm_response.response.strip().removeprefix("```json").removesuffix("```").strip()
             sub_nodes_data = json.loads(llm_response)
             if not isinstance(sub_nodes_data, list):
                 raise ValueError("LLM response is not a JSON array")

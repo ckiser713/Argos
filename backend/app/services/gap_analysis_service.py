@@ -219,7 +219,7 @@ class LLMCoderClient(CoderLLMClient):
             project_id=ticket.project_id,
             temperature=0.0,
             max_tokens=1000,
-        )
+        ).response
 
 
 class NullTicketProvider(IdeaTicketProvider):

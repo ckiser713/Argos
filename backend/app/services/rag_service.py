@@ -183,7 +183,7 @@ Example: ["query 1", "query 2", "query 3"]
             import re
             
             # Extract JSON array from response
-            json_match = re.search(r'\[.*?\]', response, re.DOTALL)
+            json_match = re.search(r'\[.*?\]', response.response, re.DOTALL)
             if json_match:
                 queries = json.loads(json_match.group())
                 return queries if isinstance(queries, list) else [query]
@@ -299,7 +299,7 @@ Return only the refined query, no explanation.
                         prompt=refinement_prompt,
                         project_id=project_id,
                         temperature=0.2,
-                    ).strip()
+                    ).response.strip()
                     
                     reasoning_chain.append(refined_query)
                     results, _ = self.search_with_rewriting(
@@ -531,7 +531,7 @@ Return only the refined query, no explanation.
                 prompt=prompt,
                 project_id=project_id,
                 temperature=0.2,
-            ).strip()
+            ).response.strip()
             return refined
         except Exception as e:
             logger.warning(f"Query refinement failed: {e}")
