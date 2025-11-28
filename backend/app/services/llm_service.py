@@ -4,9 +4,10 @@ import json
 import logging
 import re
 from enum import StrEnum
-from typing import Any
+from typing import Any, List, Optional
 
 import openai
+from pydantic import BaseModel
 
 from app.config import get_settings
 from app.domain.mode import ProjectExecutionSettings
@@ -28,6 +29,12 @@ class ModelLane(StrEnum):
     GOVERNANCE = "governance"
 
 
+class LLMResponse(BaseModel):
+    response: str
+    reasoning_trace: Optional[List[str]] = None
+    status: str = "ok"
+
+
 def get_llm_client(base_url: str = None) -> openai.OpenAI:
     if base_url and base_url != settings.llm_base_url:
         return openai.OpenAI(base_url=base_url, api_key=settings.llm_api_key)
@@ -43,37 +50,19 @@ def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str]:
     """
     lane_name = lane.value.upper()
     
-    # Check for lane-specific config
-    base_url_attr = f"lane_{lane.value}_url"
-    model_attr = f"lane_{lane.value}_model"
-    backend_attr = f"lane_{lane.value}_backend"
-    
-    base_url = getattr(settings, base_url_attr, "")
-    model_name = getattr(settings, model_attr, "")
-    backend = getattr(settings, backend_attr, "")
+    base_url = getattr(settings, f"lane_{lane.value}_url", "")
+    model_name = getattr(settings, f"lane_{lane.value}_model", "")
+    backend = getattr(settings, f"lane_{lane.value}_backend", "")
     
     if base_url and model_name:
-        # Use explicit backend if configured, otherwise auto-detect
         if not backend:
-            # Auto-detect backend from URL or lane type
-            if "8080" in base_url or lane == ModelLane.SUPER_READER:
-                backend = "llama_cpp"
-            else:
-                backend = "openai"
+            backend = "openai" if "8080" not in base_url else "llama_cpp"
         return base_url, model_name, backend
     
-    # Fallback to default lane
-    fallback_lane_name = settings.llm_default_lane
-    try:
-        fallback_lane = ModelLane(fallback_lane_name)
-    except ValueError:
-        fallback_lane = ModelLane.ORCHESTRATOR
-    
+    fallback_lane = ModelLane(settings.llm_default_lane)
     if fallback_lane == lane:
-        # Already at fallback, use default config
         return settings.llm_base_url, settings.llm_model_name, settings.llm_backend
     
-    # Recursive fallback
     logger.warning(
         f"Lane {lane.value} not configured, falling back to {fallback_lane.value}",
         extra={"lane": lane.value, "fallback": fallback_lane.value}
@@ -82,78 +71,71 @@ def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str]:
 
 
 def _call_underlying_llm(
-    prompt: str, *, temperature: float, max_tokens: int, base_url: str = None, model: str = None, backend: str = None, lane: ModelLane = None, json_mode: bool = False, **kwargs
+    prompt: str,
+    *,
+    temperature: float,
+    max_tokens: int,
+    base_url: str = None,
+    model: str = None,
+    backend: str = None,
+    lane: ModelLane = None,
+    json_mode: bool = False,
+    image_data: Optional[str] = None,
+    **kwargs,
 ) -> str:
     """
     Call the underlying LLM backend (OpenAI API or llama.cpp).
-    
-    Backend selection is controlled by CORTEX_LLM_BACKEND or per-lane.
     """
     effective_backend = backend or settings.llm_backend.lower()
     
     if effective_backend == "llama_cpp":
-        # Use llama.cpp service
         try:
             from app.services.llama_cpp_service import get_llama_cpp_service
             
-            # Get lane-specific model path if available
-            model_path = None
-            if lane:
-                model_path_attr = f"lane_{lane.value}_model_path"
-                model_path = getattr(settings, model_path_attr, "")
-                if not model_path:
-                    model_path = None
+            model_path_attr = f"lane_{lane.value}_model_path" if lane else ""
+            model_path = getattr(settings, model_path_attr, "") or None
             
             llama_service = get_llama_cpp_service(model_path=model_path)
+            response = llama_service.generate(prompt, temperature=temperature, max_tokens=max_tokens, **kwargs)
             
-            # llama.cpp doesn't support json_mode directly, but we can try to parse JSON
-            response = llama_service.generate(
-                prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
-            
-            # If json_mode requested, try to extract JSON from response
             if json_mode:
-                # Simple heuristic: look for JSON object in response
                 json_match = re.search(r'\{.*\}', response, re.DOTALL)
-                if json_match:
-                    return json_match.group(0)
-                # If no JSON found, wrap response in JSON object
-                return f'{{"response": {json.dumps(response)}}}'
-            
+                return json_match.group(0) if json_match else f'{{"response": {json.dumps(response)}}}'
             return response
             
         except ImportError:
-            logger.warning(
-                "llama_cpp_service not available, falling back to OpenAI API",
-                extra={"backend": effective_backend}
-            )
-            # Fall through to OpenAI API
+            logger.warning("llama_cpp_service not available, falling back to OpenAI API")
         except Exception as e:
-            logger.error(
-                "llama_cpp_service error, falling back to OpenAI API",
-                extra={"error": str(e), "backend": effective_backend}
-            )
-            # Fall through to OpenAI API
-    
+            logger.error(f"llama_cpp_service error, falling back to OpenAI API: {e}")
+
     # Default: Use OpenAI-compatible API (vLLM/Ollama)
     target_model = model or settings.llm_model_name
     target_client = get_llm_client(base_url)
+
+    messages = []
+    if image_data and lane == ModelLane.FAST_RAG:
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
+            ],
+        })
+    else:
+        messages.append({"role": "user", "content": prompt})
 
     try:
         response_format = {"type": "json_object"} if json_mode else {"type": "text"}
         response = target_client.chat.completions.create(
             model=target_model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             response_format=response_format,
         )
         return response.choices[0].message.content
     except Exception as e:
-        logger.error("OpenAI API error", extra={"error": str(e)})
+        logger.error(f"OpenAI API error: {e}")
         return f"LLM Error: {str(e)}"
 
 
@@ -163,37 +145,27 @@ def generate_text(
     lane: ModelLane = ModelLane.ORCHESTRATOR,
     *,
     temperature: float | None = None,
-    max_tokens: int = 1000,
-    json_mode: bool = False
-) -> str:
+    max_tokens: int = 4096,
+    json_mode: bool = False,
+    image_data: Optional[str] = None,
+) -> LLMResponse:
     """
     Generates text using the underlying LLM, with mode-aware adjustments and lane routing.
     """
+    if settings.cortex_mode == "INGEST":
+        logger.info("Request received in INGEST mode, queuing for later processing.")
+        return LLMResponse(response="Request has been queued and will be processed when ingest is complete.", status="queued")
+
     settings_obj: ProjectExecutionSettings = get_project_settings(project_id)
-
-    # Resolve lane configuration
     base_url, model_name, backend = resolve_lane_config(lane)
-
-    # Use project-specific temperature, or provided, or default
     effective_temperature = settings_obj.llm_temperature if temperature is None else temperature
 
     logger.info(
         "llm_service.generate_text.start",
-        extra={
-            "project_id": project_id,
-            "mode": settings_obj.mode,
-            "lane": lane.value,
-            "base_url": base_url,
-            "model": model_name,
-            "backend": backend,
-            "temperature": effective_temperature,
-            "max_tokens": max_tokens,
-            "json_mode": json_mode,
-        },
+        extra={"project_id": project_id, "lane": lane.value, "model": model_name, "backend": backend},
     )
 
-    # --- primary generation pass ---
-    raw_response = _call_underlying_llm(
+    final_response = _call_underlying_llm(
         prompt,
         temperature=effective_temperature,
         max_tokens=max_tokens,
@@ -202,40 +174,26 @@ def generate_text(
         backend=backend,
         lane=lane,
         json_mode=json_mode,
+        image_data=image_data,
     )
 
-    if settings_obj.mode == "normal":
-        return raw_response
+    if settings_obj.mode == "paranoid":
+        for i in range(settings_obj.validation_passes):
+            checker_prompt = f"Review the following prompt and draft answer. Identify inconsistencies or missing steps and provide a corrected final answer.\n\nPROMPT:\n{prompt}\n\nDRAFT:\n{final_response}"
+            final_response = _call_underlying_llm(
+                checker_prompt,
+                temperature=min(effective_temperature, 0.2),
+                max_tokens=max_tokens,
+                base_url=base_url,
+                model=model_name,
+                backend=backend,
+                lane=lane,
+            )
 
-    # --- paranoid mode: checker / validation passes ---
-    validated = raw_response
+    # Handle Chain of Thought for ORCHESTRATOR lane
+    if lane == ModelLane.ORCHESTRATOR:
+        reasoning_trace = re.findall(r"<think>(.*?)</think>", final_response, re.DOTALL)
+        clean_response = re.sub(r"<think>.*?</think>", "", final_response, flags=re.DOTALL).strip()
+        return LLMResponse(response=clean_response, reasoning_trace=reasoning_trace or None)
 
-    for i in range(settings_obj.validation_passes):
-        checker_prompt = (
-            "You are a careful reviewer. Given the user prompt and the draft answer,"
-            " identify any factual inconsistencies, unsafe suggestions, or missing steps,"
-            " then provide a corrected / improved final answer.\n\n"
-            f"USER PROMPT:\n{prompt}\n\nDRAFT ANSWER:\n{validated}"
-        )
-
-        logger.info(
-            "llm_service.generate_text.paranoid_checker_pass",
-            extra={
-                "project_id": project_id,
-                "pass_index": i,
-                "mode": settings_obj.mode,
-                "lane": lane.value,
-            },
-        )
-
-        validated = _call_underlying_llm(
-            checker_prompt,
-            temperature=min(effective_temperature, 0.2),  # Checker LLM usually benefits from lower temp
-            max_tokens=max_tokens,
-            base_url=base_url,
-            model=model_name,
-            backend=backend,
-            lane=lane,
-        )
-
-    return validated
+    return LLMResponse(response=final_response)

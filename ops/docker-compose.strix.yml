@@ -1,10 +1,28 @@
 version: '3.8'
 
+# Common environment variables for model paths
+x-common-env: &common-env
+  # --- vLLM Models ---
+  CORTEX_VLLM_MODEL: "/models/vllm/fast_rag/bf16"
+  CORTEX_LANE_ORCHESTRATOR_MODEL: "/models/vllm/orchestrator/bf16"
+  CORTEX_LANE_CODER_MODEL: "/models/vllm/coder/bf16"
+  CORTEX_LANE_FAST_RAG_MODEL: "/models/vllm/fast_rag/bf16"
+
+  # --- GGUF Models ---
+  CORTEX_GGUF_MODEL: "/models/gguf/nemotron-8b-instruct.Q4_K_M.gguf"
+  CORTEX_LANE_SUPER_READER_MODEL_PATH: "/models/gguf/nemotron-8b-instruct.Q4_K_M.gguf"
+  CORTEX_LANE_GOVERNANCE_MODEL_PATH: "/models/gguf/granite-3.0-8b-instruct.Q4_K_M.gguf"
+
 services:
-  # The Brain & Coder (Service A: "The Fast Lane")
+  # vLLM Service (Fast-RAG, Orchestrator, Coder)
   inference-vllm:
-    image: vllm-rocm-strix:latest
-    container_name: cortex-vllm-fast-lane
+    image: ${CORTEX_VLLM_IMAGE:-vllm-rocm-strix:latest}
+    container_name: cortex-vllm-service
+    command: >
+      python -m vllm.entrypoints.openai.api_server
+      --model "${CORTEX_VLLM_MODEL}"
+      --quantization fp8
+      --kv-cache-dtype fp8
     devices:
       - /dev/kfd
       - /dev/dri
@@ -12,69 +30,99 @@ services:
       - video
       - render
     environment:
-      - VLLM_GPU_MEMORY_UTILIZATION=0.40
-      - VLLM_MAX_MODEL_LEN=32768
-      - VLLM_HOST=0.0.0.0
-      - VLLM_PORT=8000
-      - HIP_VISIBLE_DEVICES=0
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
-      - HF_TOKEN=${HF_TOKEN:-}
+      <<: *common-env
+      VLLM_GPU_MEMORY_UTILIZATION: "0.45"
+      VLLM_ENFORCE_EAGER: "true"
+      VLLM_MAX_MODEL_LEN: "32768"
+      VLLM_HOST: "0.0.0.0"
+      VLLM_PORT: "8000"
+      HIP_VISIBLE_DEVICES: "0"
+      HSA_OVERRIDE_GFX_VERSION: "11.5.0"
+      HF_TOKEN: "${HF_TOKEN:-}"
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/models
-      - ./models/vllm:/root/.cache/huggingface
+      - ../models:/models
+      - ../models/vllm-cache:/root/.cache/huggingface
     shm_size: '16gb'
-    deploy:
-      resources:
-        limits:
-          memory: 48G
-        reservations:
-          memory: 48G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 40G
+        reservations:
+          memory: 40G
+          cpus: '8'
+    networks:
+      - cortex-network
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cortex-qdrant-db
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
     restart: unless-stopped
     networks:
       - cortex-network
 
-  # The Super-Reader (Service B: "The Deep Lane")
-  inference-llamacpp:
-    image: ghcr.io/ggerganov/llama.cpp:full-rocm
-    container_name: cortex-llamacpp-deep-lane
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video
-      - render
-    command: >
-      -m /models/nemotron-4m.gguf
-      -c 2000000
-      --port 8080
-      -ngl 99
-      --cache-type-k q8_0
-      --host 0.0.0.0
-    environment:
-      - HIP_VISIBLE_DEVICES=0
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: cortex-n8n-workflows
     ports:
-      - "8080:8080"
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=24
     volumes:
-      - ./models:/models
-      - ./models/gguf:/models/gguf
-    deploy:
-      resources:
-        limits:
-          memory: 64G
-        reservations:
-          memory: 64G
+      - ../n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
     networks:
       - cortex-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: cortex-postgres-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: cortex
+      POSTGRES_USER: cortex
+      POSTGRES_PASSWORD: cortex
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - cortex-network
+
+volumes:
+  postgres_data:
 
 networks:
   cortex-network:
