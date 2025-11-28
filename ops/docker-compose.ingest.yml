@@ -1,0 +1,43 @@
+version: '3.8'
+
+networks:
+  cortex-network:
+    driver: bridge
+    name: cortex-network
+
+services:
+  inference-engine:
+    image: vllm-rocm-strix:latest
+    container_name: cortex-ingest-engine
+    # This service intentionally has no command.
+    # The model will be specified at runtime by the ingest_controller.sh script.
+    # Example: docker-compose -f ops/docker-compose.ingest.yml run --rm inference-engine --model <repo_id>
+    environment:
+      - VLLM_GPU_MEMORY_UTILIZATION=0.95 # Use most of the GPU memory for a single model
+      - VLLM_MAX_MODEL_LEN=131072 # 128k context
+      - VLLM_HOST=0.0.0.0
+      - VLLM_PORT=8000
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0 # For Strix Halo
+      - HF_TOKEN=${HF_TOKEN:-}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    volumes:
+      # Mount the models directory from the project root
+      - ../models:/models
+      # Mount a cache volume to avoid re-downloading
+      - ../models/vllm-cache:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    shm_size: '32gb' # Increased shared memory for large context
+    deploy:
+      resources:
+        reservations:
+          memory: 120G # Reserve 120GB of RAM for the container
+    restart: "no" # This service is meant to be run on-demand by the controller
+    networks:
+      - cortex-network
