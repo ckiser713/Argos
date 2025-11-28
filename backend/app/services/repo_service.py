@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from app.services.llm_service import generate_text, ModelLane
+from app.services.llm_service import generate_text
 from app.services.qdrant_code_search import QdrantCodeSearchBackend
 
 logger = logging.getLogger(__name__)
@@ -238,7 +238,6 @@ Return ONLY valid JSON, no markdown formatting."""
             response = generate_text(
                 prompt=prompt,
                 project_id=project_id,
-                lane=ModelLane.CODER,
                 temperature=0.2,
                 max_tokens=2000,
                 json_mode=True,

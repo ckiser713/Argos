@@ -1,12 +1,11 @@
-from __future__ import annotations
-
-import asyncio
 import logging
 from typing import Any, Dict, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from app.domain.models import WorkflowGraph, WorkflowNode, WorkflowNodeStatus
+# Import `tool_executor` lazily inside _execute_node_logic to avoid circular import at module import time
+from app.services.llm_service import generate_text
 
 logger = logging.getLogger("cortex.workflow")
 
@@ -91,15 +90,6 @@ class WorkflowGraphCompiler:
 
             try:
                 # Execute node logic
-                # For now, we implement basic execution that processes the node
-                # In the future, this could be extended to support different node types
-                # (LLM nodes, tool nodes, condition nodes, etc.)
-                
-                # Simulate some work (could be replaced with actual node-specific logic)
-                await asyncio.sleep(0.1)  # Small delay to simulate processing
-                
-                # Process node based on label/configuration
-                # Extract any configuration from node metadata if available
                 node_output = self._execute_node_logic(node, state)
                 
                 # Update node state to COMPLETED if workflow service is available
@@ -167,11 +157,10 @@ class WorkflowGraphCompiler:
         """
         Execute the actual logic for a workflow node.
         
-        This is a basic implementation that can be extended to support:
+        This implementation supports:
         - LLM nodes: Generate text using LLM service
         - Tool nodes: Execute external tools/APIs
         - Condition nodes: Evaluate conditions and branch
-        - Custom nodes: Execute user-defined logic
         
         Args:
             node: The workflow node to execute
@@ -181,28 +170,44 @@ class WorkflowGraphCompiler:
             Output from node execution
         """
         input_data = state.get("input", {})
-        node_type = getattr(node, "type", None) or "noop"
-        config = getattr(node, "config", None) or {}
+        node_type = getattr(node, "type", "noop")
+        config = getattr(node, "config", {})
 
         if node_type == "llm":
-            prompt = config.get("prompt") or node.label
-            rendered_prompt = f"{prompt} | input={input_data}" if input_data else prompt
+            prompt_template = config.get("prompt", node.label)
+            prompt = prompt_template.format(**input_data)
+            
+            project_id = state.get("project_id")
+
+            llm_response = generate_text(prompt=prompt, project_id=project_id)
+
             return {
                 "node_id": node.id,
                 "type": node_type,
-                "prompt": rendered_prompt,
-                "output": f"llm_response:{rendered_prompt}",
+                "prompt": prompt,
+                "output": llm_response.response,
+                "reasoning": llm_response.reasoning_trace,
             }
 
         if node_type == "tool":
-            tool_name = config.get("tool_name") or node.label
-            params = config.get("params") or {}
+            tool_name = config.get("tool_name", node.label)
+            params = config.get("params", {})
+            
+            args = {**params, **input_data}
+            if 'project_id' not in args:
+                args['project_id'] = state.get('project_id')
+
+            call = {"name": tool_name, "args": args}
+            # Lazily import tool_executor to avoid circular import during module load
+            from app.graphs.project_manager_graph import tool_executor
+            result = tool_executor.invoke(call)
+            
             return {
                 "node_id": node.id,
                 "type": node_type,
                 "tool": tool_name,
-                "params": params,
-                "output": f"tool:{tool_name}",
+                "params": args,
+                "output": result,
             }
 
         if node_type == "condition":
@@ -224,7 +229,7 @@ class WorkflowGraphCompiler:
             "type": node_type,
             "node_label": node.label,
             "output": f"Executed node: {node.label}",
-            "processed_input": input_data or {},
+            "processed_input": input_data,
         }
 
     def _extract_path(self, state: WorkflowState, path: str | None) -> Any:

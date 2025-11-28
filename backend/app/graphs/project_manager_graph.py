@@ -1,7 +1,6 @@
 from typing import List, Sequence, TypedDict
 
 from app.config import get_settings
-from app.services.llm_service import resolve_lane_config, ModelLane
 from app.services.rag_service import rag_service
 from app.services.roadmap_service import create_roadmap_nodes_from_intent
 from app.tools.n8n import trigger_n8n_workflow
@@ -105,12 +104,9 @@ class AgentState(TypedDict):
 # Set up the model using ORCHESTRATOR lane configuration
 settings = get_settings()
 try:
-    # Get orchestrator lane config explicitly
-    orchestrator_base_url, orchestrator_model_name, orchestrator_backend = resolve_lane_config(ModelLane.ORCHESTRATOR)
-    
-    # Use orchestrator config if available, otherwise fall back to defaults
-    model_name = orchestrator_model_name or settings.llm_model_name
-    base_url = orchestrator_base_url or settings.llm_base_url
+    # Use default model for the agent
+    model_name = settings.llm_model_name
+    base_url = settings.llm_base_url
     
     llm = init_chat_model(
         model=model_name,
@@ -188,4 +184,4 @@ workflow.add_conditional_edges(
 
 workflow.add_edge("tools", "agent")
 
-app = workflow.compile()
+app = workflow.compile(checkpointer=MemorySaver(), interrupt_before=["tools"])

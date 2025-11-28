@@ -1,12 +1,12 @@
-from __future__ import annotations
-
 import json
 import logging
 import re
-from enum import StrEnum
 from typing import Any, List, Optional
-
 import openai
+
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate # Combined
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -21,53 +21,77 @@ settings = get_settings()
 client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
-class ModelLane(StrEnum):
-    ORCHESTRATOR = "orchestrator"
-    CODER = "coder"
-    SUPER_READER = "super_reader"
-    FAST_RAG = "fast_rag"
-    GOVERNANCE = "governance"
-
-
 class LLMResponse(BaseModel):
     response: str
     reasoning_trace: Optional[List[str]] = None
     status: str = "ok"
 
+    def __getattr__(self, item: str):
+        if hasattr(self.response, item):
+            return getattr(self.response, item)
+        raise AttributeError(f"LLMResponse has no attribute {item}")
 
-def get_llm_client(base_url: str = None) -> openai.OpenAI:
-    if base_url and base_url != settings.llm_base_url:
-        return openai.OpenAI(base_url=base_url, api_key=settings.llm_api_key)
-    return client
+# --- LangChain Semantic Routing Setup ---
+
+SIMPLE_ROUTE_NAME = "simple"
+COMPLEX_ROUTE_NAME = "complex"
+
+ROUTE_DESCRIPTIONS = {
+    SIMPLE_ROUTE_NAME: "Good for simple tasks like formatting, data extraction, and short summaries.",
+    COMPLEX_ROUTE_NAME: "Good for complex tasks like reasoning, planning, coding, and generating creative text.",
+}
+
+ROUTING_PROMPT_TEMPLATE = """
+Given the user's prompt, classify it as either '{simple}' or '{complex}'.
+
+Do not respond with more than one word.
+
+<prompt>
+{input}
+</prompt>
+
+Classification:"""
 
 
-def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str]:
+# ... (rest of the code remains the same until get_routed_llm_config) ...
+
+def get_routed_llm_config(prompt: str) -> tuple[str, str, str, str]:
     """
-    Resolve base_url, model_name, and backend for the given lane.
+    Determines the appropriate LLM configuration based on the prompt content using a lightweight classifier.
     
-    Returns (base_url, model_name, backend)
-    Raises ValueError if no configuration found and fallback fails
+    Returns (base_url, model_name, backend, model_path)
     """
-    lane_name = lane.value.upper()
-    
-    base_url = getattr(settings, f"lane_{lane.value}_url", "")
-    model_name = getattr(settings, f"lane_{lane.value}_model", "")
-    backend = getattr(settings, f"lane_{lane.value}_backend", "")
-    
-    if base_url and model_name:
-        if not backend:
-            backend = "openai" if "8080" not in base_url else "llama_cpp"
-        return base_url, model_name, backend
-    
-    fallback_lane = ModelLane(settings.llm_default_lane)
-    if fallback_lane == lane:
-        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend
-    
-    logger.warning(
-        f"Lane {lane.value} not configured, falling back to {fallback_lane.value}",
-        extra={"lane": lane.value, "fallback": fallback_lane.value}
+    # Use ChatPromptTemplate for LCEL compatibility
+    prompt_template = ChatPromptTemplate.from_template(
+        ROUTING_PROMPT_TEMPLATE.format(simple=SIMPLE_ROUTE_NAME, complex=COMPLEX_ROUTE_NAME)
     )
-    return resolve_lane_config(fallback_lane)
+    
+    classifier_llm = ChatOpenAI(
+        openai_api_base=settings.llm_base_url,
+        openai_api_key=settings.llm_api_key,
+        model=settings.llm_model_name,
+        temperature=0.0
+    )
+
+    # Use LCEL to chain the prompt, LLM, and output parser
+    classifier_chain = prompt_template | classifier_llm | StrOutputParser()
+    
+    try:
+        # Use invoke for LCEL runnables
+        classification = classifier_chain.invoke({"input": prompt}).strip().upper() # Use invoke and pass dictionary for prompt
+        logger.info(f"Classified prompt as: {classification}")
+
+        if SIMPLE_ROUTE_NAME.upper() in classification:
+            # Config for local/fast model (llama_cpp)
+            return "", "", "llama_cpp", getattr(settings, "llama_cpp_model_path", "")
+        
+        # Default to complex route for safety and for any other classification
+        # Config for SOTA/expensive model (OpenAI-compatible)
+        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend, ""
+
+    except Exception as e:
+        logger.error(f"Error during LLM classification, falling back to default: {e}")
+        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend, ""
 
 
 def _call_underlying_llm(
@@ -78,7 +102,7 @@ def _call_underlying_llm(
     base_url: str = None,
     model: str = None,
     backend: str = None,
-    lane: ModelLane = None,
+    model_path: str = None,
     json_mode: bool = False,
     image_data: Optional[str] = None,
     **kwargs,
@@ -91,9 +115,6 @@ def _call_underlying_llm(
     if effective_backend == "llama_cpp":
         try:
             from app.services.llama_cpp_service import get_llama_cpp_service
-            
-            model_path_attr = f"lane_{lane.value}_model_path" if lane else ""
-            model_path = getattr(settings, model_path_attr, "") or None
             
             llama_service = get_llama_cpp_service(model_path=model_path)
             response = llama_service.generate(prompt, temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -113,7 +134,8 @@ def _call_underlying_llm(
     target_client = get_llm_client(base_url)
 
     messages = []
-    if image_data and lane == ModelLane.FAST_RAG:
+    # Vision capabilities are typically with more advanced models, so keeping this part simple
+    if image_data:
         messages.append({
             "role": "user",
             "content": [
@@ -142,7 +164,6 @@ def _call_underlying_llm(
 def generate_text(
     prompt: str,
     project_id: str,
-    lane: ModelLane = ModelLane.ORCHESTRATOR,
     *,
     temperature: float | None = None,
     max_tokens: int = 4096,
@@ -150,19 +171,21 @@ def generate_text(
     image_data: Optional[str] = None,
 ) -> LLMResponse:
     """
-    Generates text using the underlying LLM, with mode-aware adjustments and lane routing.
+    Generates text using the underlying LLM, with mode-aware adjustments and semantic routing.
     """
     if settings.cortex_mode == "INGEST":
         logger.info("Request received in INGEST mode, queuing for later processing.")
         return LLMResponse(response="Request has been queued and will be processed when ingest is complete.", status="queued")
 
     settings_obj: ProjectExecutionSettings = get_project_settings(project_id)
-    base_url, model_name, backend = resolve_lane_config(lane)
+    
+    base_url, model_name, backend, model_path = get_routed_llm_config(prompt)
+    
     effective_temperature = settings_obj.llm_temperature if temperature is None else temperature
 
     logger.info(
         "llm_service.generate_text.start",
-        extra={"project_id": project_id, "lane": lane.value, "model": model_name, "backend": backend},
+        extra={"project_id": project_id, "model": model_name, "backend": backend},
     )
 
     final_response = _call_underlying_llm(
@@ -172,28 +195,28 @@ def generate_text(
         base_url=base_url,
         model=model_name,
         backend=backend,
-        lane=lane,
+        model_path=model_path,
         json_mode=json_mode,
         image_data=image_data,
     )
 
     if settings_obj.mode == "paranoid":
         for i in range(settings_obj.validation_passes):
-            checker_prompt = f"Review the following prompt and draft answer. Identify inconsistencies or missing steps and provide a corrected final answer.\n\nPROMPT:\n{prompt}\n\nDRAFT:\n{final_response}"
+            checker_prompt = f"Review the following prompt and draft answer. Identify inconsistencies or missing steps and provide a corrected final answer.\n\nPROMPT:\n{prompt}\n\nDRAFT ANSWER:\n{final_response}"
+            # Reroute for validation to ensure consistency
+            val_base_url, val_model_name, val_backend, val_model_path = get_routed_llm_config(checker_prompt)
             final_response = _call_underlying_llm(
                 checker_prompt,
                 temperature=min(effective_temperature, 0.2),
                 max_tokens=max_tokens,
-                base_url=base_url,
-                model=model_name,
-                backend=backend,
-                lane=lane,
+                base_url=val_base_url,
+                model=val_model_name,
+                backend=val_backend,
+                model_path=val_model_path,
             )
 
-    # Handle Chain of Thought for ORCHESTRATOR lane
-    if lane == ModelLane.ORCHESTRATOR:
-        reasoning_trace = re.findall(r"<think>(.*?)</think>", final_response, re.DOTALL)
-        clean_response = re.sub(r"<think>.*?</think>", "", final_response, flags=re.DOTALL).strip()
-        return LLMResponse(response=clean_response, reasoning_trace=reasoning_trace or None)
-
-    return LLMResponse(response=final_response)
+    # Chain of Thought might not be standard across all models.
+    # Consider making this conditional on the route if needed.
+    reasoning_trace = re.findall(r"<think>(.*?)</think>", final_response, re.DOTALL)
+    clean_response = re.sub(r"<think>.*?</think>", "", final_response, flags=re.DOTALL).strip()
+    return LLMResponse(response=clean_response, reasoning_trace=reasoning_trace or None)

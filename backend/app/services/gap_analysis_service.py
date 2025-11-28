@@ -217,7 +217,6 @@ class LLMCoderClient(CoderLLMClient):
         return llm_service.generate_text(
             prompt=prompt,
             project_id=ticket.project_id,
-            lane=llm_service.ModelLane.CODER,
             temperature=0.0,
             max_tokens=1000,
         )

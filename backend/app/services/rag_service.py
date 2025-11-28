@@ -17,9 +17,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+from langchain_core.structured_query import AttributeInfo
+from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain_community.vectorstores.qdrant import Qdrant
+from langchain_openai import ChatOpenAI
+
 from app.config import get_settings
-from app.services.llm_service import generate_text, ModelLane
-from app.services.qdrant_service import qdrant_service
+from app.services.llm_service import generate_text, get_routed_llm_config
+from app.services.qdrant_service import QdrantService, qdrant_service
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +66,7 @@ class RagService:
     def __init__(self):
         self.settings = get_settings()
         # Use QdrantService for all operations
-        self.qdrant_service = qdrant_service
+        self.qdrant_service: QdrantService = qdrant_service
         # Query history per project (in-memory, could be persisted)
         self._query_history: Dict[str, List[RAGQuery]] = {}
 
@@ -128,6 +133,9 @@ class RagService:
                     "content": chunk_data["content"],
                     "metadata": {
                         **(metadata or {}),
+                        "project_id": project_id,
+                        "document_id": document_id,
+                        "created_at": datetime.now().isoformat(),
                         "chunk_index": chunk_data["chunk_index"],
                         "start_char": chunk_data["start_char"],
                         "end_char": chunk_data["end_char"],
@@ -167,7 +175,6 @@ Example: ["query 1", "query 2", "query 3"]
             response = generate_text(
                 prompt=prompt,
                 project_id=project_id,
-                lane=ModelLane.FAST_RAG,
                 temperature=0.3,
             )
             
@@ -291,7 +298,6 @@ Return only the refined query, no explanation.
                     refined_query = generate_text(
                         prompt=refinement_prompt,
                         project_id=project_id,
-                        lane=ModelLane.FAST_RAG,
                         temperature=0.2,
                     ).strip()
                     
@@ -371,24 +377,78 @@ Return only the refined query, no explanation.
                 )
                 rag_query.rewritten_queries = rewritten_queries
             else:
-                # Simple search
-                results = self.qdrant_service.search_documents(
-                    project_id=project_id,
-                    query=query,
-                    limit=limit,
-                    collection_type="documents",
-                    document_id=document_id,
-                )
-                results = [
-                    {
-                        "content": r.get("content", ""),
-                        "score": r["score"],
-                        "document_id": r.get("document_id"),
-                        "chunk_index": r.get("chunk_index"),
-                        "metadata": r.get("metadata", {}),
-                    }
-                    for r in results
+                # Self-querying retriever
+                metadata_field_info = [
+                    AttributeInfo(
+                        name="project_id",
+                        description="The project ID",
+                        type="string",
+                    ),
+                    AttributeInfo(
+                        name="document_id",
+                        description="The document ID",
+                        type="string",
+                    ),
+                    AttributeInfo(
+                        name="source",
+                        description="The source of the document",
+                        type="string",
+                    ),
+                    AttributeInfo(
+                        name="created_at",
+                        description="The creation time of the document",
+                        type="string",
+                    ),
                 ]
+                document_content_description = "Content of a document"
+                base_url, model_name, backend, _ = get_routed_llm_config(query)
+                
+                # SelfQueryRetriever expects a LangChain-compatible ChatModel.
+                # If routing suggests llama_cpp, fall back to the main OpenAI-compatible model.
+                if backend == "llama_cpp":
+                    base_url = self.settings.llm_base_url
+                    model_name = self.settings.llm_model_name
+
+                llm = ChatOpenAI(
+                    model=model_name,
+                    base_url=base_url,
+                    api_key=self.settings.llm_api_key,
+                    temperature=0,
+                )
+
+                embeddings = self.qdrant_service.embedding_models.get("default")
+                if not embeddings:
+                    raise ValueError("Default embedding model not found")
+
+                vector_store = Qdrant(
+                    client=self.qdrant_service.client,
+                    collection_name=self.qdrant_service._get_collection_name(
+                        project_id, "documents"
+                    ),
+                    embeddings=embeddings,
+                )
+
+                retriever = SelfQueryRetriever.from_llm(
+                    llm,
+                    vector_store,
+                    document_content_description,
+                    metadata_field_info,
+                    verbose=True,
+                )
+
+                docs = retriever.get_relevant_documents(query)
+
+                results = []
+                for doc in docs:
+                    results.append(
+                        {
+                            "content": doc.page_content,
+                            "score": 1.0,  # Self-query doesn't provide a score
+                            "document_id": doc.metadata.get("document_id"),
+                            "chunk_index": doc.metadata.get("chunk_index"),
+                            "metadata": doc.metadata,
+                        }
+                    )
             
             # Create citations
             citations = [
@@ -470,7 +530,6 @@ Return only the refined query, no explanation.
             refined = generate_text(
                 prompt=prompt,
                 project_id=project_id,
-                lane=ModelLane.FAST_RAG,
                 temperature=0.2,
             ).strip()
             return refined

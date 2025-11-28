@@ -134,16 +134,16 @@ export CORTEX_LANE_CODER_MODEL="Qwen3-Coder-30B-1M"
 #### Usage in Code
 
 ```python
-from app.services.llm_service import generate_text, ModelLane
+from app.services.llm_service import generate_text
 
-# Use orchestrator (default)
+# The system now automatically routes based on the prompt content.
+# The 'lane' parameter is no longer needed.
 response = generate_text("Plan this project", project_id="proj-123")
 
-# Use specific lane
+# Example of a complex prompt that might be routed to a powerful model
 response = generate_text(
-    "Analyze this code", 
-    project_id="proj-123", 
-    lane=ModelLane.CODER
+    "Analyze this code and suggest refactorings to improve performance.", 
+    project_id="proj-123"
 )
 ```
 
