@@ -13,9 +13,9 @@ def test_get_context_budget(client: TestClient, project: dict) -> None:
     resp = client.get(f"/api/projects/{project_id}/context")
     assert resp.status_code == 200
     data = resp.json()
-    assert "total_tokens" in data
-    assert "used_tokens" in data
-    assert "available_tokens" in data
+    assert "totalTokens" in data
+    assert "usedTokens" in data
+    assert "availableTokens" in data
     assert "items" in data
 
 
@@ -83,5 +83,6 @@ def test_remove_context_item(client: TestClient, project: dict) -> None:
         resp = client.delete(f"/api/projects/{project_id}/context/items/{item_id}")
         assert resp.status_code == 200
         data = resp.json()
-        assert "total_tokens" in data
+        assert "budget" in data
+        assert "totalTokens" in data["budget"]
 

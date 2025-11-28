@@ -1,6 +1,8 @@
 import type { APIRequestContext } from '@playwright/test';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL =
+  (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACKEND_URL || 'http://localhost:8000')
+    .replace(/\/(?:api|api\/docs)?$/i, '') + '/api';
 
 export class ApiHelpers {
   constructor(private api: APIRequestContext) {}

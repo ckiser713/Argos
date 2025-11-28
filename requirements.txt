@@ -3,3 +3,16 @@ uvicorn
 pydantic
 pydantic-settings
 # Do NOT include sqlite3 — it's part of the Python standard library
+
+# Additional libraries used across the backend services and helper scripts
+httpx==0.25.2
+requests
+openai
+psutil
+qdrant-client
+sentence-transformers
+pypdf
+langchain==1.1.0
+langgraph==1.0.4
+langgraph-sdk==0.2.10
+langgraph-prebuilt==1.0.5

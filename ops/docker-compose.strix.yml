@@ -1,0 +1,21 @@
+services:
+  # The Brain & Coder
+  inference-vllm:
+    image: vllm-rocm-strix:latest
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      - VLLM_GPU_MEMORY_UTILIZATION=0.40
+    ports:
+      - "8000:8000"
+
+  # The Super-Reader
+  inference-llamacpp:
+    image: ghcr.io/ggerganov/llama.cpp:full-rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    command: -m /models/nemotron-4m.gguf -c 2000000 --port 8080 -ngl 99
+    ports:
+      - "8080:8080"

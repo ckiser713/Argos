@@ -17,7 +17,7 @@ from app.graphs.project_manager_graph import app as project_manager_graph
 from app.services.agent_service import agent_service
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from langchain.messages import HumanMessage
 
 router = APIRouter()
 

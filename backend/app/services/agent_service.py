@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from langchain_core.messages import HumanMessage
+from langchain.messages import HumanMessage
 
 from app.db import db_session
 from app.domain.common import PaginatedResponse

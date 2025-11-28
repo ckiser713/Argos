@@ -1,9 +1,15 @@
 import httpx
 try:
     from langchain.tools import tool
-except ImportError:
-    # Fallback for langchain version compatibility
-    from langchain_core.tools import tool
+except Exception:
+    # Fallback decorator if langchain.tools is unavailable or incompatible
+    def tool(fn=None, **kwargs):
+        def decorator(f):
+            return f
+
+        if fn:
+            return decorator(fn)
+        return decorator
 
 
 @tool

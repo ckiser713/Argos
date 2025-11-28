@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     # LLM backend selection: "openai" (vLLM/Ollama API) or "llama_cpp" (local binary)
     llm_backend: str = Field(default="openai", env="CORTEX_LLM_BACKEND")
     
+    # Default lane
+    llm_default_lane: str = Field(default="orchestrator", env="CORTEX_LLM_DEFAULT_LANE")
+    
+    # Lane-specific URLs and models
+    lane_orchestrator_url: str = Field(default="", env="CORTEX_LANE_ORCHESTRATOR_URL")
+    lane_orchestrator_model: str = Field(default="", env="CORTEX_LANE_ORCHESTRATOR_MODEL")
+    lane_coder_url: str = Field(default="", env="CORTEX_LANE_CODER_URL")
+    lane_coder_model: str = Field(default="", env="CORTEX_LANE_CODER_MODEL")
+    lane_super_reader_url: str = Field(default="", env="CORTEX_LANE_SUPER_READER_URL")
+    lane_super_reader_model: str = Field(default="", env="CORTEX_LANE_SUPER_READER_MODEL")
+    lane_fast_rag_url: str = Field(default="", env="CORTEX_LANE_FAST_RAG_URL")
+    lane_fast_rag_model: str = Field(default="", env="CORTEX_LANE_FAST_RAG_MODEL")
+    lane_governance_url: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_URL")
+    lane_governance_model: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_MODEL")
+    
     # llama.cpp settings (when llm_backend="llama_cpp")
     llama_cpp_binary_path: str = Field(
         default="/home/nexus/rocm/py311-tor290/bin/llama-cpp",

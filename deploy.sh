@@ -16,7 +16,7 @@ fi
 
 echo "1. Installing backend dependencies..."
 cd backend
-poetry install
+poetry install --no-root
 echo "✓ Backend dependencies installed"
 echo ""
 

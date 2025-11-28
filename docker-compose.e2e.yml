@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - 8000:8000
+    environment:
+      - CORTEX_SKIP_AUTH=true
+      - CORTEX_ATLAS_DB_PATH=/app/test_atlas.db
+      - CORTEX_ENV=test
+      - CORTEX_QDRANT_URL=http://qdrant:6333
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
+      interval: 10s
+      retries: 6
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - 5173:5173
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 10s
+      retries: 6
+
+  playwright:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    working_dir: /work
+    volumes:
+      - ./:/work
+    depends_on:
+      - backend
+      - frontend
+    environment:
+      - PLAYWRIGHT_BASE_URL=http://frontend:5173
+      - PLAYWRIGHT_API_BASE=http://backend:8000/api
+      - CORTEX_SKIP_AUTH=true
+    entrypoint: ["sh", "-c"]
+    command:
+      - "pnpm install --silent && pnpm exec playwright install --with-deps || pnpm exec playwright install && pnpm exec playwright test --timeout=60000 --reporter=list --reporter=html"
+    # --- Keep these in the first `environment` block to avoid duplication
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      retries: 6
+volumes:
+  qdrant_data:

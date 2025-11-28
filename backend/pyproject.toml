@@ -3,7 +3,7 @@ name = "cortex-backend"
 version = "0.1.0"
 description = "FastAPI backend for Project Cortex"
 authors = ["Your Name <you@example.com>"]
-readme = "README.md"
+readme = "README-backend.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -16,10 +16,13 @@ passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 sentence-transformers = "^2.2.2"
 qdrant-client = "^1.7.3"
 pypdf = "^3.17.4"
-langchain-text-splitters = "^0.0.1"
-langgraph = "^0.0.30"
-langchain-openai = "^0.1.0"
+langgraph = "^1.0.0"
 tree-sitter-languages = "^1.10.2"
+httpx = "^0.25.2"
+openai = "^1.0.0"
+psutil = "^5.9.5"
+requests = "^2.31.0"
+langchain = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

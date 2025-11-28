@@ -14,7 +14,7 @@ Implementation specification for the core workflow execution engine using LangGr
 
 ## Target State
 
-- Workflow runs execute automatically when created
+- Workflow runs execute when explicitly triggered by the execute endpoint
 - LangGraph graphs are compiled from workflow graph definitions
 - Node states update in real-time during execution
 - Execution errors are handled gracefully
@@ -318,11 +318,7 @@ async def create_workflow_run(
         input_data=body.input_data,
     )
     
-    # Schedule execution
-    background_tasks.add_task(
-        workflow_service.execute_workflow_run,
-        run.id
-    )
+    # Do not automatically schedule execution; it will be triggered via the execute endpoint
     
     return run
 ```

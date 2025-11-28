@@ -85,21 +85,9 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: [
     {
-      command: 'cd backend && LD_LIBRARY_PATH=/nix/store/dj06r96j515npcqi9d8af1d1c60bx2vn-gcc-14.3.0-lib/lib:/nix/store/g8zyryr9cr6540xsyg4avqkwgxpnwj2a-glibc-2.40-66/lib:$LD_LIBRARY_PATH poetry run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
-      url: 'http://localhost:8000/api/docs',
-      reuseExistingServer: !process.env.CI,
-      timeout: 120 * 1000,
-      env: {
-        CORTEX_ENV: 'test',
-        CORTEX_ATLAS_DB_PATH: './test_atlas.db',
-        CORTEX_QDRANT_URL: 'http://localhost:6333',
-        CORTEX_SKIP_AUTH: 'true',
-      },
-    },
-    {
       command: 'cd frontend && pnpm dev --port 5173',
-      url: 'http://localhost:5173',
-      reuseExistingServer: !process.env.CI,
+      url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+      reuseExistingServer: true,
       timeout: 120 * 1000,
       stdout: 'pipe',
       stderr: 'pipe',

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from enum import StrEnum
 from typing import Any
 
 import openai
@@ -19,23 +20,63 @@ settings = get_settings()
 client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
-def get_llm_client() -> openai.OpenAI:
+class ModelLane(StrEnum):
+    ORCHESTRATOR = "orchestrator"
+    CODER = "coder"
+    SUPER_READER = "super_reader"
+    FAST_RAG = "fast_rag"
+    GOVERNANCE = "governance"
+
+
+def get_llm_client(base_url: str = None) -> openai.OpenAI:
+    if base_url and base_url != settings.llm_base_url:
+        return openai.OpenAI(base_url=base_url, api_key=settings.llm_api_key)
     return client
 
 
+def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str]:
+    """
+    Resolve base_url, model_name, and backend for the given lane.
+    
+    Returns (base_url, model_name, backend)
+    """
+    lane_name = lane.value.upper()
+    
+    # Check for lane-specific config
+    base_url_attr = f"lane_{lane.value}_url"
+    model_attr = f"lane_{lane.value}_model"
+    
+    base_url = getattr(settings, base_url_attr, "")
+    model_name = getattr(settings, model_attr, "")
+    
+    if base_url and model_name:
+        # Determine backend based on URL or default
+        if "8080" in base_url or lane == ModelLane.SUPER_READER:
+            backend = "llama_cpp"
+        else:
+            backend = "openai"
+        return base_url, model_name, backend
+    
+    # Fallback to default
+    fallback_lane = ModelLane(settings.llm_default_lane)
+    if fallback_lane == lane:
+        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend
+    
+    # Recursive fallback
+    return resolve_lane_config(fallback_lane)
+
+
 def _call_underlying_llm(
-    prompt: str, *, temperature: float, max_tokens: int, model: str = None, json_mode: bool = False, **kwargs
+    prompt: str, *, temperature: float, max_tokens: int, base_url: str = None, model: str = None, backend: str = None, json_mode: bool = False, **kwargs
 ) -> str:
     """
     Call the underlying LLM backend (OpenAI API or llama.cpp).
     
-    Backend selection is controlled by CORTEX_LLM_BACKEND:
-    - "openai" (default): Use OpenAI-compatible API (vLLM/Ollama)
-    - "llama_cpp": Use local llama.cpp binary
+    Backend selection is controlled by CORTEX_LLM_BACKEND or per-lane.
     """
-    backend = settings.llm_backend.lower()
+    effective_backend = backend or settings.llm_backend.lower()
     
-    if backend == "llama_cpp":
+    if effective_backend == "llama_cpp":
         # Use llama.cpp service
         try:
             from app.services.llama_cpp_service import get_llama_cpp_service
@@ -64,22 +105,23 @@ def _call_underlying_llm(
         except ImportError:
             logger.warning(
                 "llama_cpp_service not available, falling back to OpenAI API",
-                extra={"backend": backend}
+                extra={"backend": effective_backend}
             )
             # Fall through to OpenAI API
         except Exception as e:
             logger.error(
                 "llama_cpp_service error, falling back to OpenAI API",
-                extra={"error": str(e), "backend": backend}
+                extra={"error": str(e), "backend": effective_backend}
             )
             # Fall through to OpenAI API
     
     # Default: Use OpenAI-compatible API (vLLM/Ollama)
     target_model = model or settings.llm_model_name
+    target_client = get_llm_client(base_url)
 
     try:
         response_format = {"type": "json_object"} if json_mode else {"type": "text"}
-        response = client.chat.completions.create(
+        response = target_client.chat.completions.create(
             model=target_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
@@ -95,29 +137,34 @@ def _call_underlying_llm(
 def generate_text(
     prompt: str,
     project_id: str,
+    lane: ModelLane = ModelLane.ORCHESTRATOR,
     *,
-    base_temperature: float,
-    max_tokens: int = 500,
-    model: str = "default_llm",
-    json_mode: bool = False,
-    **extra_kwargs: Any,
+    temperature: float | None = None,
+    max_tokens: int = 1000,
+    json_mode: bool = False
 ) -> str:
     """
-    Generates text using the underlying LLM, with mode-aware adjustments.
+    Generates text using the underlying LLM, with mode-aware adjustments and lane routing.
     """
-    settings: ProjectExecutionSettings = get_project_settings(project_id)
+    settings_obj: ProjectExecutionSettings = get_project_settings(project_id)
 
-    # Use project-specific temperature, overriding the base.
-    temperature = settings.llm_temperature
+    # Resolve lane configuration
+    base_url, model_name, backend = resolve_lane_config(lane)
+
+    # Use project-specific temperature, or provided, or default
+    effective_temperature = temperature if temperature is not None else settings_obj.llm_temperature
 
     logger.info(
         "llm_service.generate_text.start",
         extra={
             "project_id": project_id,
-            "mode": settings.mode,
-            "temperature": temperature,
+            "mode": settings_obj.mode,
+            "lane": lane.value,
+            "base_url": base_url,
+            "model": model_name,
+            "backend": backend,
+            "temperature": effective_temperature,
             "max_tokens": max_tokens,
-            "model": model,
             "json_mode": json_mode,
         },
     )
@@ -125,20 +172,21 @@ def generate_text(
     # --- primary generation pass ---
     raw_response = _call_underlying_llm(
         prompt,
-        temperature=temperature,
+        temperature=effective_temperature,
         max_tokens=max_tokens,
-        model=model,
+        base_url=base_url,
+        model=model_name,
+        backend=backend,
         json_mode=json_mode,
-        **extra_kwargs,
     )
 
-    if settings.mode == "normal":
+    if settings_obj.mode == "normal":
         return raw_response
 
     # --- paranoid mode: checker / validation passes ---
     validated = raw_response
 
-    for i in range(settings.validation_passes):
+    for i in range(settings_obj.validation_passes):
         checker_prompt = (
             "You are a careful reviewer. Given the user prompt and the draft answer,"
             " identify any factual inconsistencies, unsafe suggestions, or missing steps,"
@@ -151,16 +199,18 @@ def generate_text(
             extra={
                 "project_id": project_id,
                 "pass_index": i,
-                "mode": settings.mode,
+                "mode": settings_obj.mode,
+                "lane": lane.value,
             },
         )
 
         validated = _call_underlying_llm(
             checker_prompt,
-            temperature=min(temperature, 0.2),  # Checker LLM usually benefits from lower temp
+            temperature=min(effective_temperature, 0.2),  # Checker LLM usually benefits from lower temp
             max_tokens=max_tokens,
-            model=model,
-            **extra_kwargs,
+            base_url=base_url,
+            model=model_name,
+            backend=backend,
         )
 
     return validated

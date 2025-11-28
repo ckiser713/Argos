@@ -73,7 +73,7 @@ def update_workflow_graph(project_id: str, workflow_id: str, body: WorkflowGraph
 
 
 @router.post(
-    "/projects/{project_id}/workflows/runs", response_model=WorkflowRun, status_code=201, summary="Start a workflow run"
+    "/projects/{project_id}/workflows/runs", response_model=WorkflowRun, status_code=201, summary="Create a workflow run (execution started via /execute)"
 )
 def create_workflow_run(
     project_id: str, body: CreateWorkflowRunRequest, background_tasks: BackgroundTasks
@@ -88,8 +88,7 @@ def create_workflow_run(
         input_data=body.input_data,
     )
 
-    # Schedule execution in background
-    background_tasks.add_task(workflow_service.execute_workflow_run, run.id)
+    # Keep creation and execution separate; schedule execution via explicit endpoint
 
     return run
 
