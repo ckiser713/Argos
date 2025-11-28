@@ -3,6 +3,32 @@ set -euo pipefail
 
 # Deploy the project, ingest a takeout directory, and monitor ingest jobs.
 # Usage:
+if [ "$WITH_INFERENCE" = "true" ]; then
+  echo "Starting inference stack (Qdrant + inference engine) via ops/docker-compose.yml..."
+  set +e
+  (cd "$ROOT_DIR/ops" && docker-compose up -d)
+  CI=$?
+  set -e
+  if [ "$CI" -ne 0 ]; then
+    echo "⚠ Failed to start the full inference engine via ops/docker-compose.yml (image/build not found)."
+    echo "⚠ Continuing without inference engine; Qdrant may not be available for embeddings."
+    # Try to bring up only qdrant if available in ops/docker-compose.yml
+    echo "Attempting to start qdrant only..."
+    set +e
+    (cd "$ROOT_DIR/ops" && docker-compose up -d qdrant) || true
+    set -e
+  fi
+  echo "Waiting for Qdrant to become healthy..."
+  for i in {1..60}; do
+    if curl -sS --fail http://localhost:6333/health >/dev/null 2>&1 ; then
+      echo "Qdrant ready"
+      break
+    fi
+    echo "Waiting for Qdrant..."
+    sleep 2
+  done
+fi
+
 #   bash tools/deploy_and_ingest.sh [--takeout ~/takeout] [--with-inference] [--api-url http://127.0.0.1:8000]
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
