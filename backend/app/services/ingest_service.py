@@ -17,8 +17,9 @@ from app.services.streaming_service import emit_ingest_event
 from app.services.idea_service import idea_service
 from app.services.repo_service import repo_service
 
-from langchain.chains import create_extraction_chain_pydantic
+from langchain_classic.chains import create_extraction_chain_pydantic
 from langchain_openai import ChatOpenAI
+from openai import OpenAIError
 
 
 logger = logging.getLogger(__name__)
@@ -58,21 +59,31 @@ class ChatExport(BaseModel):
 
 class IngestService:
     def __init__(self):
-        # Initialize the LLM. Assumes OPENAI_API_KEY is in the environment.
-        # For production, consider a more robust configuration management.
-        self.llm = ChatOpenAI(model="gpt-4-turbo", temperature=0)
-        
-        # Create the extraction chains
-        self.metadata_extraction_chain = create_extraction_chain_pydantic(
-            pydantic_schema=DocumentMetadata, llm=self.llm
-        )
-        self.chat_extraction_chain = create_extraction_chain_pydantic(
-            pydantic_schema=ChatExport, llm=self.llm
-        )
+        # Initialize the LLM lazily. If OPENAI_API_KEY is not configured or the
+        # OpenAI client cannot be created during import (test/local env), then
+        # keep the LLM and extraction chains as None and skip LLM-based features.
+        self.llm = None
+        self.metadata_extraction_chain = None
+        self.chat_extraction_chain = None
+        try:
+            self.llm = ChatOpenAI(model="gpt-4-turbo", temperature=0)
+            # Create the extraction chains only if an LLM is available
+            self.metadata_extraction_chain = create_extraction_chain_pydantic(
+                pydantic_schema=DocumentMetadata, llm=self.llm
+            )
+            self.chat_extraction_chain = create_extraction_chain_pydantic(
+                pydantic_schema=ChatExport, llm=self.llm
+            )
+        except OpenAIError as e:
+            logger.warning("OpenAI client not configured: %s. Skipping LLM initialization.", e)
 
     async def _get_document_metadata(self, content: str) -> Optional[DocumentMetadata]:
         """Uses an LLM chain to extract metadata from document content."""
         loop = asyncio.get_running_loop()
+        # If LLM/extraction chain isn't available (e.g., local/test env), skip.
+        if not self.metadata_extraction_chain:
+            logger.debug("Skipping metadata extraction; LLM/extraction chain not configured.")
+            return None
         try:
             # LangChain's predict is synchronous, so run it in an executor
             extracted_data = await loop.run_in_executor(
@@ -87,6 +98,10 @@ class IngestService:
     async def _parse_chat_export_with_ai(self, content: str) -> Optional[ChatExport]:
         """Uses a specialized LLM chain to parse a chat export into structured messages."""
         loop = asyncio.get_running_loop()
+        # If LLM/extraction chain isn't available (e.g., local/test env), skip.
+        if not self.chat_extraction_chain:
+            logger.debug("Skipping chat parsing; LLM/extraction chain not configured.")
+            return None
         try:
             extracted_data = await loop.run_in_executor(
                 None, self.chat_extraction_chain.invoke, {"input": content}

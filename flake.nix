@@ -6,9 +6,15 @@
   };
 
   outputs = { self, nixpkgs }:
-    let
+      let
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
-      projectRoot = builtins.toString ./.;
+      # Avoid packaging large directories (model artifacts, caches) into the flake source
+      # when building the development shell. This prevents 'argument list too long' errors
+      # when Nix builds derivations based on the repository contents.
+      filteredSource = builtins.filterSource (path: type: 
+        (builtins.match "^(ops/models|node_modules|\\.venv|\\.cache|rocm|ops/models/.*)$" path) == null
+      ) ./.;
+      projectRoot = builtins.toString filteredSource;
       
       # Backend package - wrapper script that uses poetry
       backend = pkgs.symlinkJoin {
@@ -150,6 +156,8 @@
           xorg.libXcursor  # Required for Playwright (libxcursor.so.1)
           xorg.libXi  # Required for Playwright (libXi.so.6)
           xorg.libXrender  # Required for Playwright (libXrender.so.1)
+          # note: libXss is not available as xorg.libXss in this nixpkgs;
+          # other X.org libs are included above (libX11, libXext, libXrender)
           libx11
           libxext
           libxcb
@@ -164,6 +172,41 @@
           dbus
           fontconfig
           freetype
+          # Common fonts used in the app for visual consistency
+          noto-fonts
+          noto-fonts-color-emoji
+          liberation_ttf
+          dejavu_fonts
+          # Additional packages to satisfy Playwright host dependency checks
+          harfbuzz
+          icu
+          vulkan-loader
+          # GStreamer and its plugins used by browsers
+          gst_all_1.gstreamer
+          gst_all_1.gst-plugins-base
+          gst_all_1.gst-plugins-good
+          gst_all_1.gst-plugins-bad
+          gst_all_1.gst-plugins-ugly
+          gst_all_1.gst-libav
+          # Common multimedia and encoding libraries
+          libvpx
+          libavif
+          woff2
+          libwebp
+          libjpeg_turbo
+          libpng
+          # Crypto and helper libs
+          libgcrypt
+          libgpg-error
+          # Wayland/graphics support
+          wayland
+          wayland-protocols
+          # GTK4 and related graphic libraries requested by Playwright
+          gtk4
+          graphene
+          lcms2
+          flite
+          libsecret
           
           # ============================================
           # Development Tools
@@ -173,6 +216,9 @@
           wget
           jq  # Useful for JSON processing
           bash
+          # Rust toolchain (may be required to build certain Python wheels like tree-sitter-languages)
+          rustc
+          cargo
           pkg-config  # For finding library paths during Python package builds
           
           # ============================================
@@ -194,6 +240,12 @@
         shellHook = ''
           # Add ROCm binaries to PATH (llama-cpp, llama-bench, llama-quantize)
           export PATH="$HOME/rocm/py311-tor290/bin:$PATH"
+          # Ensure the Python from Nix (Python 3.11) is first in PATH so Poetry uses it
+          export PATH="${pkgs.python311}/bin:${pkgs.poetry}/bin:$PATH"
+          # Prefer active Python for Poetry virtualenvs so it uses Python 3.11
+          export POETRY_VIRTUALENVS_CREATE=true
+          # Create venv in-project for reproducible per-project environments
+          export POETRY_VIRTUALENVS_IN_PROJECT=true
           
           echo "=========================================="
           echo "Cortex Development Environment"
@@ -211,7 +263,7 @@
           echo "  - PIP_FIND_LINKS configured for offline PyTorch installation"
           echo ""
           echo "Environment variables set:"
-          echo "  - CORTEX_ENV=dev"
+          echo "  - CORTEX_ENV=local (can be overridden by setting CORTEX_ENV before 'nix develop')"
           echo "  - CORTEX_QDRANT_URL=http://localhost:6333"
           echo "  - PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright"
           echo "  - PIP_FIND_LINKS=$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common"
@@ -229,11 +281,17 @@
             echo "  ⚠ llama-cpp not found at $HOME/rocm/py311-tor290/bin/llama-cpp"
           fi
           echo ""
+          # Rebuild the font cache so Playwright uses the fonts installed in Nix
+          if command -v fc-cache >/dev/null 2>&1; then
+            fc-cache -f -v || true
+          fi
           echo "=========================================="
         '';
 
         # Set environment variables for the development environment
-        CORTEX_ENV = "dev";
+        # CORTEX_ENV defaults to "local" but can be overridden by environment variable
+        # This allows staging/production deployments to set CORTEX_ENV=strix or CORTEX_ENV=production
+        CORTEX_ENV = builtins.getEnv "CORTEX_ENV" or "local";
         CORTEX_QDRANT_URL = "http://localhost:6333";
         CORTEX_DB_URL = "postgresql+psycopg://cortex:cortex@localhost:5432/cortex";
         PLAYWRIGHT_BROWSERS_PATH = "$HOME/.cache/ms-playwright";

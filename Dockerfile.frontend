@@ -1,4 +1,4 @@
-FROM node:20-buster-slim
+FROM node:20-bullseye-slim
 
 WORKDIR /app
 
@@ -12,7 +12,8 @@ RUN pnpm install --silent
 RUN cd frontend && pnpm build
 
 # Serve built files using serve
-RUN npm install -g serve@14
-CMD ["sh", "-c", "servedir=frontend/dist && serve -s $servedir -l 5173"]
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* && \
+	npm install -g serve@14
+CMD ["sh", "-c", "servedir=frontend/dist && serve -s $servedir -l tcp://0.0.0.0:5173"]
 
 EXPOSE 5173

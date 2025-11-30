@@ -19,7 +19,7 @@ import { ContextItem } from './components/ContextPrism';
 import { Activity, Shield, Cpu, Terminal, Wifi, Database } from 'lucide-react';
 import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
 import { useCortexStore } from '@src/state/cortexStore';
-import { Node, Edge } from 'reactflow';
+import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
 // Mock Context Data
 const INITIAL_CONTEXT_ITEMS: ContextItem[] = [
@@ -78,35 +78,8 @@ const AppContent: React.FC = () => {
     }
   }, [projects, currentProject, setCurrentProjectId]);
 
-  // Show loading state while projects are loading
-  if (projectsLoading) {
-    return (
-      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan mx-auto mb-4"></div>
-          <p className="text-gray-400 font-mono">Loading projects...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state if projects failed to load
-  if (projectsError) {
-    return (
-      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-400 mb-4">Failed to load projects</div>
-          <p className="text-gray-400 font-mono text-sm">{projectsError.message}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const handleEjectContext = (id: string) => {
-    setContextItems(prev => prev.filter(item => item.id !== id));
-    setLogs(prev => [...prev, `[CONTEXT_MGR] Ejected item ${id} from memory.`].slice(-8));
-  };
-
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // This ensures hooks are called in the same order on every render
   useEffect(() => {
     // Simulate incoming logs and system fluctuations
     const interval = setInterval(() => {
@@ -168,6 +141,35 @@ const AppContent: React.FC = () => {
     const timer = setTimeout(runStep, 500);
     return () => clearTimeout(timer);
   }, [activeTab]);
+
+  // Show loading state while projects are loading
+  if (projectsLoading) {
+    return (
+      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan mx-auto mb-4"></div>
+          <p className="text-gray-400 font-mono">Loading projects...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if projects failed to load
+  if (projectsError) {
+    return (
+      <div className="flex h-screen w-full bg-void text-white items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 mb-4">Failed to load projects</div>
+          <p className="text-gray-400 font-mono text-sm">{projectsError.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleEjectContext = (id: string) => {
+    setContextItems(prev => prev.filter(item => item.id !== id));
+    setLogs(prev => [...prev, `[CONTEXT_MGR] Ejected item ${id} from memory.`].slice(-8));
+  };
 
 
   // Calculate used tokens for Layout header based on ContextPrism items
@@ -235,10 +237,7 @@ const AppContent: React.FC = () => {
           </motion.div>
         );
         
-      import { ReactFlowProvider } from 'reactflow';
-// ... other imports
 
-// ... inside AppContent component, in the renderContent function
 
       case 'strategy':
         return (

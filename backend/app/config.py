@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     cortex_env: CortexEnv = Field(default="local", env="CORTEX_ENV")
 
     # --- Mode defaults for LLM execution and validation passes ---
-    normal_mode_llm_temperature: float = Field(default=0.3, env="CORTEX_NORMAL_MODE_LLM_TEMPERATURE")
+    normal_mode_llm_temperature: float = Field(default=0.2, env="CORTEX_NORMAL_MODE_LLM_TEMPERATURE")
     normal_mode_validation_passes: int = Field(default=1, env="CORTEX_NORMAL_MODE_VALIDATION_PASSES")
     normal_mode_max_parallel_tools: int = Field(default=8, env="CORTEX_NORMAL_MODE_MAX_PARALLEL_TOOLS")
 

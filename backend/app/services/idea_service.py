@@ -68,11 +68,13 @@ class IdeaService:
         candidate_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
+        # Use content as a fallback for summary to match API helpers in e2e tests
         candidate = IdeaCandidate(
             id=candidate_id,
             project_id=project_id,
             type=candidate_data.get("type", "feature"),
-            summary=candidate_data["summary"],
+            title=candidate_data.get("title", candidate_data.get("summary") or candidate_data.get("content", "")),
+            summary=candidate_data.get("summary") or candidate_data.get("content", ""),
             status=IdeaCandidateStatus(candidate_data.get("status", "active")),
             confidence=candidate_data.get("confidence", 0.85),
             source_log_ids=candidate_data.get("source_log_ids", []),
@@ -86,8 +88,8 @@ class IdeaService:
                 """
                 INSERT INTO idea_candidates
                 (id, project_id, source_id, source_doc_id, source_doc_chunk_id,
-                 original_text, summary, cluster_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 title, original_text, summary, status, confidence, cluster_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate.id,
@@ -95,8 +97,11 @@ class IdeaService:
                     candidate_data.get("source_id", "default"),
                     candidate_data.get("source_doc_id", ""),
                     candidate_data.get("source_doc_chunk_id", ""),
+                    candidate.title,
+                    candidate_data.get("content", candidate.summary),
                     candidate.summary,
-                    candidate.summary,
+                    candidate.status.value,
+                    candidate.confidence,
                     None,
                     candidate.created_at.isoformat(),
                 ),
@@ -119,6 +124,9 @@ class IdeaService:
             if "status" in updates:
                 update_fields.append("status = ?")
                 params.append(updates["status"])
+            if "title" in updates:
+                update_fields.append("title = ?")
+                params.append(updates["title"])
             if "summary" in updates:
                 update_fields.append("summary = ?")
                 params.append(updates["summary"])
@@ -407,6 +415,17 @@ class IdeaService:
                 if updates["column"] in status_map:
                     update_fields.append("status = ?")
                     params.append(status_map[updates["column"]])
+                # Also update description JSON blob to preserve column information
+                # (Tasks are stored as idea_tickets with description.json metadata)
+                update_fields.append("description = ?")
+                # build new description JSON based on existing data
+                old_desc = row.get("description") or "{}"
+                try:
+                    desc_data = json.loads(old_desc)
+                except Exception:
+                    desc_data = {}
+                desc_data["column"] = updates["column"]
+                params.append(json.dumps(desc_data))
             if "priority" in updates:
                 update_fields.append("priority = ?")
                 params.append(updates["priority"])
@@ -429,9 +448,10 @@ class IdeaService:
             id=row["id"],
             project_id=row["project_id"],
             type="feature",  # Default
+            title=row.get("title", ""),
             summary=row.get("summary", row.get("original_text", "")),
-            status=IdeaCandidateStatus("active"),
-            confidence=0.85,
+            status=IdeaCandidateStatus(row.get("status", "active")),
+            confidence=row.get("confidence", 0.85),
             source_log_ids=[],
             source_channel=None,
             source_user=None,

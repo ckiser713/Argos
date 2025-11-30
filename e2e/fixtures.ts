@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, request as globalRequest } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
 import { UIHelpers } from './utils/ui-helpers';
 import { ApiHelpers } from './utils/api-helpers';
@@ -23,8 +23,13 @@ const API_BASE = (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACK
 
 export const test = base.extend<TestFixtures>({
   api: async ({ request }, use) => {
-    // Use the same request context for API calls
-    await use(request);
+    // Create a request context with the backend API base as default baseURL
+    const apiContext = await globalRequest.newContext({ baseURL: API_BASE });
+    try {
+      await use(apiContext);
+    } finally {
+      await apiContext.dispose();
+    }
   },
 
   authenticatedPage: async ({ page, request }, use) => {
@@ -35,6 +40,12 @@ export const test = base.extend<TestFixtures>({
       await page.setViewportSize({ width: 1408, height: 864 });
     } catch (e) {
       // some Playwright devices may throw if viewport cannot be set; ignore
+    }
+    // Disable animations and enforce deterministic fonts for visual tests
+    try {
+      await page.addStyleTag({ content: `* { animation: none !important; transition: none !important; } .animate-pulse { opacity: 1 !important; } body { font-family: 'JetBrains Mono', 'Inter', monospace, sans-serif !important; }` });
+    } catch (e) {
+      // ignore if injection fails
     }
     await page.goto('/');
     await use(page);

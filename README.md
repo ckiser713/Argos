@@ -260,7 +260,7 @@ pip install "fastapi[standard]" uvicorn pydantic pydantic-settings # Assuming on
 Configure environment variables (or use `backend/.env`):
 
 ```bash
-export CORTEX_ENV=dev
+export CORTEX_ENV=local
 export CORTEX_DB_URL="postgresql+psycopg://cortex:cortex@localhost:5432/cortex"
 export CORTEX_QDRANT_URL="http://localhost:6333"
 export CORTEX_LOG_LEVEL=INFO
@@ -307,9 +307,18 @@ pnpm install
 pnpm exec playwright install --with-deps
 ```
 
-2. Run tests:
+2. Run tests (Nix dev shell enforced):
 ```bash
+# This will run the e2e runner inside the Nix dev shell (recommended):
 pnpm e2e
+
+# If you prefer to run Playwright directly inside your shell for ad-hoc tests,
+# start a Nix shell first so environment variables, Python, and Node are consistent:
+# nix develop
+# Targeted: run a couple specs inside Nix dev shell (recommended):
+# PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright PLAYWRIGHT_BASE_URL=http://localhost:5173 bash run_e2e_nix.sh --project=chromium e2e/workflows/user-workflows.spec.ts e2e/agent-streaming.spec.ts --reporter=list
+# Or use `pnpm e2e:quick` which proxies through the Nix runner and forwards args:
+# pnpm e2e:quick -- --project=chromium e2e/workflows/user-workflows.spec.ts e2e/agent-streaming.spec.ts --reporter=list
 ```
 
 For more details, see [e2e/README.md](e2e/README.md)

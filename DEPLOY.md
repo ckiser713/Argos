@@ -87,7 +87,7 @@ pnpm e2e
 ## Environment Variables
 
 The Nix shell automatically sets:
-- `CORTEX_ENV=dev`
+ - `CORTEX_ENV=local`
 - `CORTEX_QDRANT_URL=http://localhost:6333`
 - `CORTEX_DB_URL=postgresql+psycopg://cortex:cortex@localhost:5432/cortex`
 - `PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright`
@@ -130,6 +130,7 @@ Run: `pnpm exec playwright install --with-deps` inside the Nix shell
 
 ### Docker socket permission denied
 Add user to docker group: `sudo usermod -aG docker $USER` then log out/in
+
 
 
 

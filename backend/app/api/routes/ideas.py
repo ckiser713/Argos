@@ -109,6 +109,19 @@ def create_idea_ticket(
     return idea_service.create_ticket(project_id, ticket_data)
 
 
+@router.post(
+    "/projects/{project_id}/ideas",
+    response_model=IdeaTicket,
+    status_code=201,
+    summary="Compatibility endpoint to create an idea ticket",
+)
+def create_idea_project(project_id: str, ticket_data: dict) -> IdeaTicket:
+    """Compatibility alias to create a ticket under `/projects/{project_id}/ideas`.
+    Kept for tests that expect this endpoint.
+    """
+    return idea_service.create_ticket(project_id, ticket_data)
+
+
 # Mission Control Tasks
 @router.get("/projects/{project_id}/tasks", response_model=PaginatedResponse, summary="List mission control tasks")
 def list_mission_control_tasks(

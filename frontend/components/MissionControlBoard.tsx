@@ -76,15 +76,15 @@ const DiffViewer = ({ onClose }: { onClose: () => void }) => (
                 <div className="text-gray-400">--- a/src/api/users.ts</div>
                 <div className="text-gray-400">+++ b/src/api/users.ts</div>
                 <div className="text-cyan">@@ -10,5 +10,15 @@</div>
-                <div> import {{'{'}} User {'}'}} from './models';</div>
-                <div className="text-green-500">+import {{'{'}} UserProfile {'}'}} from './models';</div>
-                <div className="text-red-500">-router.get('/users/:id', (req, res) => {{'{'}}</div>
-                <div className="text-green-500">+router.get('/users/:id/profile', (req, res) => {{'{'}}</div>
+                <div> import {'{'} User {'}'} from './models';</div>
+                <div className="text-green-500">+import {'{'} UserProfile {'}'} from './models';</div>
+                <div className="text-red-500">-router.get('/users/:id', (req, res) =&gt; {'{'}</div>
+                <div className="text-green-500">+router.get('/users/:id/profile', (req, res) =&gt; {'{'}</div>
                 <div>   const user = await db.findUser(req.params.id);</div>
                 <div className="text-green-500">+  const profile = await db.findProfile(req.params.id);</div>
                 <div>   res.json(user);</div>
-                <div className="text-green-500">+  res.json({{'{'}}...user, ...profile{'}'}});</div>
-                <div> {'}'}});</div>
+                <div className="text-green-500">+  res.json({'{'}...user, ...profile{'}'});</div>
+                <div> {'}'}</div>
             </div>
         </motion.div>
     </motion.div>

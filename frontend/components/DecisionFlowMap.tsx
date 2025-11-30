@@ -12,6 +12,7 @@ import ReactFlow, {
   MarkerType,
   addEdge,
   useReactFlow,
+  ReactFlowProvider,
 } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import { GitFork, CheckSquare, Database, Server, Code, Shield, HelpCircle, Plus, BrainCircuit, X } from 'lucide-react';
@@ -125,7 +126,7 @@ const nodeTypes = { task: TaskNode, decision: DecisionNode };
 
 
 // --- Main Component ---
-export const DecisionFlowMap: React.FC = () => {
+const DecisionFlowMapComponent: React.FC = () => {
   const { data: graphData, loading } = useRoadmapGraph('proj-1');
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -331,7 +332,7 @@ export const DecisionFlowMap: React.FC = () => {
 // We can create a wrapper here for completeness.
 const DecisionFlowMapWrapper = () => (
   <ReactFlowProvider>
-    <DecisionFlowMap />
+    <DecisionFlowMapComponent />
   </ReactFlowProvider>
 );
 

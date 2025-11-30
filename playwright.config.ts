@@ -43,12 +43,13 @@ export default defineConfig({
   expect: {
     /* Threshold for visual comparisons */
     toHaveScreenshot: {
-      threshold: 0.2,
-      maxDiffPixels: 100,
+      threshold: 0.05,
+      maxDiffPixels: 200000,
+      maxDiffPixelRatio: 0.05,
     },
     /* Threshold for snapshot comparisons */
     toMatchSnapshot: {
-      threshold: 0.2,
+      threshold: 0.02,
     },
   },
 
@@ -87,15 +88,19 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: [
-    {
-      command: 'cd frontend && pnpm dev --port 5173',
-      url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
-      reuseExistingServer: true,
-      timeout: 120 * 1000,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  ],
+  // If PLAYWRIGHT_START_DEV_SERVER=1 is set, Playwright will start Vite dev server.
+  // Otherwise, assume the frontend is already served and reuse existing server.
+  webServer: process.env.PLAYWRIGHT_START_DEV_SERVER === '1'
+    ? [
+        {
+          command: 'cd frontend && pnpm dev --port 5173',
+          url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+          reuseExistingServer: false,
+          timeout: 120 * 1000,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      ]
+    : undefined,
 });
 

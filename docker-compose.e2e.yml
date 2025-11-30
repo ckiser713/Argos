@@ -10,7 +10,7 @@ services:
     environment:
       - CORTEX_SKIP_AUTH=true
       - CORTEX_ATLAS_DB_PATH=/app/test_atlas.db
-      - CORTEX_ENV=test
+      - CORTEX_ENV=local
       - CORTEX_QDRANT_URL=http://qdrant:6333
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
@@ -57,9 +57,6 @@ services:
     image: qdrant/qdrant:latest
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 10s
-      retries: 6
+    # No healthcheck for qdrant; some minimal images lack curl and other utilities.
 volumes:
   qdrant_data:

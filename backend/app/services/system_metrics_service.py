@@ -313,17 +313,8 @@ def get_system_status() -> SystemStatus:
     context = get_context_metrics()
     active_agent_runs = _get_active_agent_runs()
 
-    if not model_warmup_service.is_ready():
-        reason_msg = model_warmup_service.status_reason() or "Model lanes are still warming up."
-        return SystemStatus(
-            status="warming_up",
-            reason=reason_msg,
-            gpu=gpu,
-            cpu=cpu,
-            memory=memory,
-            context=context,
-            active_agent_runs=active_agent_runs,
-        )
+    warming_up = not model_warmup_service.is_ready()
+    warming_reason = model_warmup_service.status_reason() if warming_up else None
 
     status: SystemStatusLiteral = "nominal"
     reasons: list[str] = []
@@ -384,6 +375,11 @@ def get_system_status() -> SystemStatus:
         reasons.append(f"Context budget high ({ctx_ratio * 100:.1f}%).")
 
     reason_str = "; ".join(reasons) if reasons else None
+    if warming_reason:
+        if reason_str:
+            reason_str = f"{reason_str}; {warming_reason}"
+        else:
+            reason_str = warming_reason
 
     return SystemStatus(
         status=status,

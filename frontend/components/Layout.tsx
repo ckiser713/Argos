@@ -19,7 +19,8 @@ import {
   Settings,
   Map,
   FileText,
-  Architecture,
+  // Architecture removed: lucide-react v0.554.0 does not export it.
+  // Use LayoutDashboard icon as a substitute for the Architecture stage.
   Combine,
   Construction
 } from 'lucide-react';
@@ -85,7 +86,7 @@ const BlueprintLifecycle = ({ currentStage = 1 }: { currentStage: number }) => {
   const stages = [
     { icon: <Lightbulb size={14} />, label: 'Ideation' },
     { icon: <FileText size={14} />, label: 'Spec' },
-    { icon: <Architecture size={14} />, label: 'Architecture' },
+    { icon: <LayoutDashboard size={14} />, label: 'Architecture' },
     { icon: <Construction size={14} />, label: 'Build' },
   ];
 

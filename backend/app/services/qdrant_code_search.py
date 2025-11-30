@@ -11,7 +11,6 @@ from typing import List, Optional, Sequence
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, VectorParams
-from sentence_transformers import SentenceTransformer
 
 from app.config import get_settings
 from app.services.gap_analysis_service import CodeChunk, CodeSearchBackend, IdeaTicket
@@ -45,16 +44,20 @@ class QdrantCodeSearchBackend(CodeSearchBackend):
         # Use code-specific embedding model if available, fallback to general model
         try:
             # Try code-specific model first
+            # Local import to avoid import-time failure when sentence-transformers isn't present
+            from sentence_transformers import SentenceTransformer
             self.model = embedding_model or SentenceTransformer("jinaai/jina-embeddings-v2-base-code")
             self.embedding_size = 768  # jina-embeddings-v2-base-code dimension
         except Exception:
             try:
                 # Fallback to microsoft/codebert-base
+                from sentence_transformers import SentenceTransformer
                 self.model = SentenceTransformer("microsoft/codebert-base")
                 self.embedding_size = 768
             except Exception:
                 # Final fallback
                 logger.warning("Code-specific models not available, using general model")
+                from sentence_transformers import SentenceTransformer
                 self.model = SentenceTransformer("all-MiniLM-L6-v2")
                 self.embedding_size = 384
 

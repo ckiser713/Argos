@@ -285,6 +285,7 @@ class IdeaCandidate(BaseModel):
     id: str
     project_id: str
     type: str
+    title: str
     summary: str
     status: IdeaCandidateStatus
     confidence: float = Field(ge=0.0, le=1.0)
@@ -307,6 +308,7 @@ class IdeaCluster(BaseModel):
 
 
 class IdeaTicketStatus(str, Enum):
+    CANDIDATE = "candidate"
     ACTIVE = "active"
     COMPLETE = "complete"
     BLOCKED = "blocked"
@@ -348,6 +350,7 @@ class MissionControlTaskOrigin(str, Enum):
     REPO = "repo"
     CHAT = "chat"
     PDF = "pdf"
+    MANUAL = "manual"
 
 
 class MissionControlTask(BaseModel):
@@ -391,6 +394,7 @@ class RoadmapNode(BaseModel):
     id: str
     project_id: str
     label: str
+    status: RoadmapNodeStatus = Field(default=RoadmapNodeStatus.PENDING)
     node_type: RoadmapNodeType = Field(default=RoadmapNodeType.TASK)
     description: Optional[str] = None
     start_date: Optional[datetime] = None

@@ -165,7 +165,6 @@ async def trigger_n8n_workflow_with_retry(
     raise N8nWorkflowError(error_msg) from last_error
 
 
-@tool
 async def trigger_n8n_workflow(workflow_id: str, payload: dict) -> str:
     """
     Triggers an external automation workflow in n8n.
@@ -216,3 +215,12 @@ async def trigger_n8n_workflow(workflow_id: str, payload: dict) -> str:
     except Exception as e:
         logger.exception(f"Unexpected error in trigger_n8n_workflow tool")
         return f"❌ Unexpected error triggering workflow '{workflow_id}': {str(e)}"
+
+
+# Also export a langchain StructuredTool alias when available without overriding
+# the original async function, so code that expects a callable can still
+# import and call the async function directly.
+try:
+    trigger_n8n_workflow_tool = tool(trigger_n8n_workflow)
+except Exception:
+    trigger_n8n_workflow_tool = trigger_n8n_workflow

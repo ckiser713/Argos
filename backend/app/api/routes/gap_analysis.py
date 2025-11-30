@@ -32,6 +32,20 @@ async def run_gap_analysis(
     return report
 
 
+@router.post("/projects/{project_id}/gap-analysis/generate", response_model=GapReport)
+async def generate_gap_analysis(
+    project_id: str,
+    service: GapAnalysisService = Depends(get_gap_analysis_service_dep),
+    repo: GapAnalysisRepo = Depends(get_gap_analysis_repo_dep),
+) -> GapReport:
+    """
+    Compatibility alias for generating a gap analysis report.
+    """
+    report = await service.generate_gap_report(project_id)
+    await repo.save_gap_report(report)
+    return report
+
+
 @router.get("/projects/{project_id}/gap-analysis/latest", response_model=GapReport)
 async def get_latest_gap_analysis(
     project_id: str,

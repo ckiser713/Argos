@@ -103,11 +103,12 @@ def create_app() -> FastAPI:
     app.include_router(agents.router, prefix="/api", tags=["agents"], dependencies=auth_deps)
     app.include_router(knowledge.router, prefix="/api", tags=["knowledge"], dependencies=auth_deps)
     app.include_router(streaming.router, prefix="/api/stream", tags=["streaming"], dependencies=auth_deps)
+    app.include_router(ideas.router, prefix="/api", tags=["ideas"], dependencies=auth_deps)
     app.include_router(project_intel.router, prefix="/api", tags=["project-intel"], dependencies=auth_deps)
     app.include_router(mode.router, prefix="/api", tags=["mode"], dependencies=auth_deps)
     app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis"], dependencies=auth_deps)
     app.include_router(roadmap.router, prefix="/api", tags=["roadmap"], dependencies=auth_deps)
-    app.include_router(ideas.router, prefix="/api", tags=["ideas"], dependencies=auth_deps)
+    # (ideas router already included above)
     app.include_router(n8n.router, prefix="/api", tags=["n8n"], dependencies=auth_deps)
 
     return app

@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from langchain_core.structured_query import AttributeInfo
-from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain_classic.chains.query_constructor.schema import AttributeInfo
+from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.vectorstores.qdrant import Qdrant
 from langchain_openai import ChatOpenAI
 
@@ -69,6 +69,8 @@ class RagService:
         self.qdrant_service: QdrantService = qdrant_service
         # Query history per project (in-memory, could be persisted)
         self._query_history: Dict[str, List[RAGQuery]] = {}
+        # Expose the RAGQuery dataclass on the instance for test compatibility
+        self.RAGQuery = RAGQuery
 
     def chunk_text(
         self,
@@ -151,6 +153,26 @@ class RagService:
             )
 
             logger.info(f"Ingested document {document_id} into project {project_id}: {upserted} chunks")
+            # Also create a knowledge node for the document so that text-based
+            # searches can find the document even when embedding models are not available.
+            try:
+                from app.services.knowledge_service import knowledge_service
+
+                title = document_id
+                summary = (text[:200] + "...") if len(text) > 200 else text
+                try:
+                    knowledge_service.create_node(project_id, {
+                        "title": title,
+                        "summary": summary,
+                        "text": text,
+                        "type": "document",
+                        "tags": [],
+                    })
+                except Exception:
+                    # If node already exists or creation fails, ignore
+                    pass
+            except Exception:
+                pass
             return upserted
 
         except Exception as e:
@@ -464,6 +486,14 @@ Return only the refined query, no explanation.
             rag_query.citations = citations
             
             # Format response with citations
+            # Normalize results for compatibility: ensure 'document_id' and 'source' are top-level
+            for r in results:
+                meta = r.get("metadata") or {}
+                if not r.get("document_id") and meta.get("document_id"):
+                    r["document_id"] = meta.get("document_id")
+                if not r.get("source") and meta.get("source"):
+                    r["source"] = meta.get("source")
+
             return {
                 "results": [
                     {
@@ -512,9 +542,21 @@ Return only the refined query, no explanation.
         if not previous_results:
             return original_query
         
+        # Previous results may come from document chunks (with 'content')
+        # or from knowledge nodes (with 'summary' or 'title'). Be permissive.
+        def _extract_content(r: Dict) -> str:
+            if 'content' in r and r['content']:
+                return r['content']
+            if r.get('summary'):
+                return r['summary']
+            if r.get('title'):
+                return r['title']
+            if r.get('metadata') and isinstance(r.get('metadata'), dict):
+                return r['metadata'].get('content') or r['metadata'].get('summary') or ''
+            return str(r)
+
         context = "\n".join([
-            f"- {r['content'][:150]}..." 
-            for r in previous_results[:3]
+            f"- {_extract_content(r)[:150]}..." for r in previous_results[:3]
         ])
         
         prompt = f"""The user searched for: "{original_query}"
@@ -541,6 +583,17 @@ Return only the refined query, no explanation.
         """Get query history for a project."""
         history = self._query_history.get(project_id, [])
         return history[-limit:] if history else []
+
+    def record_query(self, project_id: str, query: str) -> None:
+        """Record a query in the RAG query history for the project.
+
+        This can be called by other services (e.g., knowledge_service) to capture
+        queries invoked via compatibility endpoints.
+        """
+        rag_query = RAGQuery(query=query, project_id=project_id, timestamp=datetime.now())
+        if project_id not in self._query_history:
+            self._query_history[project_id] = []
+        self._query_history[project_id].append(rag_query)
 
     def delete_document(
         self,

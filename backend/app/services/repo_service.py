@@ -22,7 +22,19 @@ class RepoService:
     """
 
     def __init__(self):
-        self.code_search = QdrantCodeSearchBackend()
+        try:
+            self.code_search = QdrantCodeSearchBackend()
+        except Exception as e:
+            logger.warning(f"Code search backend unavailable: {e}. Falling back to no-op backend.")
+
+            class _NoOpCodeSearch:
+                def ingest_code_file(self, project_id, file_path, code):
+                    return None
+
+                def search_related_code(self, ticket, *, top_k: int):
+                    return []
+
+            self.code_search = _NoOpCodeSearch()
 
     def index_repository(
         self,

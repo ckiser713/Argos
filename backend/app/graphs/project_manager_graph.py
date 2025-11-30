@@ -16,6 +16,13 @@ except Exception:
             return decorator(fn)
         return decorator
 from langchain.messages import AnyMessage as BaseMessage, HumanMessage, ToolMessage
+try:
+    from langgraph.checkpoint.memory import MemorySaver
+except Exception:
+    # Fallback to a basic, no-op MemorySaver if langgraph isn't installed or the API differs
+    class MemorySaver:
+        def __init__(self, *args, **kwargs):
+            pass
 from langchain.chat_models.base import init_chat_model
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt.tool_node import ToolNode

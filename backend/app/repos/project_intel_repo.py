@@ -30,8 +30,8 @@ def save_candidates(candidates: List[IdeaCandidate]) -> None:
                 """
                 INSERT OR REPLACE INTO idea_candidates
                 (id, project_id, source_id, source_doc_id, source_doc_chunk_id,
-                 original_text, summary, embedding_json, cluster_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 title, original_text, summary, status, confidence, embedding_json, cluster_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     c.id,
@@ -39,8 +39,11 @@ def save_candidates(candidates: List[IdeaCandidate]) -> None:
                     c.source_id,
                     c.source_doc_id,
                     c.source_doc_chunk_id,
+                    c.title,
                     c.original_text,
                     c.summary,
+                    c.status,
+                    c.confidence,
                     json.dumps(c.embedding),
                     c.cluster_id,
                     c.created_at.isoformat(),
@@ -74,6 +77,9 @@ def list_candidates(project_id: Optional[str] = None) -> List[IdeaCandidate]:
                     source_doc_chunk_id=row["source_doc_chunk_id"],
                     original_text=row["original_text"],
                     summary=row["summary"],
+                    title=row.get("title", ""),
+                    status=row.get("status", "active"),
+                    confidence=row.get("confidence", 0.85),
                     embedding=json.loads(row["embedding_json"] or "null"),
                     cluster_id=row["cluster_id"],
                     created_at=datetime.fromisoformat(row["created_at"]),

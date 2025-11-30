@@ -14,6 +14,10 @@ from app.domain.models import (
     KnowledgeSearchRequest,
 )
 from app.services.qdrant_service import qdrant_service
+from app.services.rag_service import rag_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeService:
@@ -136,13 +140,17 @@ class KnowledgeService:
         node_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
+        title = node_data.get("title") or node_data.get("label")
+        summary = node_data.get("summary") or node_data.get("description")
+        node_type = node_data.get("type") or node_data.get("kind") or "concept"
+
         node = KnowledgeNode(
             id=node_id,
             project_id=project_id,
-            title=node_data["title"],
-            summary=node_data.get("summary"),
+            title=title,
+            summary=summary,
             text=node_data.get("text"),
-            type=node_data.get("type", "concept"),
+            type=node_type,
             tags=node_data.get("tags", []),
             metadata=node_data.get("metadata"),
             created_at=now,
@@ -153,8 +161,8 @@ class KnowledgeService:
             conn.execute(
                 """
                 INSERT INTO knowledge_nodes
-                (id, project_id, title, summary, tags_json, type)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (id, project_id, title, summary, tags_json, type, metadata_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     node.id,
@@ -163,6 +171,9 @@ class KnowledgeService:
                     node.summary,
                     json.dumps(node.tags),
                     node.type,
+                    json.dumps(node.metadata) if node.metadata else None,
+                    node.created_at.isoformat(),
+                    node.updated_at.isoformat(),
                 ),
             )
             conn.commit()
@@ -280,8 +291,8 @@ class KnowledgeService:
         edge_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
-        source = edge_data["source"]
-        target = edge_data["target"]
+        source = edge_data.get("source") or edge_data.get("source_id")
+        target = edge_data.get("target") or edge_data.get("target_id")
 
         # Validate nodes exist
         source_node = self.get_node(project_id, source)
@@ -346,6 +357,12 @@ class KnowledgeService:
         """Search knowledge nodes using vector similarity search."""
         use_vector_search = getattr(request, "useVectorSearch", True)
 
+        # Record queries to RAG service history for compatibility
+        try:
+            rag_service.record_query(project_id, request.query)
+        except Exception:
+            pass
+
         # Try vector search first
         if use_vector_search and qdrant_service.client:
             vector_results = qdrant_service.search_knowledge_nodes(
@@ -386,18 +403,26 @@ class KnowledgeService:
 
                     return results
 
-        # Fallback to text search
+        # Fallback to text search: split query into words and match rows that
+        # contain all query tokens (loose AND across title/summary fields).
         with db_session() as conn:
-            query = request.query.lower()
-            rows = conn.execute(
-                """
-                SELECT * FROM knowledge_nodes
-                WHERE project_id = ?
-                AND (LOWER(title) LIKE ? OR LOWER(summary) LIKE ?)
-                LIMIT ?
-                """,
-                (project_id, f"%{query}%", f"%{query}%", request.max_results),
-            ).fetchall()
+            original_query = request.query or ""
+            query = original_query.lower()
+            tokens = [t.lower() for t in original_query.split() if len(t) > 2]
+            if not tokens:
+                tokens = [original_query.lower()]
+
+            # Build dynamic SQL: require each token to appear in title OR summary
+            where_clauses = []
+            params = [project_id]
+            for token in tokens:
+                where_clauses.append("(LOWER(title) LIKE ? OR LOWER(summary) LIKE ?)")
+                params.extend([f"%{token}%", f"%{token}%"])
+
+            where_sql = " AND ".join(where_clauses)
+            sql = f"SELECT * FROM knowledge_nodes WHERE project_id = ? AND {where_sql} LIMIT ?"
+            params.append(request.max_results)
+            rows = conn.execute(sql, tuple(params)).fetchall()
 
             results = []
             for row in rows:
@@ -425,6 +450,13 @@ class KnowledgeService:
             except (json.JSONDecodeError, ValueError):
                 pass
 
+        metadata = None
+        if row.get("metadata_json"):
+            try:
+                metadata = json.loads(row["metadata_json"])
+            except (json.JSONDecodeError, ValueError):
+                metadata = None
+
         return KnowledgeNode(
             id=row["id"],
             project_id=row["project_id"],
@@ -433,7 +465,7 @@ class KnowledgeService:
             text=row.get("text"),
             type=row.get("type", "concept"),
             tags=tags,
-            metadata=None,  # Could be stored in separate column
+            metadata=metadata,
             created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
             updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
         )

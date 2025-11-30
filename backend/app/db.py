@@ -59,6 +59,46 @@ def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
             pass
 
 
+def _ensure_roadmap_nodes_columns(conn: sqlite3.Connection) -> None:
+    """Add any roadmap_nodes columns that existed in newer schema versions."""
+    required_columns = {
+        "node_type": "node_type TEXT NOT NULL DEFAULT 'task'",
+        "metadata_json": "metadata_json TEXT",
+    }
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(roadmap_nodes)")}
+    for column_name, definition in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE roadmap_nodes ADD COLUMN {definition}")
+
+
+def _ensure_knowledge_nodes_columns(conn: sqlite3.Connection) -> None:
+    """Add any knowledge_nodes columns that existed in newer schema versions."""
+    required_columns = {
+        "text": "text TEXT",
+        "metadata_json": "metadata_json TEXT",
+        "created_at": "created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'",
+        "updated_at": "updated_at TEXT",
+    }
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(knowledge_nodes)")}
+    for column_name, definition in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE knowledge_nodes ADD COLUMN {definition}")
+
+
+def _ensure_idea_candidates_columns(conn: sqlite3.Connection) -> None:
+    """Add any idea_candidates columns that existed in newer schema versions.
+    """
+    required_columns = {
+        "title": "title TEXT NOT NULL DEFAULT ''",
+        "status": "status TEXT NOT NULL DEFAULT 'active'",
+        "confidence": "confidence REAL DEFAULT 0.85",
+    }
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(idea_candidates)")}
+    for column_name, definition in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE idea_candidates ADD COLUMN {definition}")
+
+
 def init_db() -> None:
     """Create base tables required for atlas.db if they do not exist."""
     with db_session() as conn:
@@ -138,8 +178,12 @@ def init_db() -> None:
                 project_id TEXT NOT NULL,
                 title TEXT NOT NULL,
                 summary TEXT,
+                text TEXT,
                 tags_json TEXT,
                 type TEXT NOT NULL,
+                metadata_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
                 FOREIGN KEY(project_id) REFERENCES projects(id)
             );
             CREATE INDEX IF NOT EXISTS idx_knowledge_nodes_project ON knowledge_nodes(project_id);
@@ -160,11 +204,14 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS idea_candidates (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
+                title TEXT NOT NULL,
                 source_id TEXT NOT NULL,
                 source_doc_id TEXT NOT NULL,
                 source_doc_chunk_id TEXT NOT NULL,
                 original_text TEXT NOT NULL,
                 summary TEXT NOT NULL,
+                status TEXT NOT NULL,
+                confidence REAL,
                 embedding_json TEXT,
                 cluster_id TEXT,
                 created_at TEXT NOT NULL,
@@ -307,8 +354,10 @@ def init_db() -> None:
                 project_id TEXT NOT NULL,
                 label TEXT NOT NULL,
                 description TEXT,
-                status TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                node_type TEXT NOT NULL DEFAULT 'task',
                 priority TEXT,
+                metadata_json TEXT,
                 start_date TEXT,
                 target_date TEXT,
                 depends_on_ids_json TEXT,
@@ -394,7 +443,22 @@ def init_db() -> None:
             );
             """
         )
+        # Ensure any newer columns exist for roadmap_nodes
+        try:
+            _ensure_roadmap_nodes_columns(conn)
+        except Exception:
+            # Ignore migration errors during init
+            pass
+        # Ensure any newer columns exist for knowledge_nodes
+        try:
+            _ensure_knowledge_nodes_columns(conn)
+        except Exception:
+            pass
         _ensure_ingest_job_columns(conn)
+        try:
+            _ensure_idea_candidates_columns(conn)
+        except Exception:
+            pass
         existing = conn.execute("SELECT version FROM schema_migrations WHERE version = ?", (SCHEMA_VERSION,)).fetchone()
         if not existing:
             conn.execute(

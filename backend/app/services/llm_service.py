@@ -21,6 +21,19 @@ settings = get_settings()
 client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
 
 
+def get_llm_client(base_url: Optional[str] = None):
+    """Return an OpenAI-compatible client for the given base_url.
+    Falls back to the default `client` configured at module import time.
+    """
+    if not base_url or base_url == settings.llm_base_url:
+        return client
+    try:
+        return openai.OpenAI(base_url=base_url, api_key=settings.llm_api_key)
+    except Exception:
+        logger.warning("Failed to initialize LLM client for base_url %s, falling back to default", base_url)
+        return client
+
+
 class LLMResponse(BaseModel):
     response: str
     reasoning_trace: Optional[List[str]] = None
@@ -47,7 +60,7 @@ Given the user's prompt, classify it as either '{simple}' or '{complex}'.
 Do not respond with more than one word.
 
 <prompt>
-{input}
+{{input}}
 </prompt>
 
 Classification:"""
