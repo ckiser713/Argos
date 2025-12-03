@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from langchain_classic.chains.query_constructor.schema import AttributeInfo
 from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.vectorstores.qdrant import Qdrant
-from langchain_openai import ChatOpenAI
+from app.services.local_llm_client import LocalChatLLM
 
 from app.config import get_settings
 from app.services.llm_service import generate_text, get_routed_llm_config
@@ -431,10 +431,10 @@ Return only the refined query, no explanation.
                     base_url = self.settings.llm_base_url
                     model_name = self.settings.llm_model_name
 
-                llm = ChatOpenAI(
-                    model=model_name,
+                llm = LocalChatLLM(
                     base_url=base_url,
                     api_key=self.settings.llm_api_key,
+                    model_name=model_name,
                     temperature=0,
                 )
 

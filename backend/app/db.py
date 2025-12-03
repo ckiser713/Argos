@@ -1,17 +1,46 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Union
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
+
+# Import new SQLAlchemy infrastructure
+from app.database import (
+    get_sync_engine,
+    get_sync_session_factory,
+    get_db_session as sqlalchemy_db_session,
+    check_database_connection,
+    Base,
+)
+from app.models import (
+    Project, IngestSource, IngestJob, IdeaTicket, KnowledgeNode,
+    AgentRun, IdeaCandidate, IdeaCluster, Roadmap, ContextItem,
+    AgentStep, AgentMessage, AgentNodeState, WorkflowGraph, WorkflowRun,
+    WorkflowNodeState, RoadmapNode, RoadmapEdge, KnowledgeEdge,
+    GapReport, GapSuggestion, ChatSegment, SchemaMigration,
+)
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "2024-06-01"
 
 
+def _is_using_postgresql() -> bool:
+    """Check if we're using PostgreSQL based on environment."""
+    settings = get_settings()
+    return settings.database_url.startswith("postgresql://")
+
+
 def _db_path() -> Path:
+    """Get SQLite database path (for SQLite mode only)."""
     settings = get_settings()
     path = Path(settings.atlas_db_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -23,19 +52,44 @@ def _dict_row_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, obj
     return {column[0]: row[idx] for idx, column in enumerate(cursor.description)}
 
 
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path(), check_same_thread=False)
-    conn.row_factory = _dict_row_factory
-    return conn
+def get_connection() -> Union[sqlite3.Connection, Session]:
+    """
+    Get a database connection.
+    
+    Returns SQLAlchemy Session for PostgreSQL, sqlite3.Connection for SQLite.
+    For new code, prefer using db_session() context manager.
+    """
+    if _is_using_postgresql():
+        # Return SQLAlchemy session for PostgreSQL
+        session_factory = get_sync_session_factory()
+        return session_factory()
+    else:
+        # Legacy SQLite connection
+        conn = sqlite3.connect(_db_path(), check_same_thread=False)
+        conn.row_factory = _dict_row_factory
+        return conn
 
 
 @contextmanager
-def db_session() -> Iterator[sqlite3.Connection]:
-    conn = get_connection()
-    try:
-        yield conn
-    finally:
-        conn.close()
+def db_session() -> Iterator[Union[sqlite3.Connection, Session]]:
+    """
+    Context manager for database sessions.
+    
+    Returns SQLAlchemy Session for PostgreSQL, sqlite3.Connection for SQLite.
+    Both support execute() for raw SQL queries.
+    """
+    if _is_using_postgresql():
+        # Use SQLAlchemy for PostgreSQL
+        with sqlalchemy_db_session() as session:
+            yield session
+    else:
+        # Legacy SQLite mode
+        conn = sqlite3.connect(_db_path(), check_same_thread=False)
+        conn.row_factory = _dict_row_factory
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 
 def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
@@ -100,7 +154,34 @@ def _ensure_idea_candidates_columns(conn: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
-    """Create base tables required for atlas.db if they do not exist."""
+    """Create base tables required for the database if they do not exist.
+    
+    For PostgreSQL (strix/production), uses SQLAlchemy ORM models.
+    For SQLite (local), uses legacy SQL scripts for backward compatibility.
+    """
+    if _is_using_postgresql():
+        # Use SQLAlchemy to create tables for PostgreSQL
+        logger.info("Initializing PostgreSQL database with SQLAlchemy ORM...")
+        engine = get_sync_engine()
+        Base.metadata.create_all(bind=engine)
+        
+        # Record schema migration
+        with sqlalchemy_db_session() as session:
+            result = session.execute(
+                text("SELECT version FROM schema_migrations WHERE version = :version"),
+                {"version": SCHEMA_VERSION}
+            )
+            existing = result.fetchone()
+            if not existing:
+                session.execute(
+                    text("INSERT INTO schema_migrations (version, applied_at) VALUES (:version, :applied_at)"),
+                    {"version": SCHEMA_VERSION, "applied_at": datetime.now(timezone.utc).isoformat()}
+                )
+        logger.info(f"PostgreSQL database initialized with schema version {SCHEMA_VERSION}")
+        return
+    
+    # Legacy SQLite initialization
+    logger.info("Initializing SQLite database with legacy SQL scripts...")
     with db_session() as conn:
         conn.executescript(
             """
@@ -466,10 +547,17 @@ def init_db() -> None:
                 (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
             )
         conn.commit()
+    logger.info(f"SQLite database initialized with schema version {SCHEMA_VERSION}")
 
 
 def get_schema_version() -> str:
     """Return the latest applied schema version."""
-    with db_session() as conn:
-        row = conn.execute("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").fetchone()
-        return row["version"] if row else SCHEMA_VERSION
+    if _is_using_postgresql():
+        with sqlalchemy_db_session() as session:
+            result = session.execute(text("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"))
+            row = result.fetchone()
+            return row[0] if row else SCHEMA_VERSION
+    else:
+        with db_session() as conn:
+            row = conn.execute("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").fetchone()
+            return row["version"] if row else SCHEMA_VERSION

@@ -46,13 +46,13 @@ MODEL_CONFIG = {
     "gguf": {
         "super_reader": {
             "description": "SUPER_READER Lane - Nemotron UltraLong 4M",
-            "repo": "nvidia/Nemotron-8B-Instruct",
-            "filename": "nemotron-8b-instruct.Q4_K_M.gguf",
+            "repo": "Mungert/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-GGUF",
+            "filename": "Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf",
         },
         "governance": {
             "description": "GOVERNANCE Lane - Granite 3.0 Instruct",
-            "repo": "ibm-granite/granite-3.0-8b-instruct",
-            "filename": "granite-3.0-8b-instruct.Q4_K_M.gguf",
+            "repo": "bartowski/granite-3.0-8b-instruct-GGUF",
+            "filename": "granite-3.0-8b-instruct-Q4_K_M.gguf",
         },
     },
     "embedding": {

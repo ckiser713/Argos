@@ -65,6 +65,7 @@ services:
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
       - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - N8N_USER_MANAGEMENT_DISABLED=true
     volumes:
       - ./n8n_data:/home/node/.n8n
     healthcheck:

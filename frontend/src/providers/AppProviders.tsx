@@ -51,6 +51,56 @@ function ToastProvider({ children }: PropsWithChildren) {
 }
 
 export function AppProviders({ children }: PropsWithChildren) {
+  // Auto-authenticate on app startup if no token exists
+  React.useEffect(() => {
+    const ensureAuthToken = async () => {
+      if (typeof window === "undefined") return;
+      
+      const existingToken = window.localStorage.getItem("cortex_auth_token");
+      if (existingToken) {
+        // Token exists, verify it's still valid by checking expiry
+        try {
+          const payload = JSON.parse(atob(existingToken.split('.')[1]));
+          const expiresAt = payload.exp * 1000; // Convert to milliseconds
+          if (Date.now() < expiresAt) {
+            // Token is still valid
+            return;
+          }
+        } catch {
+          // Invalid token format, will fetch new one
+        }
+      }
+
+      // No valid token, fetch a new one
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+        const formData = new URLSearchParams();
+        formData.append("username", "admin");
+        formData.append("password", "password");
+
+        const response = await fetch(`${apiBaseUrl}/api/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          window.localStorage.setItem("cortex_auth_token", data.access_token);
+          console.log("✅ Auto-authenticated successfully");
+        } else {
+          console.warn("⚠️ Auto-authentication failed:", response.status);
+        }
+      } catch (error) {
+        console.warn("⚠️ Auto-authentication error:", error);
+      }
+    };
+
+    ensureAuthToken();
+  }, []);
+
   return (
     <ErrorBoundary
       onError={(error, errorInfo) => {

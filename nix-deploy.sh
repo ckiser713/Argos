@@ -122,13 +122,29 @@ case "$ACTION" in
         else
             echo -e "${GREEN}✓ Inference-engine started${NC}"
         fi
+        
+        # Start n8n workflow automation
+        echo "   Starting n8n..."
+        if $DOCKER_COMPOSE_CMD -f "$PROJECT_ROOT/ops/docker-compose.yml" up -d n8n 2>&1; then
+            echo -e "${GREEN}✓ n8n started${NC}"
+        else
+            echo -e "${YELLOW}⚠ Failed to start n8n - check logs${NC}"
+        fi
         echo ""
         
         echo "2. Installing dependencies..."
         echo "   Backend dependencies..."
         cd "$PROJECT_ROOT/backend"
         if command -v poetry &> /dev/null; then
-            poetry install --no-dev || echo -e "${YELLOW}⚠ Backend dependencies may need manual installation${NC}"
+            # Check if lock file needs updating
+            if poetry check 2>&1 | grep -q "poetry.lock was last generated"; then
+                echo "   Updating poetry.lock..."
+                poetry lock 2>&1 | grep -v "^$" | tail -5 || true
+            fi
+            poetry install 2>&1 | grep -v "^$" | tail -10 || {
+                echo -e "${YELLOW}⚠ Backend dependencies installation had issues${NC}"
+                echo "   Trying to continue anyway..."
+            }
         else
             echo -e "${YELLOW}⚠ Poetry not found - skipping backend dependency installation${NC}"
         fi
@@ -136,21 +152,128 @@ case "$ACTION" in
         echo "   Frontend dependencies..."
         cd "$PROJECT_ROOT/frontend"
         if command -v pnpm &> /dev/null; then
-            pnpm install || echo -e "${YELLOW}⚠ Frontend dependencies may need manual installation${NC}"
+            # Fix permissions if needed
+            if [ -d "node_modules" ] && [ ! -w "node_modules" ]; then
+                echo "   Fixing node_modules permissions..."
+                chmod -R u+w node_modules 2>/dev/null || true
+            fi
+            pnpm install 2>&1 | grep -v "^$" | tail -15 || {
+                echo -e "${YELLOW}⚠ Frontend dependencies installation had issues${NC}"
+                echo "   Trying to continue anyway..."
+            }
+            # Verify vite is installed
+            if [ ! -f "node_modules/vite/bin/vite.js" ]; then
+                echo -e "${YELLOW}⚠ Vite not found, attempting reinstall...${NC}"
+                pnpm install vite --force 2>&1 | tail -5 || true
+            fi
         else
             echo -e "${YELLOW}⚠ pnpm not found - skipping frontend dependency installation${NC}"
         fi
         echo ""
         
-        echo "3. Starting backend service..."
-        echo -e "${YELLOW}   Run in separate terminal:${NC}"
-        echo -e "${YELLOW}   cd backend && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000${NC}"
+        echo "3. Downloading AI models..."
+        echo "   Checking for required models..."
+        if [ -f "$PROJECT_ROOT/backend/scripts/download_models.py" ]; then
+            # Set models directory (default to ./models in project root)
+            export MODELS_DIR="${MODELS_DIR:-${PROJECT_ROOT}/models}"
+            # Ensure all models are downloaded (don't skip any)
+            export SKIP_VLLM="false"
+            export SKIP_GGUF="false"
+            export SKIP_EMBEDDINGS="false"
+            
+            # Check if Python dependencies are available for model downloads
+            # Prefer poetry run if poetry is available (to use installed dependencies)
+            if command -v poetry &> /dev/null && [ -d "$PROJECT_ROOT/backend" ]; then
+                cd "$PROJECT_ROOT/backend"
+                # Try to run the download script with poetry
+                if poetry run python3 "$PROJECT_ROOT/backend/scripts/download_models.py" 2>&1 | tail -40; then
+                    echo -e "${GREEN}✓ Model download process completed${NC}"
+                else
+                    echo -e "${YELLOW}⚠ Model download had issues - check logs above${NC}"
+                    echo "   Models may need to be downloaded manually: ./ops/download_all_models.sh"
+                fi
+                cd "$PROJECT_ROOT"
+            elif command -v python3 &> /dev/null; then
+                # Fallback to direct python3 if poetry not available
+                cd "$PROJECT_ROOT"
+                if python3 "$PROJECT_ROOT/backend/scripts/download_models.py" 2>&1 | tail -40; then
+                    echo -e "${GREEN}✓ Model download process completed${NC}"
+                else
+                    echo -e "${YELLOW}⚠ Model download had issues - check logs above${NC}"
+                    echo "   Models may need to be downloaded manually: ./ops/download_all_models.sh"
+                fi
+            else
+                echo -e "${YELLOW}⚠ Python3 not found - skipping model downloads${NC}"
+                echo "   Run manually: ./ops/download_all_models.sh"
+            fi
+        else
+            echo -e "${YELLOW}⚠ Model download script not found at backend/scripts/download_models.py${NC}"
+        fi
         echo ""
         
-        echo "4. Starting frontend service..."
-        echo -e "${YELLOW}   Run in separate terminal:${NC}"
-        echo -e "${YELLOW}   cd frontend && pnpm dev${NC}"
-        echo -e "${YELLOW}   (Frontend runs on port 3000 by default)${NC}"
+        # Create PID directory
+        mkdir -p "$PROJECT_ROOT/.pids"
+        
+        echo "4. Starting backend service..."
+        # Check if backend is already running
+        if [ -f "$PROJECT_ROOT/.pids/backend.pid" ]; then
+            BACKEND_PID=$(cat "$PROJECT_ROOT/.pids/backend.pid")
+            if ps -p "$BACKEND_PID" > /dev/null 2>&1; then
+                echo -e "${YELLOW}   Backend already running (PID: $BACKEND_PID)${NC}"
+            else
+                rm -f "$PROJECT_ROOT/.pids/backend.pid"
+            fi
+        fi
+        
+        if [ ! -f "$PROJECT_ROOT/.pids/backend.pid" ] || ! ps -p "$(cat "$PROJECT_ROOT/.pids/backend.pid")" > /dev/null 2>&1; then
+            cd "$PROJECT_ROOT/backend"
+            if command -v poetry &> /dev/null; then
+                nohup poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 > "$PROJECT_ROOT/.pids/backend.log" 2>&1 &
+                BACKEND_PID=$!
+                echo "$BACKEND_PID" > "$PROJECT_ROOT/.pids/backend.pid"
+                echo -e "${GREEN}   ✓ Backend started (PID: $BACKEND_PID)${NC}"
+                echo "   Logs: $PROJECT_ROOT/.pids/backend.log"
+            else
+                echo -e "${RED}   ✗ Poetry not found - cannot start backend${NC}"
+            fi
+        fi
+        echo ""
+        
+        echo "5. Starting frontend service..."
+        # Check if frontend is already running
+        if [ -f "$PROJECT_ROOT/.pids/frontend.pid" ]; then
+            FRONTEND_PID=$(cat "$PROJECT_ROOT/.pids/frontend.pid")
+            if ps -p "$FRONTEND_PID" > /dev/null 2>&1; then
+                echo -e "${YELLOW}   Frontend already running (PID: $FRONTEND_PID)${NC}"
+            else
+                rm -f "$PROJECT_ROOT/.pids/frontend.pid"
+            fi
+        fi
+        
+        if [ ! -f "$PROJECT_ROOT/.pids/frontend.pid" ] || ! ps -p "$(cat "$PROJECT_ROOT/.pids/frontend.pid")" > /dev/null 2>&1; then
+            cd "$PROJECT_ROOT/frontend"
+            if command -v pnpm &> /dev/null; then
+                # Verify vite is available before starting
+                if [ ! -f "node_modules/vite/bin/vite.js" ]; then
+                    echo -e "${RED}   ✗ Vite not found - frontend dependencies not installed${NC}"
+                    echo "   Run: cd frontend && pnpm install"
+                else
+                    nohup pnpm dev > "$PROJECT_ROOT/.pids/frontend.log" 2>&1 &
+                    FRONTEND_PID=$!
+                    echo "$FRONTEND_PID" > "$PROJECT_ROOT/.pids/frontend.pid"
+                    echo -e "${GREEN}   ✓ Frontend started (PID: $FRONTEND_PID)${NC}"
+                    echo "   Logs: $PROJECT_ROOT/.pids/frontend.log"
+                    # Wait a moment and check if it's still running
+                    sleep 2
+                    if ! ps -p "$FRONTEND_PID" > /dev/null 2>&1; then
+                        echo -e "${YELLOW}   ⚠ Frontend process exited - check logs${NC}"
+                        rm -f "$PROJECT_ROOT/.pids/frontend.pid"
+                    fi
+                fi
+            else
+                echo -e "${RED}   ✗ pnpm not found - cannot start frontend${NC}"
+            fi
+        fi
         echo ""
         
         echo -e "${GREEN}=== Services Started ===${NC}"
@@ -159,7 +282,13 @@ case "$ACTION" in
         echo "  - Qdrant: http://localhost:6333"
         echo "  - Backend API: http://localhost:8000"
         echo "  - Backend Docs: http://localhost:8000/api/docs"
-        echo "  - Frontend: http://localhost:3000 (start with: cd frontend && pnpm dev)"
+        echo "  - Frontend: http://localhost:3000 (or check logs for actual port)"
+        echo ""
+        echo "Process IDs saved to:"
+        echo "  - Backend PID: $PROJECT_ROOT/.pids/backend.pid"
+        echo "  - Frontend PID: $PROJECT_ROOT/.pids/frontend.pid"
+        echo ""
+        echo "To stop services, run: $0 stop"
         ;;
         
     stop)
@@ -174,8 +303,34 @@ case "$ACTION" in
         }
         echo -e "${GREEN}✓ Docker services stopped${NC}"
         echo ""
-        echo -e "${YELLOW}Note: Backend and frontend services need to be stopped manually${NC}"
-        echo "  (Ctrl+C in their respective terminals)"
+        
+        echo "Stopping backend service..."
+        if [ -f "$PROJECT_ROOT/.pids/backend.pid" ]; then
+            BACKEND_PID=$(cat "$PROJECT_ROOT/.pids/backend.pid")
+            if ps -p "$BACKEND_PID" > /dev/null 2>&1; then
+                kill "$BACKEND_PID" 2>/dev/null || true
+                echo -e "${GREEN}✓ Backend stopped (PID: $BACKEND_PID)${NC}"
+            else
+                echo -e "${YELLOW}⚠ Backend process not found (stale PID file)${NC}"
+            fi
+            rm -f "$PROJECT_ROOT/.pids/backend.pid"
+        else
+            echo -e "${YELLOW}⚠ Backend PID file not found${NC}"
+        fi
+        
+        echo "Stopping frontend service..."
+        if [ -f "$PROJECT_ROOT/.pids/frontend.pid" ]; then
+            FRONTEND_PID=$(cat "$PROJECT_ROOT/.pids/frontend.pid")
+            if ps -p "$FRONTEND_PID" > /dev/null 2>&1; then
+                kill "$FRONTEND_PID" 2>/dev/null || true
+                echo -e "${GREEN}✓ Frontend stopped (PID: $FRONTEND_PID)${NC}"
+            else
+                echo -e "${YELLOW}⚠ Frontend process not found (stale PID file)${NC}"
+            fi
+            rm -f "$PROJECT_ROOT/.pids/frontend.pid"
+        else
+            echo -e "${YELLOW}⚠ Frontend PID file not found${NC}"
+        fi
         ;;
         
     restart)
@@ -204,22 +359,45 @@ case "$ACTION" in
         
         # Check backend
         echo "Backend API:"
-        if curl -s http://localhost:8000/api/docs > /dev/null 2>&1; then
-            echo -e "  ${GREEN}✓ Running on http://localhost:8000${NC}"
+        if [ -f "$PROJECT_ROOT/.pids/backend.pid" ]; then
+            BACKEND_PID=$(cat "$PROJECT_ROOT/.pids/backend.pid")
+            if ps -p "$BACKEND_PID" > /dev/null 2>&1; then
+                if curl -s http://localhost:8000/api/docs > /dev/null 2>&1; then
+                    echo -e "  ${GREEN}✓ Running on http://localhost:8000 (PID: $BACKEND_PID)${NC}"
+                else
+                    echo -e "  ${YELLOW}⚠ Process running (PID: $BACKEND_PID) but not responding${NC}"
+                fi
+            else
+                echo -e "  ${RED}✗ Not running (stale PID file)${NC}"
+            fi
+        elif curl -s http://localhost:8000/api/docs > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓ Running on http://localhost:8000 (no PID file)${NC}"
         else
             echo -e "  ${RED}✗ Not running${NC}"
         fi
         echo ""
         
-        # Check frontend (Vite default port is 3000)
+        # Check frontend (Vite default port is 3000 or 5173)
         echo "Frontend:"
-        if curl -s http://localhost:3000 > /dev/null 2>&1; then
-            echo -e "  ${GREEN}✓ Running on http://localhost:3000${NC}"
+        if [ -f "$PROJECT_ROOT/.pids/frontend.pid" ]; then
+            FRONTEND_PID=$(cat "$PROJECT_ROOT/.pids/frontend.pid")
+            if ps -p "$FRONTEND_PID" > /dev/null 2>&1; then
+                if curl -s http://localhost:3000 > /dev/null 2>&1; then
+                    echo -e "  ${GREEN}✓ Running on http://localhost:3000 (PID: $FRONTEND_PID)${NC}"
+                elif curl -s http://localhost:5173 > /dev/null 2>&1; then
+                    echo -e "  ${GREEN}✓ Running on http://localhost:5173 (PID: $FRONTEND_PID)${NC}"
+                else
+                    echo -e "  ${YELLOW}⚠ Process running (PID: $FRONTEND_PID) but not responding${NC}"
+                fi
+            else
+                echo -e "  ${RED}✗ Not running (stale PID file)${NC}"
+            fi
+        elif curl -s http://localhost:3000 > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓ Running on http://localhost:3000 (no PID file)${NC}"
         elif curl -s http://localhost:5173 > /dev/null 2>&1; then
-            echo -e "  ${GREEN}✓ Running on http://localhost:5173${NC}"
+            echo -e "  ${GREEN}✓ Running on http://localhost:5173 (no PID file)${NC}"
         else
             echo -e "  ${RED}✗ Not running${NC}"
-            echo -e "  ${YELLOW}Start with: cd frontend && pnpm dev${NC}"
         fi
         ;;
         

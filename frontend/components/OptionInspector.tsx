@@ -48,7 +48,8 @@ export const OptionInspector: React.FC<OptionInspectorProps> = ({
 
   const handleRunAnalysis = (optionId: string) => {
     setAnalyzingId(optionId);
-    setTimeout(() => setAnalyzingId(null), 2500); // Mock delay
+    // Real API call would happen here
+    setTimeout(() => setAnalyzingId(null), 2500); // TODO: Replace with real API call duration
   };
 
   const getIcon = (type: string) => {

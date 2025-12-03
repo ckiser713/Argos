@@ -55,82 +55,8 @@ const getIconForLabel = (label: string) => {
   return <Layers size={14} />;
 };
 
-// --- Mock Data Generator for Inspection ---
-const generateMockData = (nodeId: string, label: string) => {
-  const timestamp = new Date().toISOString();
-  const l = label.toLowerCase();
-
-  if (l.includes('start')) {
-    return {
-      step: 'initialization',
-      timestamp,
-      inputs: { query: "Analyze optimization protocols for Project Titan" },
-      metadata: { session_id: "sess_8921", user_tier: "admin" }
-    };
-  }
-  if (l.includes('retrieve')) {
-    return {
-      step: 'vector_retrieval',
-      timestamp,
-      index: "nexus_core_v4",
-      embedding_model: "text-embedding-3-large",
-      results_count: 5,
-      top_score: 0.92,
-      sources: ["Project_Titan_Specs.pdf", "auth_middleware.rs"]
-    };
-  }
-  if (l.includes('grade')) {
-    return {
-      step: 'relevance_grading',
-      timestamp,
-      model: "gpt-4-turbo",
-      evaluations: [
-        { doc_id: "doc_1", relevant: true, score: 0.95 },
-        { doc_id: "doc_2", relevant: true, score: 0.88 },
-        { doc_id: "doc_3", relevant: false, score: 0.42, reason: "Off-topic" }
-      ],
-      passed_docs: 2
-    };
-  }
-  if (l.includes('web_search')) {
-    return {
-      step: 'external_tool_execution',
-      tool: "google_search",
-      query: "Project Titan liquid cooling specs",
-      latency_ms: 450,
-      results: [
-        { title: "Liquid Cooling in High Density Compute", url: "https://..." },
-        { title: "Titan Protocol RFC", url: "https://..." }
-      ]
-    };
-  }
-  if (l.includes('generate')) {
-    return {
-      step: 'llm_generation',
-      model: "llama-3-70b-instruct",
-      temperature: 0.7,
-      prompt_tokens: 1405,
-      completion_tokens: 240,
-      finish_reason: "stop",
-      output_preview: "Based on the retrieved context, Project Titan requires active liquid cooling..."
-    };
-  }
-  if (l.includes('final')) {
-    return {
-      step: 'workflow_complete',
-      status: 'success',
-      total_duration_ms: 2450,
-      cost_estimate: "$0.042"
-    };
-  }
-  
-  return {
-    step: 'generic_process',
-    id: nodeId,
-    status: 'executed',
-    payload: { data: "sample_buffer_content", size_kb: 12 }
-  };
-};
+// Mock data generator removed - should fetch real workflow execution data from API
+// TODO: Replace with API call to fetch actual node execution state from agent runs
 
 // --- Custom Node Component ---
 const CyberNode = ({ data, id, selected }: { data: any, id: string, selected: boolean }) => {
@@ -292,12 +218,16 @@ export const WorkflowConstruct: React.FC<WorkflowConstructProps> = ({ graphState
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
-    const mockState = generateMockData(node.id, node.data.label);
+    // Fetch real node state from API (placeholder for now)
+    const nodeState = {
+      step: 'generic_process',
+      message: "Fetching real workflow state from API...",
+    };
     setDrawerData({
       id: node.id,
       label: node.data.label,
       status: node.id === activeNodeId ? 'RUNNING' : visitedNodeIds.includes(node.id) ? 'COMPLETED' : 'PENDING',
-      state: mockState
+      state: nodeState
     });
   }, [activeNodeId, visitedNodeIds]);
 

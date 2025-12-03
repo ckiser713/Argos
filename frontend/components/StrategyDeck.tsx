@@ -20,6 +20,8 @@ import 'reactflow/dist/style.css';
 import { Lightbulb, Terminal, BrainCircuit, Mic, Sparkles, Quote, Play } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { NeonButton } from './NeonButton';
+import { useCurrentProject } from '@src/hooks/useProjects';
+import { useIdeaCandidates } from '@src/hooks/useIdeas';
 
 // --- Types ---
 interface ChatLog {
@@ -45,23 +47,7 @@ type IdeaNodeData = {
   idea: Idea;
 };
 
-// --- Mock Data ---
-const MOCK_LOGS: ChatLog[] = [
-  { id: 'l1', timestamp: 'Oct 24 09:12', user: 'sarah_eng', message: 'API latency is spiking again on the /query endpoint.' },
-  { id: 'l2', timestamp: 'Oct 24 09:14', user: 'mike_dev', message: 'Yeah, the vector search is doing a full table scan. We should probably implement HNSW indexing on the Qdrant cluster.', containsIdeaId: 'i1' },
-  { id: 'l3', timestamp: 'Oct 24 09:45', user: 'system', message: '[ALERT] Memory usage at 85% on node-04.' },
-  { id: 'l4', timestamp: 'Oct 24 10:00', user: 'sarah_eng', message: "Agreed on HNSW. Also, did we ever finish that 'Auto-Tagging' bot? The one that reads commit messages?" },
-  { id: 'l5', timestamp: 'Oct 24 10:05', user: 'mike_dev', message: 'Nah, abandoned it. But honestly, we should build a tool that generates PR descriptions from diffs automatically. Would save so much time.', containsIdeaId: 'i2' },
-  { id: 'l6', timestamp: 'Oct 24 10:10', user: 'sarah_eng', message: 'Lets put that on the backlog.' },
-  { id: 'l7', timestamp: 'Oct 25 14:20', user: 'dave_arch', message: "I'm looking at the ingest pipeline. Eventually, it would be cool if the system could listen to voice meetings and extract tasks directly.", containsIdeaId: 'i3' },
-  { id: 'l8', timestamp: 'Oct 25 14:22', user: 'dave_arch', message: 'Just a thought for Q4.' },
-];
-
-const EXTRACTED_IDEAS: Idea[] = [
-  { id: 'i1', type: 'infra', summary: 'Implement HNSW indexing on Qdrant cluster to resolve vector search latency.', sourceContext: "We should probably implement HNSW indexing on the Qdrant cluster.", sourceUser: 'mike_dev', confidence: 0.95 },
-  { id: 'i2', type: 'feature', summary: 'Automated PR description generator using diff analysis.', sourceContext: "build a tool that generates PR descriptions from diffs automatically.", sourceUser: 'mike_dev', confidence: 0.88 },
-  { id: 'i3', type: 'project', summary: 'Voice-to-Task extraction for engineering meetings.', sourceContext: "listen to voice meetings and extract tasks directly.", sourceUser: 'dave_arch', confidence: 0.72 },
-];
+// Mock data removed - using real API via useIdeaCandidates hook
 
 // --- Custom Node Component ---
 const IdeaNode: React.FC<NodeProps<IdeaNodeData>> = ({ data, selected }) => {
@@ -125,12 +111,26 @@ const nodeTypes = {
 
 // --- Main Component ---
 export const StrategyDeck: React.FC = () => {
+  const { project } = useCurrentProject();
+  const projectId = project?.id;
+  const { data: ideaCandidatesData, isLoading: ideasLoading } = useIdeaCandidates(projectId);
+  
   const [nodes, setNodes] = useState<Node<IdeaNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [visibleLogs, setVisibleLogs] = useState<ChatLog[]>([]);
   const [scanIndex, setScanIndex] = useState(-1);
   const [statusText, setStatusText] = useState('READY_TO_SCAN');
+  
+  // Convert idea candidates to Idea format for display
+  const extractedIdeas: Idea[] = (ideaCandidatesData?.items || []).map(candidate => ({
+    id: candidate.id,
+    type: (candidate.type || 'raw') as IdeaType,
+    summary: candidate.text || candidate.description || '',
+    sourceContext: candidate.source || '',
+    sourceUser: candidate.source || 'unknown',
+    confidence: candidate.confidence || 0.5,
+  }));
   
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -148,13 +148,22 @@ export const StrategyDeck: React.FC = () => {
   const reactFlowInstance = useReactFlow();
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Load idea candidates when component mounts or data changes
   useEffect(() => {
-    let delay = 0;
-    MOCK_LOGS.forEach((log) => {
-      setTimeout(() => setVisibleLogs(prev => [...prev, log]), delay);
-      delay += 150;
-    });
-  }, []);
+    if (extractedIdeas.length > 0) {
+      // Convert idea candidates to nodes
+      const ideaNodes: Node<IdeaNodeData>[] = extractedIdeas.map((idea, index) => ({
+        id: idea.id,
+        type: 'ideaNode',
+        position: {
+          x: (index % 3) * 250,
+          y: Math.floor(index / 3) * 200,
+        },
+        data: { idea },
+      }));
+      setNodes(ideaNodes);
+    }
+  }, [extractedIdeas]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -176,16 +185,23 @@ export const StrategyDeck: React.FC = () => {
   };
   
   const runAnalysis = () => {
-    if (isAnalyzing) return;
+    if (isAnalyzing || !projectId) return;
     setIsAnalyzing(true);
     setNodes([]); // Clear existing nodes
     setEdges([]);
     setScanIndex(-1);
     setStatusText('INITIALIZING_STRATEGIST_PERSONA...');
 
+    // Use real idea candidates from API
+    if (extractedIdeas.length === 0) {
+      setStatusText('NO_IDEAS_FOUND');
+      setIsAnalyzing(false);
+      return;
+    }
+
     let currentIndex = 0;
     const interval = setInterval(() => {
-      if (currentIndex >= MOCK_LOGS.length) {
+      if (currentIndex >= extractedIdeas.length) {
         clearInterval(interval);
         setIsAnalyzing(false);
         setStatusText('ANALYSIS_COMPLETE');
@@ -193,15 +209,10 @@ export const StrategyDeck: React.FC = () => {
         return;
       }
       setScanIndex(currentIndex);
-      const currentLog = MOCK_LOGS[currentIndex];
+      const idea = extractedIdeas[currentIndex];
       if (currentIndex % 2 === 0) setStatusText('READING_STREAM...');
-      if (currentLog.containsIdeaId) {
-        setStatusText('SIGNAL_DETECTED');
-        const idea = EXTRACTED_IDEAS.find(i => i.id === currentLog.containsIdeaId);
-        if (idea) {
-          setTimeout(() => addIdeaNode(idea), 400);
-        }
-      }
+      setStatusText('SIGNAL_DETECTED');
+      setTimeout(() => addIdeaNode(idea), 400);
       currentIndex++;
     }, 800);
   };
@@ -247,7 +258,7 @@ export const StrategyDeck: React.FC = () => {
         </div>
         <GlassCard variant="void" className="flex-1 !p-0 overflow-hidden relative border-opacity-50">
           {isAnalyzing && (
-            <div className="absolute left-0 right-0 h-[2px] bg-cyan/50 z-20 shadow-[0_0_15px_cyan]" style={{ top: `${(scanIndex / MOCK_LOGS.length) * 100}%`, transition: 'top 0.8s linear' }} />
+            <div className="absolute left-0 right-0 h-[2px] bg-cyan/50 z-20 shadow-[0_0_15px_cyan]" style={{ top: `${extractedIdeas.length > 0 ? (scanIndex / extractedIdeas.length) * 100 : 0}%`, transition: 'top 0.8s linear' }} />
           )}
           <div className="absolute top-2 right-2 z-20">
             <span className={`text-[10px] font-mono font-bold px-2 py-1 rounded bg-black/80 border border-white/10 ${isAnalyzing ? 'text-cyan animate-pulse' : 'text-gray-500'}`}>

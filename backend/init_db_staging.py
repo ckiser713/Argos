@@ -17,3 +17,6 @@ app = create_app()
 print("✓ Database schema initialized successfully")
 
 
+
+
+

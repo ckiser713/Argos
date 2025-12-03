@@ -1,4 +1,4 @@
-import { test as base, expect, request as globalRequest } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
 import { UIHelpers } from './utils/ui-helpers';
 import { ApiHelpers } from './utils/api-helpers';
@@ -23,13 +23,8 @@ const API_BASE = (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACK
 
 export const test = base.extend<TestFixtures>({
   api: async ({ request }, use) => {
-    // Create a request context with the backend API base as default baseURL
-    const apiContext = await globalRequest.newContext({ baseURL: API_BASE });
-    try {
-      await use(apiContext);
-    } finally {
-      await apiContext.dispose();
-    }
+    // Use the same request context for API calls
+    await use(request);
   },
 
   authenticatedPage: async ({ page, request }, use) => {

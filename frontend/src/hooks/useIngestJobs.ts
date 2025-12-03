@@ -27,6 +27,7 @@ export async function fetchIngestJobs(
 
 /**
  * Fetch ingest jobs for a given project.
+ * Automatically polls for updates when there are running/pending jobs.
  */
 export function useIngestJobs(
   projectId: string,
@@ -36,6 +37,18 @@ export function useIngestJobs(
     queryKey: ingestJobsQueryKey(projectId),
     queryFn: () => fetchIngestJobs(projectId, params),
     enabled: !!projectId,
+    // Poll every 3 seconds if there are running/pending jobs
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.items) return false;
+      // Check if any jobs are running or pending
+      const hasActiveJobs = data.items.some(
+        job => job.status === 'running' || job.status === 'pending'
+      );
+      return hasActiveJobs ? 3000 : false; // Poll every 3 seconds if active jobs exist
+    },
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
   });
 
   return {
@@ -48,12 +61,21 @@ export function useIngestJobs(
 
 /**
  * Fetch a single ingest job.
+ * Automatically polls for updates when the job is running/pending.
  */
 export function useIngestJob(projectId: string, jobId: string) {
   const query = useQuery({
     queryKey: ingestJobQueryKey(projectId, jobId),
     queryFn: () => getIngestJob(projectId, jobId),
     enabled: !!projectId && !!jobId,
+    // Poll every 2 seconds if job is running or pending
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      return (data.status === 'running' || data.status === 'pending') ? 2000 : false;
+    },
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
   });
 
   return {

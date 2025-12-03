@@ -289,9 +289,10 @@
         '';
 
         # Set environment variables for the development environment
-        # CORTEX_ENV defaults to "local" but can be overridden by environment variable
-        # This allows staging/production deployments to set CORTEX_ENV=strix or CORTEX_ENV=production
-        CORTEX_ENV = builtins.getEnv "CORTEX_ENV" or "local";
+        # Note: CORTEX_ENV is NOT set here to allow external override
+        # Defaults to "local" via Settings class if not set externally
+        # For staging: CORTEX_ENV=strix nix develop --command ...
+        # For production: CORTEX_ENV=production nix develop --command ...
         CORTEX_QDRANT_URL = "http://localhost:6333";
         CORTEX_DB_URL = "postgresql+psycopg://cortex:cortex@localhost:5432/cortex";
         PLAYWRIGHT_BROWSERS_PATH = "$HOME/.cache/ms-playwright";

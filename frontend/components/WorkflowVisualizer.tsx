@@ -86,52 +86,17 @@ const nodeTypes = {
   neon: NeonNode,
 };
 
-// --- Mock Data: Cyclic Graph (LangGraph Style) ---
-const initialNodes: Node[] = [
-  { 
-    id: 'start', type: 'neon', position: { x: 300, y: 0 }, 
-    data: { label: 'User Query', type: 'start', status: 'idle', icon: Terminal, payload: { query: "Write a snake game in Python" } } 
-  },
-  { 
-    id: 'planner', type: 'neon', position: { x: 300, y: 120 }, 
-    data: { label: 'Planner', type: 'process', status: 'idle', icon: BrainCircuit, payload: { plan: ["Import pygame", "Setup loop", "Handle Input"] } } 
-  },
-  { 
-    id: 'draft', type: 'neon', position: { x: 300, y: 250 }, 
-    data: { label: 'Code Generator', type: 'process', status: 'idle', icon: Box, iteration: 0, payload: { code_snippet: "def game_loop(): ..." } } 
-  },
-  { 
-    id: 'critique', type: 'neon', position: { x: 300, y: 380 }, 
-    data: { label: 'Reflection', type: 'process', status: 'idle', icon: Activity, payload: { errors_found: true, feedback: "Missing collision detection" } } 
-  },
-  { 
-    id: 'router', type: 'neon', position: { x: 300, y: 510 }, 
-    data: { label: 'Quality Check', type: 'decision', status: 'idle', icon: GitMerge, payload: { score: 0.6, threshold: 0.8 } } 
-  },
-  { 
-    id: 'final', type: 'neon', position: { x: 300, y: 650 }, 
-    data: { label: 'Final Output', type: 'end', status: 'idle', icon: CheckCircle, payload: { status: "Success", path_taken: "Cyclic" } } 
-  },
-];
-
-const initialEdges: Edge[] = [
-  { id: 'e1', source: 'start', target: 'planner', animated: false, style: { stroke: '#333' } },
-  { id: 'e2', source: 'planner', target: 'draft', animated: false, style: { stroke: '#333' } },
-  { id: 'e3', source: 'draft', target: 'critique', animated: false, style: { stroke: '#333' } },
-  { id: 'e4', source: 'critique', target: 'router', animated: false, style: { stroke: '#333' } },
-  // Success Path
-  { id: 'e5', source: 'router', target: 'final', label: 'Pass', animated: false, style: { stroke: '#333' }, markerEnd: { type: MarkerType.ArrowClosed } },
-  // Retry Loop (Back to Draft)
-  { 
-      id: 'e6', source: 'router', target: 'draft', sourceHandle: 'retry', label: 'Retry', 
-      type: 'smoothstep', animated: false, style: { stroke: '#333' }, 
-      markerEnd: { type: MarkerType.ArrowClosed }
-  },
-];
+// Mock data removed - should fetch from agent runs API
+// TODO: Replace with real agent run workflow state from useAgentRuns hook
 
 export const WorkflowVisualizer: React.FC = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const { project } = useCurrentProject();
+  const projectId = project?.id;
+  // TODO: Use useAgentRuns hook to fetch real workflow state
+  // const { data: agentRuns } = useAgentRuns(projectId);
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);

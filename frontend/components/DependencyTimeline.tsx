@@ -23,58 +23,10 @@ interface Cluster {
   color: string;
 }
 
-// --- Mock Data ---
-
-const today = startOfToday();
-
-const CLUSTERS: Cluster[] = [
-  { id: 'nexus_core', label: 'NEXUS_CORE', color: '#00f0ff' }, // Cyan
-  { id: 'argos_ui', label: 'ARGOS_UI', color: '#bd00ff' },    // Purple
-  { id: 'infra', label: 'INFRASTRUCTURE', color: '#ffbf00' }  // Amber
-];
-
-const TASKS: Task[] = [
-  // Cluster 1: Nexus Core
-  {
-    id: 't1', label: 'Auth API V2', 
-    start: addDays(today, -4), end: addDays(today, -1), 
-    clusterId: 'nexus_core', dependencies: [], status: 'completed'
-  },
-  {
-    id: 't2', label: 'Vector DB Schema', 
-    start: addDays(today, -2), end: addDays(today, 2), 
-    clusterId: 'nexus_core', dependencies: ['t1'], status: 'active'
-  },
-  {
-    id: 't3', label: 'Neural Weights Sync', 
-    start: addDays(today, 3), end: addDays(today, 6), 
-    clusterId: 'nexus_core', dependencies: ['t2'], status: 'pending'
-  },
-
-  // Cluster 2: Argos UI
-  {
-    id: 'u1', label: 'Build Login Form', 
-    start: addDays(today, 0), end: addDays(today, 3), 
-    clusterId: 'argos_ui', dependencies: ['t1'], status: 'active'
-  },
-  {
-    id: 'u2', label: 'Dashboard Graphs', 
-    start: addDays(today, 4), end: addDays(today, 8), 
-    clusterId: 'argos_ui', dependencies: ['t2', 'u1'], status: 'pending'
-  },
-
-  // Cluster 3: Infra (Blocked Example)
-  {
-    id: 'i1', label: 'Cluster Provisioning', 
-    start: addDays(today, -5), end: addDays(today, -3), 
-    clusterId: 'infra', dependencies: [], status: 'completed'
-  },
-  {
-    id: 'i2', label: 'Security Audit', 
-    start: addDays(today, 1), end: addDays(today, 5), 
-    clusterId: 'infra', dependencies: ['u1'], status: 'blocked' // Blocked by UI task
-  }
-];
+// Mock data removed - should fetch from roadmap API or task management API
+// TODO: Replace with real API calls when task/dependency tracking is implemented
+const CLUSTERS: Cluster[] = [];
+const TASKS: Task[] = [];
 
 // --- Helpers ---
 

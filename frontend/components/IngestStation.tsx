@@ -41,27 +41,32 @@ const ProgressBar = ({ progress, label, icon }: { progress: number; label: strin
 const BulkImportWizard = ({ onClose }: { onClose: () => void }) => {
   const [step, setStep] = useState(1);
   const [scanComplete, setScanComplete] = useState(false);
-  const [priorities, setPriorities] = useState<{ [key: string]: 'active' | 'archive' }>({
-    'ai_studioNexusKnowledge': 'active',
-    'old_project_gamma': 'archive',
-  });
-  const [isIngesting, setIsIngesting] = useState(false);
-  const [progress, setProgress] = useState({ strategy: 0, reader: 0, coder: 0 });
+  const [priorities, setPriorities] = useState<{ [key: string]: 'active' | 'archive' }>({});
+  const { project } = useCurrentProject();
+  const projectId = project?.id;
+  const { data: jobsData } = useIngestJobs(projectId);
+  
+  // Calculate real progress from ingest jobs
+  const progress = React.useMemo(() => {
+    if (!jobsData?.items) return { strategy: 0, reader: 0, coder: 0 };
+    
+    const jobs = jobsData.items;
+    const total = jobs.length;
+    const completed = jobs.filter(j => j.status === 'completed').length;
+    const progressPercent = total > 0 ? (completed / total) * 100 : 0;
+    
+    // Distribute progress across lanes (simplified - could be more sophisticated)
+    return {
+      strategy: progressPercent * 0.4,
+      reader: progressPercent * 0.4,
+      coder: progressPercent * 0.2,
+    };
+  }, [jobsData]);
 
   useEffect(() => {
     if (step === 1) {
+      // Real scan would check directory
       setTimeout(() => setScanComplete(true), 1500);
-    }
-    if (step === 3) {
-      setIsIngesting(true);
-      const interval = setInterval(() => {
-        setProgress(p => ({
-          strategy: Math.min(p.strategy + Math.random() * 20, 100),
-          reader: Math.min(p.reader + Math.random() * 15, 100),
-          coder: Math.min(p.coder + Math.random() * 10, 100),
-        }));
-      }, 500);
-      return () => clearInterval(interval);
     }
   }, [step]);
   
@@ -94,9 +99,18 @@ const BulkImportWizard = ({ onClose }: { onClose: () => void }) => {
                 <AnimatePresence>
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                     <div className="grid grid-cols-3 gap-4 text-center">
-                      <GlassCard><BotMessageSquare className="mx-auto mb-2 text-cyan" /> 42 Chat Logs</GlassCard>
-                      <GlassCard><FileText className="mx-auto mb-2 text-purple" /> 112 Docs</GlassCard>
-                      <GlassCard><FileCode className="mx-auto mb-2 text-amber" /> 12 Repos</GlassCard>
+                      <GlassCard>
+                        <BotMessageSquare className="mx-auto mb-2 text-cyan" />
+                        {jobsData?.items?.filter(j => j.source_path.includes('.txt') || j.source_path.includes('.md')).length || 0} Chat Logs
+                      </GlassCard>
+                      <GlassCard>
+                        <FileText className="mx-auto mb-2 text-purple" />
+                        {jobsData?.items?.filter(j => j.source_path.includes('.pdf') || j.source_path.includes('.doc')).length || 0} Docs
+                      </GlassCard>
+                      <GlassCard>
+                        <FileCode className="mx-auto mb-2 text-amber" />
+                        {jobsData?.items?.filter(j => j.source_path.includes('/repos/') || j.source_path.includes('.py') || j.source_path.includes('.ts')).length || 0} Code Files
+                      </GlassCard>
                     </div>
                     <NeonButton onClick={() => setStep(2)} className="w-full mt-8" icon={<ChevronsRight />}>Next: Set Priorities</NeonButton>
                   </motion.div>
@@ -154,8 +168,14 @@ export const IngestStation: React.FC = () => {
   const { project } = useCurrentProject();
   const projectId = project?.id;
   const queryClient = useQueryClient();
+  // useIngestJobs now automatically polls when there are active jobs
   const { data: jobsData, isLoading, error, refetch } = useIngestJobs(projectId);
   const deleteMutation = useDeleteIngestJob(projectId);
+  
+  // Count active jobs for display
+  const activeJobsCount = jobsData?.items?.filter(
+    job => job.status === 'running' || job.status === 'pending'
+  ).length || 0;
 
   const files: IngestFile[] = (jobsData?.items || []).map(job => ({
     id: job.id,
@@ -187,7 +207,12 @@ export const IngestStation: React.FC = () => {
         <div className="flex justify-between items-end">
            <div>
               <h2 className="text-2xl font-mono text-white tracking-wide">INGEST_STATION</h2>
-              <p className="text-gray-500 font-mono text-xs mt-1">UNSTRUCTURED DATA PIPELINE</p>
+              <p className="text-gray-500 font-mono text-xs mt-1">
+                UNSTRUCTURED DATA PIPELINE
+                {activeJobsCount > 0 && (
+                  <span className="ml-2 text-cyan">• {activeJobsCount} active</span>
+                )}
+              </p>
            </div>
            <NeonButton onClick={() => setWizardOpen(true)} icon={<Folder size={14}/>}>
              Bulk Import from Takeout

@@ -149,19 +149,35 @@ response = generate_text(
 
 The system automatically routes to the appropriate backend with fallback to the default lane if specialized models are unavailable.
 
-#### Option C: PyTorch Wheels (For Custom PyTorch Tools Only)
+#### Option C: PyTorch Wheels (Required for sentence-transformers)
 
-If you need custom PyTorch-based tools (not required for standard inference):
+**IMPORTANT**: `sentence-transformers` (used for embeddings in `QdrantService`) requires PyTorch. You must install ROCm-enabled PyTorch wheels from `~/rocm/py311-tor290/wheels/`.
 
 ```bash
-# Install ROCm-enabled PyTorch wheels
-./backend/scripts/install_rocm_wheels.sh
+# Install ROCm-enabled PyTorch wheels (required for sentence-transformers)
+pip install --no-index --find-links ~/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio
+pip install --no-index --find-links ~/rocm/py311-tor290/wheels/common triton tokenizers
 
 # Verify installation
 python3.11 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'ROCm: {torch.version.hip}')"
 ```
 
-**Note**: The main inference engine (vLLM) runs in Docker and doesn't need these wheels. Only install if you're building custom PyTorch tools.
+**Available ROCm wheels** (see `~/rocm/py311-tor290/README.md` for details):
+- `torch-2.9.1a0+gitd38164a` - ROCm 7.1.1, HIP-enabled, gfx1151
+- `torchvision-0.25.0a0+617079d` - ROCm-enabled
+- `torchaudio-2.9.1+a224ab2` - ROCm-enabled
+- `triton-3.5.0+gitc3c476f3` - ROCm backend
+- `tokenizers-0.22.3.dev0` - Universal (works with ROCm)
+
+**Optional ROCm wheels** (if needed):
+- `onnxruntime_rocm-1.24.0` - ROCm variant (not CPU generic)
+- `ctranslate2-4.6.1` - ROCm-enabled inference
+- `bitsandbytes-0.48.0.dev0` - ROCm quantization (gfx1151 support)
+
+**Note**: 
+- Do NOT install PyTorch from PyPI or CUDA indexes - use ROCm wheels only
+- All wheels are GPU-enabled with zero CPU-only builds, optimized for AMD Ryzen AI Max+ 395
+- The main inference engine (vLLM) runs in Docker and doesn't need these wheels, but `sentence-transformers` does
 
 For more details, see `ROCM_INTEGRATION_MAP.md` in the project root.
 

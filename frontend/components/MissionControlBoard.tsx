@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { useIdeas } from '../src/hooks/useIdeas';
+import { useCurrentProject } from '@src/hooks/useProjects';
 import { ErrorDisplay } from '../src/components/ErrorDisplay';
 import { NeonButton } from './NeonButton';
 
@@ -23,9 +24,10 @@ interface Task {
    agentLogs?: string[];
 }
 
-// --- Mock Data Transformation ---
+// Uses real API data from useIdeas hook
 const useMissionControlTasks = () => {
-   const { data: ideasData, isLoading, error, refetch } = useIdeas({ status: 'active' });
+   const { project } = useCurrentProject();
+   const { data: ideasData, isLoading, error, refetch } = useIdeas({ projectId: project?.id, status: 'active' });
 
    const tasks: Task[] = (ideasData?.items || []).map(ticket => ({
       id: ticket.id,
@@ -34,7 +36,8 @@ const useMissionControlTasks = () => {
       column: ticket.status === 'done' ? 'done' : 'backlog',
       priority: ticket.priority || 'medium',
       status: ticket.status === 'done' ? 'complete' : 'idle',
-      agentLogs: ticket.status === 'done' ? ['Commit: feat(api): Implemented new endpoint for user profiles.', 'File modified: src/api/users.ts (+50 -10)'] : undefined,
+      // TODO: Fetch real agent logs from agent runs API when available
+      agentLogs: undefined,
    }));
 
    return { tasks, isLoading, error, refetch };

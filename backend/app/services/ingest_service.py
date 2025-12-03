@@ -18,8 +18,8 @@ from app.services.idea_service import idea_service
 from app.services.repo_service import repo_service
 
 from langchain_classic.chains import create_extraction_chain_pydantic
-from langchain_openai import ChatOpenAI
-from openai import OpenAIError
+from app.services.local_llm_client import LocalChatLLM
+from app.config import get_settings
 
 
 logger = logging.getLogger(__name__)
@@ -59,14 +59,19 @@ class ChatExport(BaseModel):
 
 class IngestService:
     def __init__(self):
-        # Initialize the LLM lazily. If OPENAI_API_KEY is not configured or the
-        # OpenAI client cannot be created during import (test/local env), then
+        # Initialize the LLM lazily. If local LLM is not available,
         # keep the LLM and extraction chains as None and skip LLM-based features.
         self.llm = None
         self.metadata_extraction_chain = None
         self.chat_extraction_chain = None
         try:
-            self.llm = ChatOpenAI(model="gpt-4-turbo", temperature=0)
+            settings = get_settings()
+            self.llm = LocalChatLLM(
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key,
+                model_name=settings.llm_model_name,
+                temperature=0
+            )
             # Create the extraction chains only if an LLM is available
             self.metadata_extraction_chain = create_extraction_chain_pydantic(
                 pydantic_schema=DocumentMetadata, llm=self.llm
@@ -74,8 +79,8 @@ class IngestService:
             self.chat_extraction_chain = create_extraction_chain_pydantic(
                 pydantic_schema=ChatExport, llm=self.llm
             )
-        except OpenAIError as e:
-            logger.warning("OpenAI client not configured: %s. Skipping LLM initialization.", e)
+        except Exception as e:
+            logger.warning("Local LLM client not configured: %s. Skipping LLM initialization.", e)
 
     async def _get_document_metadata(self, content: str) -> Optional[DocumentMetadata]:
         """Uses an LLM chain to extract metadata from document content."""

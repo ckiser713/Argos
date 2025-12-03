@@ -108,7 +108,6 @@ class RoadmapService:
         limit: int = 50,
         node_type: Optional[str] = None,
         lane_id: Optional[str] = None,
-        status: Optional[str] = None,
     ) -> PaginatedResponse:
         with db_session() as conn:
             query = "SELECT * FROM roadmap_nodes WHERE project_id = ?"
@@ -117,9 +116,6 @@ class RoadmapService:
             if node_type:
                 query += " AND node_type = ?"
                 params.append(node_type)
-            if status:
-                query += " AND status = ?"
-                params.append(status)
             if lane_id:
                 query += " AND lane_id = ?"
                 params.append(lane_id)
@@ -141,9 +137,6 @@ class RoadmapService:
             if node_type:
                 count_query += " AND node_type = ?"
                 count_params.append(node_type)
-            if status:
-                count_query += " AND status = ?"
-                count_params.append(status)
             if lane_id:
                 count_query += " AND lane_id = ?"
                 count_params.append(lane_id)

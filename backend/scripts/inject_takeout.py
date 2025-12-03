@@ -5,6 +5,7 @@ Usage: poetry run python scripts/inject_takeout.py [takeout_path] [--project-id 
 """
 
 import sys
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -36,25 +37,117 @@ def get_or_create_default_project(service: ProjectService) -> str:
     return project.id
 
 
-def find_files(directory: Path, extensions: Optional[list] = None) -> list[Path]:
-    """Recursively find all files in directory, optionally filtered by extensions."""
+def should_exclude_file(file_path: Path) -> bool:
+    """Check if a file should be excluded from ingestion."""
+    # Exclude hidden files/directories
+    if any(part.startswith('.') for part in file_path.parts):
+        # Allow .gitignore, .env.example, etc. but exclude .git, .venv, etc.
+        hidden_dirs = {'.git', '.svn', '.hg', '.venv', '.env', '.cache', '.idea', '.vscode', '.vs', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.nox', '.coverage', '.ipynb_checkpoints'}
+        if any(part in hidden_dirs for part in file_path.parts):
+            return True
+    
+    # Exclude common build/cache directories
+    exclude_dirs = {
+        'node_modules', '__pycache__', 'venv', 'env', 'virtualenv',
+        'build', 'dist', 'target', 'bin', 'obj', 'out', '.next', '.turbo',
+        'coverage', 'htmlcov', '.eggs', '*.egg-info', 'videos', 'assets',
+        'models', 'checkpoints', '.cache', 'tmp', 'temp'
+    }
+    if any(part in exclude_dirs for part in file_path.parts):
+        return True
+    
+    # Exclude common build/cache file extensions
+    exclude_extensions = {
+        '.pyc', '.pyo', '.pyd', '.so', '.dylib', '.dll', '.exe',
+        '.DS_Store', 'Thumbs.db', '.tmp', '.temp', '.log', '.cache',
+        '.lock', '.sqlite', '.db', '.egg-info'
+    }
+    if file_path.suffix.lower() in exclude_extensions:
+        return True
+    
+    # Exclude .env files (but allow .env.example)
+    if file_path.name.startswith('.env') and file_path.name != '.env.example':
+        return True
+    
+    return False
+
+
+def archive_excluded_file(file_path: Path, takeout_root: Path, archive_root: Path) -> bool:
+    """Move an excluded file to the archive directory, preserving directory structure."""
+    try:
+        # Calculate relative path from takeout root
+        try:
+            relative_path = file_path.relative_to(takeout_root)
+        except ValueError:
+            # File is not under takeout root, use absolute path structure
+            relative_path = Path('absolute') / file_path.parts[-3:]
+        
+        # Create archive destination path
+        archive_path = archive_root / relative_path
+        
+        # Create parent directories
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Move file (or copy if move fails)
+        try:
+            shutil.move(str(file_path), str(archive_path))
+        except Exception:
+            # If move fails (e.g., cross-filesystem), try copy then delete
+            shutil.copy2(str(file_path), str(archive_path))
+            file_path.unlink()
+        
+        return True
+    except Exception as e:
+        print(f"  Warning: Failed to archive {file_path}: {e}", file=sys.stderr)
+        return False
+
+
+def find_files(directory: Path, extensions: Optional[list] = None, archive_root: Optional[Path] = None) -> tuple:
+    """Recursively find all files in directory, optionally filtered by extensions.
+    
+    Returns:
+        Tuple of (files_to_ingest, archived_count)
+    """
     files = []
+    archived_count = 0
     if not directory.exists():
         print(f"Error: Directory {directory} does not exist")
-        return files
+        return files, 0
     
     if extensions:
         extensions = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}' for ext in extensions]
     
+    print("Scanning directory (archiving build/temp/virtualenv files)...")
+    if archive_root:
+        archive_root.mkdir(parents=True, exist_ok=True)
+        print(f"  Archive location: {archive_root}")
+    
     for path in directory.rglob('*'):
         if path.is_file():
+            # Archive excluded files
+            if should_exclude_file(path):
+                if archive_root:
+                    if archive_excluded_file(path, directory, archive_root):
+                        archived_count += 1
+                        if archived_count % 100 == 0:
+                            print(f"  Archived {archived_count} files...", end='\r')
+                else:
+                    archived_count += 1
+                continue
+            
             if not extensions or path.suffix.lower() in extensions:
                 files.append(path)
+        
+        # Print progress every 1000 files found
+        if len(files) % 1000 == 0 and len(files) > 0:
+            print(f"  Found {len(files)} files (archived {archived_count})...", end='\r')
     
-    return sorted(files)
+    print(f"\n  Total files to ingest: {len(files)}")
+    print(f"  Files archived: {archived_count}")
+    return sorted(files), archived_count
 
 
-def inject_files(takeout_path: Path, project_id: Optional[str] = None, extensions: Optional[list] = None):
+def inject_files(takeout_path: Path, project_id: Optional[str] = None, extensions: Optional[list] = None, archive_path: Optional[Path] = None):
     """Inject all files from takeout_path into the system."""
     # Initialize database
     init_db()
@@ -71,9 +164,13 @@ def inject_files(takeout_path: Path, project_id: Optional[str] = None, extension
             return
         print(f"Using project: {project.name} ({project_id})")
     
-    # Find all files
+    # Set up archive directory
+    if archive_path is None:
+        archive_path = takeout_path.parent / f"{takeout_path.name}_archive"
+    
+    # Find all files (and archive excluded ones)
     print(f"\nScanning {takeout_path} for files...")
-    files = find_files(takeout_path, extensions)
+    files, archived_count = find_files(takeout_path, extensions, archive_path)
     
     if not files:
         print("No files found to inject.")
@@ -166,6 +263,11 @@ Examples:
         nargs="+",
         help="File extensions to include (e.g., --extensions pdf txt md). If not specified, all files are included."
     )
+    parser.add_argument(
+        "--archive-path",
+        type=str,
+        help="Path to archive directory for excluded files (default: <takeout_path>_archive)"
+    )
     
     try:
         args = parser.parse_args()
@@ -177,8 +279,10 @@ Examples:
             print(f"Please create it or specify a different path.", file=sys.stderr)
             sys.exit(1)
         
+        archive_path = Path(args.archive_path).expanduser() if args.archive_path else None
+        
         print(f"Starting file injection from: {takeout_path}")
-        inject_files(takeout_path, args.project_id, args.extensions)
+        inject_files(takeout_path, args.project_id, args.extensions, archive_path)
         print("\n✓ Injection process completed!")
         
     except KeyboardInterrupt:

@@ -11,6 +11,8 @@ CortexEnv = Literal["local", "strix", "production"]
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+    
     app_name: str = Field(default="Cortex Backend")
     debug: bool = Field(default=False)
     skip_auth: bool = Field(default=False, env="CORTEX_SKIP_AUTH")
@@ -95,14 +97,19 @@ class Settings(BaseSettings):
         if self.cortex_env in ["strix", "production"]:
             self.database_url = "postgresql://cortex:cortex@localhost:5432/cortex"
         if self.cortex_env == "strix":
-            self.llm_backend = "openai"
+            self.llm_backend = "local_http"  # Use local HTTP client instead of OpenAI
             # The following lines are already defaulted to the correct values for strix
             # self.lane_super_reader_url = "http://localhost:8080/v1"
             # self.lane_orchestrator_url = "http://localhost:8000/v1"
 
         # Validate auth secret
+        # Check environment variable directly if auth_secret is None (Pydantic may not read it)
+        import os
         if not self.auth_secret:
-            if self.cortex_env == "local":
+            env_auth_secret = os.environ.get("CORTEX_AUTH_SECRET")
+            if env_auth_secret:
+                self.auth_secret = env_auth_secret
+            elif self.cortex_env == "local":
                 self.auth_secret = secrets.token_hex(32)
             else:
                 raise ValueError(

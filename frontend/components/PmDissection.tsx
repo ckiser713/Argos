@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ClipboardList, ArrowRight, GitBranch, AlertCircle, Sparkles, X, MessageSquare, Send, FileText, CheckCircle } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { NeonButton } from './NeonButton';
 import { ScrambleText } from './ScrambleText';
+import { useIdeaCandidates } from '@src/hooks/useIdeas';
+import { useCurrentProject } from '@src/hooks/useProjects';
 
 // --- Types ---
 interface RawIdea {
@@ -23,43 +25,7 @@ interface StructuredTicket {
   gap_analysis?: { missing_details: string[] };
 }
 
-// --- Mock Data ---
-const RAW_INBOX: RawIdea[] = [
-  { id: 'r1', text: "We should build a tool that generates PR descriptions from diffs automatically.", source: "mike_dev" },
-  { id: 'r2', text: "Voice-to-Task extraction for engineering meetings would be cool.", source: "dave_arch" },
-  { id: 'r3', text: "Need to automate the PDF metadata extraction manually, it's too slow.", source: "sarah_eng" }
-];
-
-const PROCESSED_TICKETS: Record<string, StructuredTicket> = {
-  'r1': {
-    idea_id: 'IDEA-042',
-    title: 'Automated PR Description Generator',
-    origin_story: 'Arose during a productivity discussion where mike_dev noted the inefficiency of writing manual PR summaries from large diffs.',
-    category: 'Feature for Existing Repo',
-    implied_tasks: ['Integrate GPT-4 Vision/Text API for diff analysis', 'Create GitHub Action workflow trigger', 'Implement template engine for output formatting', 'Add "Regenerate" slash command comment listener'],
-    potential_repo_links: ['dev-ops-scripts', 'nexus-bot-core'],
-    source_quotes: '"build a tool that generates PR descriptions from diffs automatically"'
-  },
-  'r2': {
-    idea_id: 'IDEA-043',
-    title: 'Voice-to-Task Meeting Processor',
-    origin_story: 'Proposed by dave_arch as a Q4 goal to reduce administrative overhead from engineering syncs.',
-    category: 'New Standalone Project',
-    implied_tasks: ['Set up audio ingestion pipeline (LiveKit or S3 upload)', 'Implement Whisper transcription service', 'Design Entity Extraction prompt for "Action Items"', 'Connect to Jira/Linear API for ticket creation'],
-    potential_repo_links: [],
-    source_quotes: '"listen to voice meetings and extract tasks directly"',
-    gap_analysis: { missing_details: ["Target Repository Not Defined", "Database Schema Missing"] }
-  },
-  'r3': {
-    idea_id: 'IDEA-044',
-    title: 'PDF Metadata Extraction Pipeline',
-    origin_story: 'Identified as a bottleneck by sarah_eng; current manual entry is slowing down the ingest rate.',
-    category: 'Infrastructure/DevOps',
-    implied_tasks: ['Evaluate OCR libraries (Tesseract vs AWS Textract)', 'Define metadata schema (Author, Date, Version)', 'Build background worker for batch processing', 'Update Knowledge Graph ingestion hook'],
-    potential_repo_links: ['ingest-pipeline', 'knowledge-graph-api'],
-    source_quotes: '"Need to automate the PDF metadata extraction manually"'
-  }
-};
+// Mock data removed - using real API data from useIdeaCandidates hook
 
 // --- Helper Functions ---
 const generateMarkdown = (ticket: StructuredTicket): string => {
@@ -152,7 +118,7 @@ const SplitViewModal = ({ ticket, onClose }: { ticket: StructuredTicket; onClose
                   </div>
                 </div>
               ))}
-               <div className="text-center text-gray-600 font-mono text-xs pt-4">Chat contextually linked to <br/>{ticket.idea_id}</div>
+              <div className="text-center text-gray-600 font-mono text-xs pt-4">Chat contextually linked to <br />{ticket.idea_id}</div>
             </div>
             <div className="p-4 border-t border-white/10 shrink-0 flex items-center gap-2">
               <input
@@ -174,20 +140,39 @@ const SplitViewModal = ({ ticket, onClose }: { ticket: StructuredTicket; onClose
 
 // --- Main Component ---
 export const PmDissection: React.FC = () => {
-  const [inbox, setInbox] = useState<RawIdea[]>(RAW_INBOX);
+  const { project: currentProject } = useCurrentProject();
+  const { data: ideaCandidatesData, isLoading: candidatesLoading } = useIdeaCandidates(
+    currentProject?.id,
+    { status: 'pending' }
+  );
+
+  // Convert idea candidates to RawIdea format for inbox
+  const [inbox, setInbox] = useState<RawIdea[]>([]);
   const [processed, setProcessed] = useState<StructuredTicket[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<StructuredTicket | null>(null);
 
+  // Load idea candidates into inbox
+  useEffect(() => {
+    if (ideaCandidatesData?.items) {
+      const rawIdeas: RawIdea[] = ideaCandidatesData.items
+        .filter(candidate => candidate.status === 'pending')
+        .map(candidate => ({
+          id: candidate.id,
+          text: candidate.text || candidate.description || '',
+          source: candidate.source || 'unknown'
+        }));
+      setInbox(rawIdeas);
+    }
+  }, [ideaCandidatesData, candidatesLoading, currentProject]);
+
   const handleProcess = (rawId: string) => {
     if (processingId) return;
     setProcessingId(rawId);
+    // TODO: Replace with real API call to process idea candidate
+    // For now, just remove from inbox (actual processing should happen via API)
     setTimeout(() => {
-      const ticket = PROCESSED_TICKETS[rawId];
-      if (ticket) {
-        setProcessed(prev => [ticket, ...prev]);
-        setInbox(prev => prev.filter(i => i.id !== rawId));
-      }
+      setInbox(prev => prev.filter(i => i.id !== rawId));
       setProcessingId(null);
     }, 2000);
   };
@@ -206,23 +191,23 @@ export const PmDissection: React.FC = () => {
       <div className="h-[calc(100vh-140px)] w-full flex gap-6 animate-fade-in pb-4">
         {/* Left Column: Inbox */}
         <div className="w-1/3 flex flex-col gap-4">
-           <h2 className="text-xl font-mono text-white tracking-wide flex items-center gap-2">
-              <AlertCircle className="text-gray-400" />
-              UNSTRUCTURED_INBOX ({inbox.length})
-           </h2>
-           <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+          <h2 className="text-xl font-mono text-white tracking-wide flex items-center gap-2">
+            <AlertCircle className="text-gray-400" />
+            UNSTRUCTURED_INBOX ({inbox.length})
+          </h2>
+          <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar">
             {inbox.map(item => (
               <GlassCard key={item.id} variant="void" className="group hover:border-white/20 transition-all">
                 <p className="text-sm text-gray-300 mb-2 leading-snug">"{item.text}"</p>
                 <div className="flex justify-between items-center">
-                   <span className="text-[10px] font-mono text-cyan">@{item.source}</span>
-                   <NeonButton onClick={() => handleProcess(item.id)} disabled={!!processingId} className="text-[10px] px-3 py-1.5">
-                     {processingId === item.id ? 'DISSECTING...' : 'DISSECT'}
-                   </NeonButton>
+                  <span className="text-[10px] font-mono text-cyan">@{item.source}</span>
+                  <NeonButton onClick={() => handleProcess(item.id)} disabled={!!processingId} className="text-[10px] px-3 py-1.5">
+                    {processingId === item.id ? 'DISSECTING...' : 'DISSECT'}
+                  </NeonButton>
                 </div>
               </GlassCard>
             ))}
-           </div>
+          </div>
         </div>
 
         {/* Center Arrow */}
@@ -254,7 +239,7 @@ export const PmDissection: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className={`w-1.5 h-1.5 rounded-full ${getCategoryColor(ticket.category).replace('text-', 'bg-')}`}></span>
                       <span className="font-mono text-xs text-gray-500">{ticket.idea_id}</span>
-                       {ticket.gap_analysis && (
+                      {ticket.gap_analysis && (
                         <div className="flex items-center gap-1 text-[9px] font-mono text-amber bg-amber/10 border border-amber/20 px-1.5 py-0.5 rounded-full">
                           <AlertCircle size={10} /> GAPS_DETECTED
                         </div>
@@ -272,13 +257,13 @@ export const PmDissection: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Modal */}
       <AnimatePresence>
         {selectedTicket && (
-          <SplitViewModal 
-            ticket={selectedTicket} 
-            onClose={() => setSelectedTicket(null)} 
+          <SplitViewModal
+            ticket={selectedTicket}
+            onClose={() => setSelectedTicket(null)}
           />
         )}
       </AnimatePresence>

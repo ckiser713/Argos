@@ -7,7 +7,6 @@ pydantic-settings
 # Additional libraries used across the backend services and helper scripts
 httpx==0.25.2
 requests
-openai
 psutil
 qdrant-client
 sentence-transformers
@@ -16,3 +15,26 @@ langchain==1.1.0
 langgraph==1.0.4
 langgraph-sdk==0.2.10
 langgraph-prebuilt==1.0.5
+
+# PyTorch dependencies (ROCm-enabled, no CUDA/NVIDIA)
+# sentence-transformers requires PyTorch. Install ROCm wheels from:
+# ~/rocm/py311-tor290/wheels/
+# 
+# Installation instructions:
+#   pip install --no-index --find-links ~/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio
+#   pip install --no-index --find-links ~/rocm/py311-tor290/wheels/common triton tokenizers
+#
+# Available ROCm wheels (see ~/rocm/py311-tor290/README.md for details):
+#   - torch-2.9.1a0+gitd38164a (ROCm 7.1.1, HIP-enabled, gfx1151)
+#   - torchvision-0.25.0a0+617079d (ROCm-enabled)
+#   - torchaudio-2.9.1+a224ab2 (ROCm-enabled)
+#   - triton-3.5.0+gitc3c476f3 (ROCm backend)
+#   - tokenizers-0.22.3.dev0 (universal, works with ROCm)
+#
+# Optional ROCm wheels (if needed):
+#   - onnxruntime_rocm-1.24.0 (ROCm variant, not CPU generic)
+#   - ctranslate2-4.6.1 (ROCm-enabled inference)
+#   - bitsandbytes-0.48.0.dev0 (ROCm quantization, gfx1151 support)
+#
+# NOTE: Do NOT install PyTorch from PyPI or CUDA indexes - use ROCm wheels only
+# All wheels are GPU-enabled with zero CPU-only builds, optimized for AMD Ryzen AI Max+ 395

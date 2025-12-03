@@ -84,7 +84,7 @@ cd "$PROJECT_ROOT"
 echo -e "${BLUE}=== STEP 2: INFRASTRUCTURE ===${NC}"
 echo ""
 
-echo "2.1 Starting cortex-docker (ops/docker-compose.yml)..."
+echo "2.1 Starting Docker services (Qdrant, PostgreSQL)..."
 cd "$PROJECT_ROOT/ops"
 
 # Check if docker-compose or docker compose is available
@@ -97,21 +97,55 @@ else
     exit 1
 fi
 
-# Start Qdrant (and optionally inference-engine if available)
-if ! $DOCKER_COMPOSE_CMD up -d qdrant; then
+# Use strix compose file for PostgreSQL
+COMPOSE_FILE="docker-compose.strix.yml"
+if [ ! -f "$COMPOSE_FILE" ]; then
+    echo -e "${YELLOW}⚠ Strix compose not found, falling back to default${NC}"
+    COMPOSE_FILE="docker-compose.yml"
+fi
+
+# Start PostgreSQL
+echo "  Starting PostgreSQL..."
+if ! $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d postgres; then
+    echo -e "${RED}✗ Failed to start PostgreSQL${NC}"
+    exit 1
+fi
+
+# Start Qdrant
+echo "  Starting Qdrant..."
+if ! $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d qdrant; then
     echo -e "${RED}✗ Failed to start Qdrant${NC}"
     exit 1
 fi
 
 # Try to start inference-engine (optional, don't fail if it doesn't work)
-$DOCKER_COMPOSE_CMD up -d inference-engine 2>&1 | grep -q "not found\|failed" && \
+$DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d inference-vllm 2>&1 | grep -q "not found\|failed\|error" && \
     echo -e "${YELLOW}⚠ Inference-engine not available (optional)${NC}" || \
     echo -e "${GREEN}✓ Inference-engine started${NC}"
 
 echo -e "${GREEN}✓ Docker services started${NC}"
 echo ""
 
-echo "2.2 Waiting for Qdrant health..."
+# Wait for PostgreSQL
+echo "2.2 Waiting for PostgreSQL health..."
+POSTGRES_HEALTHY=false
+for i in {1..60}; do
+    if $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" exec -T postgres pg_isready -U cortex -d cortex >/dev/null 2>&1; then
+        POSTGRES_HEALTHY=true
+        break
+    fi
+    echo "  Waiting for PostgreSQL... ($i/60)"
+    sleep 2
+done
+
+if [ "$POSTGRES_HEALTHY" = false ]; then
+    echo -e "${RED}✗ PostgreSQL failed to become healthy${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ PostgreSQL is healthy${NC}"
+echo ""
+
+echo "2.3 Waiting for Qdrant health..."
 QDRANT_HEALTHY=false
 for i in {1..60}; do
     if curl -sS --fail http://localhost:6333/health >/dev/null 2>&1; then
@@ -137,8 +171,21 @@ cd "$PROJECT_ROOT"
 echo -e "${BLUE}=== STEP 3: DATABASE ===${NC}"
 echo ""
 
-echo "3.1 Initializing database schema (dry-run app factory)..."
+# Set PostgreSQL environment for strix mode
+export CORTEX_DATABASE_URL="postgresql://cortex:cortex@localhost:5432/cortex"
+
+echo "3.1 Running Alembic migrations..."
 cd "$PROJECT_ROOT/backend"
+
+# Run Alembic migrations
+if poetry run alembic upgrade head; then
+    echo -e "${GREEN}✓ Alembic migrations completed${NC}"
+else
+    echo -e "${YELLOW}⚠ Alembic migrations failed, trying init_db fallback...${NC}"
+fi
+
+echo ""
+echo "3.2 Initializing database schema..."
 
 # Dry-run the app factory by importing and calling create_app()
 # This will call init_db() which initializes the schema

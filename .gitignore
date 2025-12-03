@@ -46,6 +46,9 @@ node_modules
 node_modules
 node_modules
 
+# Process IDs and service logs
+.pids/
+
 # Database
 *.db
 *.db-journal

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict, List, Optional
 
 from qdrant_client import QdrantClient
@@ -102,7 +103,17 @@ class QdrantService:
 
         collection_name = self._get_collection_name(project_id, collection_type)
         try:
-            point = PointStruct(id=node_id, vector=embedding, payload={"node_id": node_id, "title": title, "summary": summary or "", "type": node_type or "concept"})
+            # Normalize node id to a UUID that Qdrant accepts, keep original as payload
+            try:
+                # If already a valid UUID string, keep it
+                uuid.UUID(node_id)
+                normalized_id = node_id
+            except Exception:
+                normalized_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(node_id)))
+
+            payload = {"node_id": node_id, "title": title, "summary": summary or "", "type": node_type or "concept"}
+            payload["source_node_id"] = node_id
+            point = PointStruct(id=normalized_id, vector=embedding, payload=payload)
             self.client.upsert(collection_name=collection_name, points=[point])
             return True
         except Exception as e:
@@ -137,6 +148,13 @@ class QdrantService:
         collection_name = self._get_collection_name(project_id, collection_type)
         points = []
         upserted = 0
+        def _normalize_point_id(point_id: str) -> str:
+            try:
+                uuid.UUID(point_id)
+                return point_id
+            except Exception:
+                return str(uuid.uuid5(uuid.NAMESPACE_URL, str(point_id)))
+
         try:
             for c in chunks:
                 chunk_id = c.get("chunk_id")
@@ -145,7 +163,10 @@ class QdrantService:
                 embedding = self.generate_embedding(content, model_name=model_name)
                 if not embedding:
                     continue
-                points.append(PointStruct(id=chunk_id, vector=embedding, payload={**payload, "content": content}))
+                normalized_chunk_id = _normalize_point_id(chunk_id)
+                # Keep original chunk id so the rest of the system can map
+                payload["source_chunk_id"] = chunk_id
+                points.append(PointStruct(id=normalized_chunk_id, vector=embedding, payload={**payload, "content": content}))
 
             if points:
                 self.client.upsert(collection_name=collection_name, points=points)

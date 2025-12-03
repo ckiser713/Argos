@@ -152,3 +152,6 @@ echo "Run E2E tests: pnpm e2e"
 echo ""
 echo "Stop services: docker-compose -f \"$DOCKER_COMPOSE_FILE\" down"
 
+
+
+

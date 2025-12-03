@@ -2,36 +2,24 @@ import json
 import logging
 import re
 from typing import Any, List, Optional
-import openai
 
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate # Combined
-from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
 
 from app.config import get_settings
 from app.domain.mode import ProjectExecutionSettings
 from app.repos.mode_repo import get_project_settings
+from app.services.local_llm_client import get_local_llm_client, LocalChatLLM
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Initialize OpenAI client (for vLLM/Ollama API backend)
-client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
-
 
 def get_llm_client(base_url: Optional[str] = None):
-    """Return an OpenAI-compatible client for the given base_url.
-    Falls back to the default `client` configured at module import time.
-    """
-    if not base_url or base_url == settings.llm_base_url:
-        return client
-    try:
-        return openai.OpenAI(base_url=base_url, api_key=settings.llm_api_key)
-    except Exception:
-        logger.warning("Failed to initialize LLM client for base_url %s, falling back to default", base_url)
-        return client
+    """Return a local LLM client for the given base_url."""
+    return get_local_llm_client(base_url=base_url)
 
 
 class LLMResponse(BaseModel):
@@ -79,10 +67,10 @@ def get_routed_llm_config(prompt: str) -> tuple[str, str, str, str]:
         ROUTING_PROMPT_TEMPLATE.format(simple=SIMPLE_ROUTE_NAME, complex=COMPLEX_ROUTE_NAME)
     )
     
-    classifier_llm = ChatOpenAI(
-        openai_api_base=settings.llm_base_url,
-        openai_api_key=settings.llm_api_key,
-        model=settings.llm_model_name,
+    classifier_llm = LocalChatLLM(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        model_name=settings.llm_model_name,
         temperature=0.0
     )
 
@@ -160,17 +148,17 @@ def _call_underlying_llm(
         messages.append({"role": "user", "content": prompt})
 
     try:
-        response_format = {"type": "json_object"} if json_mode else {"type": "text"}
-        response = target_client.chat.completions.create(
+        response_format = {"type": "json_object"} if json_mode else None
+        response = target_client.chat_completions_create(
             model=target_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             response_format=response_format,
         )
-        return response.choices[0].message.content
+        return response["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
+        logger.error(f"Local LLM API error: {e}")
         return f"LLM Error: {str(e)}"
 
 

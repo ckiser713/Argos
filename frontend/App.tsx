@@ -21,50 +21,23 @@ import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
 import { useCortexStore } from '@src/state/cortexStore';
 import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
-// Mock Context Data
-const INITIAL_CONTEXT_ITEMS: ContextItem[] = [
-  { id: 'c1', name: 'Project_Titan_Specs.pdf', type: 'pdf', tokens: 45000 },
-  { id: 'c2', name: 'auth_middleware.rs', type: 'repo', tokens: 12500 },
-  { id: 'c3', name: 'user_session.ts', type: 'repo', tokens: 8200 },
-  { id: 'c4', name: 'DeepResearch_Chat_Log_001', type: 'chat', tokens: 4100 },
-];
-
-// --- Mock Graph Data for WorkflowConstruct ---
-const WORKFLOW_NODES: Node[] = [
-  { id: 'start', position: { x: 250, y: 0 }, data: { label: '__start__' } },
-  { id: 'retrieve', position: { x: 250, y: 100 }, data: { label: 'retrieve_docs' } },
-  { id: 'grade', position: { x: 250, y: 200 }, data: { label: 'grade_documents' } },
-  { id: 'generate', position: { x: 0, y: 300 }, data: { label: 'generate_answer' } },
-  { id: 'web_search', position: { x: 500, y: 300 }, data: { label: 'web_search_tool' } },
-  { id: 'finalize', position: { x: 250, y: 450 }, data: { label: '__end__' } },
-];
-
-const WORKFLOW_EDGES: Edge[] = [
-  { id: 'e1', source: 'start', target: 'retrieve' },
-  { id: 'e2', source: 'retrieve', target: 'grade' },
-  { id: 'e3', source: 'grade', target: 'generate' },
-  { id: 'e4', source: 'grade', target: 'web_search' },
-  { id: 'e5', source: 'web_search', target: 'generate' },
-  { id: 'e6', source: 'generate', target: 'finalize' },
-];
+// Mock data removed - should fetch from API
+// TODO: Replace with real API calls to fetch context items and workflow graphs
 
 const AppContent: React.FC = () => {
   const [systemStatus, setSystemStatus] = useState<'nominal' | 'warning' | 'critical' | 'warming_up'>('nominal');
   const [activeTab, setActiveTab] = useState('mission_control'); 
-  const [vram, setVram] = useState(42);
-  const [logs, setLogs] = useState<string[]>([
-    "INITIALIZING_NEXUS_CORE...",
-    "LOADING_MODULES [||||||||||] 100%",
-    "ESTABLISHING_SECURE_UPLINK...",
-    "CONNECTED_TO_MAIN_FRAME_V2.4"
-  ]);
+  // Mock VRAM removed - should fetch from system status API
+  const [vram, setVram] = useState(0);
+  // Mock logs removed - should fetch from system logs API or agent run logs
+  const [logs, setLogs] = useState<string[]>([]);
 
   // Workflow Simulation State
   const [wfActiveNode, setWfActiveNode] = useState<string | null>(null);
   const [wfVisited, setWfVisited] = useState<string[]>([]);
 
-  // Context State
-  const [contextItems, setContextItems] = useState<ContextItem[]>(INITIAL_CONTEXT_ITEMS);
+  // Context State - initialized empty, should be populated from API
+  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
 
   // Load projects and set current project
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
@@ -78,31 +51,16 @@ const AppContent: React.FC = () => {
     }
   }, [projects, currentProject, setCurrentProjectId]);
 
-  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  // This ensures hooks are called in the same order on every render
-  useEffect(() => {
-    // Simulate incoming logs and system fluctuations
-    const interval = setInterval(() => {
-      const newLogs = [
-        `DATA_PACKET_RECEIVED: ${Math.random().toString(36).substring(7).toUpperCase()}`,
-        `CHECKING_INTEGRITY... OK`,
-        `SYNC_RATE: ${(Math.random() * 100).toFixed(2)}ms`,
-        `ALLOCATING_TENSORS...`,
-        `[GRAPH_ENG] Indexing node ${Math.floor(Math.random() * 9000)}...`,
-        `[VRAM_MON] Garbage collection cycle complete.`
-      ];
-      setLogs(prev => [...prev, newLogs[Math.floor(Math.random() * newLogs.length)]].slice(-8));
-      
-      setVram(prev => {
-        const diff = Math.floor(Math.random() * 10) - 4;
-        const newVal = prev + diff;
-        return newVal > 95 ? 95 : newVal < 20 ? 20 : newVal;
-      });
-
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Mock simulation removed - should fetch real system status and logs from API
+  // TODO: Add system status API endpoint and use it here
+  // useEffect(() => {
+  //   const interval = setInterval(async () => {
+  //     const status = await getSystemStatus();
+  //     setVram(status.memory_metrics?.vram_usage || 0);
+  //     setLogs(status.recent_logs || []);
+  //   }, 5000);
+  //   return () => clearInterval(interval);
+  // }, []);
 
   useEffect(() => {
     if (systemStatus === 'warning') {
@@ -336,8 +294,8 @@ const AppContent: React.FC = () => {
             </div>
             <WorkflowConstruct 
               graphState={{
-                nodes: WORKFLOW_NODES,
-                edges: WORKFLOW_EDGES,
+                nodes: [], // TODO: Fetch from API
+                edges: [], // TODO: Fetch from API
                 activeNodeId: wfActiveNode,
                 visitedNodeIds: wfVisited
               }}

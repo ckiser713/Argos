@@ -17,34 +17,10 @@ import ReactFlow, {
 import { AnimatePresence, motion } from 'framer-motion';
 import { GitFork, CheckSquare, Database, Server, Code, Shield, HelpCircle, Plus, BrainCircuit, X } from 'lucide-react';
 import { OptionInspector, DecisionData } from './OptionInspector';
+import { useRoadmap } from '@src/hooks/useRoadmap';
+import { useCurrentProject } from '@src/hooks/useProjects';
 
-// --- MOCK API & HOOK ---
-// This would be in a separate file e.g., /hooks/useRoadmapGraph.ts
-const MOCK_ROADMAP_DATA = {
-  nodes: [
-    { id: '1', project_id: 'proj-1', label: 'Project Init', node_type: 'task', metadata: { icon: 'Code' } },
-    { id: '2', project_id: 'proj-1', label: 'Stack Choice?', node_type: 'decision', metadata: { 
-        question: "Which framework for the Real-time Websocket?",
-        options: [
-          { id: "opt-1", label: "Option A: Axum (Rust)", summary: "Pros: Zero-cost abstraction, high concurrency. Cons: Steep learning curve.", pros: ["Performance", "Safety"], cons: ["Complexity"], context_links: [{ type: "code", title: "auth_middleware.rs" }] },
-          { id: "opt-2", label: "Option B: FastAPI (Python)", summary: "Pros: Rapid development, huge ecosystem. Cons: GIL limitations, higher memory footprint.", pros: ["Speed of Dev", "Ecosystem"], cons: ["Performance"], context_links: [{ type: "code", title: "api_routes.py" }] }
-        ]
-      } 
-    },
-    { id: '3a', project_id: 'proj-1', label: 'Setup Axum', node_type: 'task', metadata: { icon: 'GitFork' } },
-    { id: '3b', project_id: 'proj-1', label: 'Setup FastAPI', node_type: 'task', metadata: { icon: 'Database' } },
-    { id: '4', project_id: 'proj-1', label: 'Websocket API', node_type: 'task', metadata: { icon: 'Server' } },
-    { id: '5', project_id: 'proj-1', label: 'Security Audit', node_type: 'task', metadata: { icon: 'Shield' } },
-  ],
-  edges: [
-    { id: 'e1-2', from_node_id: '1', to_node_id: '2' },
-    { id: 'e2-3a', from_node_id: '2', to_node_id: '3a', label: 'Option A: Rust' },
-    { id: 'e2-3b', from_node_id: '2', to_node_id: '3b', label: 'Option B: Python' },
-    { id: 'e3a-4', from_node_id: '3a', to_node_id: '4' },
-    { id: 'e3b-4', from_node_id: '3b', to_node_id: '4' },
-    { id: 'e4-5', from_node_id: '4', to_node_id: '5' },
-  ]
-};
+// Mock data removed - using real API via useRoadmap hook
 
 const ICONS: { [key: string]: React.ReactNode } = {
   Code: <Code size={14} />,
@@ -54,44 +30,6 @@ const ICONS: { [key: string]: React.ReactNode } = {
   Shield: <Shield size={14} />,
   Default: <CheckSquare size={14} />,
 };
-
-const useRoadmapGraph = (projectId: string) => {
-  const [data, setData] = useState<any>({ nodes: [], edges: [] });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Simulate API fetch
-    setLoading(true);
-    setTimeout(() => {
-      const formattedNodes = MOCK_ROADMAP_DATA.nodes.map((n, i) => ({
-        id: n.id,
-        type: n.node_type,
-        position: { x: (i % 3) * 250, y: Math.floor(i / 3) * 150 },
-        data: {
-          label: n.label,
-          icon: ICONS[n.metadata?.icon as string] || ICONS.Default,
-          ...n.metadata
-        }
-      }));
-
-      const formattedEdges = MOCK_ROADMAP_DATA.edges.map(e => ({
-        id: e.id,
-        source: e.from_node_id,
-        target: e.to_node_id,
-        label: e.label,
-        type: 'smoothstep',
-        style: { stroke: '#555' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#555' }
-      }));
-      
-      setData({ nodes: formattedNodes, edges: formattedEdges });
-      setLoading(false);
-    }, 1000);
-  }, [projectId]);
-
-  return { data, loading };
-};
-// --- END MOCK ---
 
 
 // --- Custom Nodes ---
@@ -127,7 +65,10 @@ const nodeTypes = { task: TaskNode, decision: DecisionNode };
 
 // --- Main Component ---
 const DecisionFlowMapComponent: React.FC = () => {
-  const { data: graphData, loading } = useRoadmapGraph('proj-1');
+  const { project } = useCurrentProject();
+  const projectId = project?.id;
+  const { data: roadmapData, isLoading: roadmapLoading } = useRoadmap(projectId);
+  
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [lastEvent, setLastEvent] = useState<string>('GRAPH_INITIALIZING...');
@@ -137,15 +78,39 @@ const DecisionFlowMapComponent: React.FC = () => {
 
   const [menu, setMenu] = useState<{ x: number, y: number, nodeId?: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const { project } = useReactFlow();
-
+  
+  // Convert roadmap data to ReactFlow nodes and edges
   useEffect(() => {
-    if (!loading) {
-      setNodes(graphData.nodes);
-      setEdges(graphData.edges);
-      setLastEvent('GRAPH_LOADED_SUCCESS');
+    if (roadmapData?.nodes && roadmapData?.edges) {
+      const formattedNodes: Node[] = roadmapData.nodes.map((n, i) => ({
+        id: n.id,
+        type: n.node_type || 'task',
+        position: { x: (i % 3) * 250, y: Math.floor(i / 3) * 150 },
+        data: {
+          label: n.label || n.title || '',
+          icon: ICONS[n.metadata?.icon as string] || ICONS.Default,
+          ...n.metadata
+        }
+      }));
+
+      const formattedEdges: Edge[] = roadmapData.edges.map(e => ({
+        id: e.id,
+        source: e.from_node_id || e.source_node_id || '',
+        target: e.to_node_id || e.target_node_id || '',
+        label: e.label || '',
+        type: 'smoothstep',
+        style: { stroke: '#555' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#555' }
+      }));
+      
+      setNodes(formattedNodes);
+      setEdges(formattedEdges);
+      setLastEvent('GRAPH_LOADED');
+    } else if (!roadmapLoading && projectId) {
+      setLastEvent('NO_ROADMAP_DATA');
     }
-  }, [loading, graphData, setNodes, setEdges]);
+  }, [roadmapData, roadmapLoading, projectId, setNodes, setEdges]);
+  const reactFlowInstance = useReactFlow();
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     if (node.type === 'decision') {
@@ -191,7 +156,7 @@ const DecisionFlowMapComponent: React.FC = () => {
   const addNode = (type: 'task' | 'decision') => {
     if (!menu) return;
     const { x, y } = menu;
-    const position = project({ x, y });
+    const position = reactFlowInstance.project({ x, y });
     const newNode = {
       id: `new-${+new Date()}`,
       type,
@@ -252,7 +217,7 @@ const DecisionFlowMapComponent: React.FC = () => {
       <div className="flex-1 border border-white/10 rounded-xl overflow-hidden bg-void relative shadow-2xl">
          <div className="absolute inset-0 pointer-events-none z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '20px 20px' }}></div>
         
-        {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-50 text-cyan font-mono animate-pulse">LOADING_GRAPH_DATA...</div>}
+        {roadmapLoading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-50 text-cyan font-mono animate-pulse">LOADING_GRAPH_DATA...</div>}
 
          <ReactFlow
            nodes={nodes}
