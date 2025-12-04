@@ -860,3 +860,68 @@ export async function getN8nWorkflowTemplates(): Promise<N8nWorkflowTemplate[]> 
     method: "GET",
   });
 }
+
+/* ============================================================================
+ * System Status
+ * ==========================================================================*/
+
+export interface GpuMetrics {
+  name: string | null;
+  total_vram_gb: number | null;
+  used_vram_gb: number | null;
+  utilization_pct: number | null;
+}
+
+export interface CpuMetrics {
+  num_cores: number;
+  load_pct: number;
+}
+
+export interface MemoryMetrics {
+  total_gb: number;
+  used_gb: number;
+}
+
+export interface ContextMetrics {
+  total_tokens: number;
+  used_tokens: number;
+}
+
+export type SystemStatusLevel = "nominal" | "warning" | "critical" | "warming_up";
+
+export interface SystemStatus {
+  status: SystemStatusLevel;
+  reason: string | null;
+  gpu: GpuMetrics | null;
+  cpu: CpuMetrics;
+  memory: MemoryMetrics;
+  context: ContextMetrics;
+  active_agent_runs: number;
+}
+
+export interface ModelLaneStatus {
+  current_lane: string | null;
+  is_switching: boolean;
+  queued_requests: number;
+  vllm_lanes: string[];
+  llama_cpp_lanes: string[];
+  lane_configs: Record<string, {
+    url: string;
+    model_name: string;
+    backend: string;
+  }>;
+}
+
+/** Get current system status (GPU, CPU, memory, context). */
+export async function getSystemStatus(): Promise<SystemStatus> {
+  return http<SystemStatus>("/api/system/status", {
+    method: "GET",
+  });
+}
+
+/** Get model lanes status. */
+export async function getModelLanesStatus(): Promise<ModelLaneStatus> {
+  return http<ModelLaneStatus>("/api/system/models/lanes", {
+    method: "GET",
+  });
+}

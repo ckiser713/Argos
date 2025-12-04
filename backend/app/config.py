@@ -62,6 +62,22 @@ class Settings(BaseSettings):
         default="~/rocm/py311-tor290/bin/llama-quantize-tuned",
         env="CORTEX_LLAMA_QUANTIZE_BINARY_PATH",
     )
+    llama_cpp_model_path: str = Field(
+        default="",
+        env="CORTEX_LLAMA_CPP_MODEL_PATH",
+    )
+    llama_cpp_n_ctx: int = Field(
+        default=4096,
+        env="CORTEX_LLAMA_CPP_N_CTX",
+    )
+    llama_cpp_n_threads: int = Field(
+        default=8,
+        env="CORTEX_LLAMA_CPP_N_THREADS",
+    )
+    llama_cpp_n_gpu_layers: int = Field(
+        default=99,
+        env="CORTEX_LLAMA_CPP_N_GPU_LAYERS",
+    )
 
     # --- Lane Settings ---
     lane_super_reader_url: str = Field(
@@ -86,7 +102,7 @@ class Settings(BaseSettings):
     lane_fast_rag_model_path: str = Field(default="", env="CORTEX_LANE_FAST_RAG_MODEL_PATH")
     lane_fast_rag_backend: str = Field(default="", env="CORTEX_LANE_FAST_RAG_BACKEND")
 
-    lane_governance_url: str = Field(default="http://localhost:8080/v1", env="CORTEX_LANE_GOVERNANCE_URL")
+    lane_governance_url: str = Field(default="http://localhost:8081/v1", env="CORTEX_LANE_GOVERNANCE_URL")
     lane_governance_model: str = Field(default="Granite-4.x-Long-Context", env="CORTEX_LANE_GOVERNANCE_MODEL")
     lane_governance_model_path: str = Field(default="", env="CORTEX_LANE_GOVERNANCE_MODEL_PATH")
     lane_governance_backend: str = Field(default="llama_cpp", env="CORTEX_LANE_GOVERNANCE_BACKEND")
@@ -95,7 +111,25 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def set_strix_defaults(self) -> "Settings":
         if self.cortex_env in ["strix", "production"]:
-            self.database_url = "postgresql://cortex:cortex@localhost:5432/cortex"
+            # Use PostgreSQL in strix/production
+            if "sqlite" in self.database_url:
+                self.database_url = "postgresql://cortex:cortex@localhost:5432/cortex"
+            
+            # Update lane URLs to use Docker service names when not explicitly set
+            import os
+            if not os.environ.get("CORTEX_LANE_SUPER_READER_URL"):
+                self.lane_super_reader_url = "http://llama-super-reader:8080/v1"
+            if not os.environ.get("CORTEX_LANE_GOVERNANCE_URL"):
+                self.lane_governance_url = "http://llama-governance:8081/v1"
+            if not os.environ.get("CORTEX_LANE_ORCHESTRATOR_URL"):
+                self.lane_orchestrator_url = "http://inference-vllm:8000/v1"
+            if not os.environ.get("CORTEX_LANE_CODER_URL"):
+                self.lane_coder_url = "http://inference-vllm:8000/v1"
+            if not os.environ.get("CORTEX_LANE_FAST_RAG_URL"):
+                self.lane_fast_rag_url = "http://inference-vllm:8000/v1"
+            if not os.environ.get("CORTEX_QDRANT_URL"):
+                self.qdrant_url = "http://qdrant:6333"
+                
         if self.cortex_env == "strix":
             self.llm_backend = "local_http"  # Use local HTTP client instead of OpenAI
             # The following lines are already defaulted to the correct values for strix

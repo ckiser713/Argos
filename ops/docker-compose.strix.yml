@@ -1,50 +1,60 @@
-version: '3.8'
-
 # Common environment variables for model paths
 x-common-env:
   # --- vLLM Models ---
   &common-env
-  CORTEX_VLLM_MODEL: "/models/vllm/fast_rag/bf16"
+  CORTEX_VLLM_MODEL: "/models/vllm/orchestrator/bf16"
   CORTEX_LANE_ORCHESTRATOR_MODEL: "/models/vllm/orchestrator/bf16"
   CORTEX_LANE_CODER_MODEL: "/models/vllm/coder/bf16"
   CORTEX_LANE_FAST_RAG_MODEL: "/models/vllm/fast_rag/bf16"
 
   # --- GGUF Models ---
-  CORTEX_GGUF_MODEL: "/models/gguf/nemotron-8b-instruct.Q4_K_M.gguf"
-  CORTEX_LANE_SUPER_READER_MODEL_PATH: "/models/gguf/nemotron-8b-instruct.Q4_K_M.gguf"
-  CORTEX_LANE_GOVERNANCE_MODEL_PATH: "/models/gguf/granite-3.0-8b-instruct.Q4_K_M.gguf"
+  CORTEX_LANE_SUPER_READER_MODEL_PATH: "/models/gguf/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+  CORTEX_LANE_GOVERNANCE_MODEL_PATH: "/models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf"
+
+# ROCm device passthrough config
+x-rocm-devices: &rocm-devices
+  devices:
+    - /dev/kfd
+    - /dev/dri
+  group_add:
+    - video
+    - render
+
+# ROCm environment for gfx1151 (Strix Point)
+x-rocm-env: &rocm-env
+  HIP_VISIBLE_DEVICES: "0"
+  # HSA_OVERRIDE_GFX_VERSION: "11.0.0"  # DO NOT SET - causes segfaults with recompiled binaries
+  ROCM_PATH: "/opt/rocm"
+  VLLM_USE_ROCM: "1"
 
 services:
-  # vLLM Service (Fast-RAG, Orchestrator, Coder)
+  # vLLM Service (Orchestrator, Coder, Fast-RAG - sequential switching)
+  # Uses precompiled ROCm image for gfx1151 (Strix Point)
   inference-vllm:
     image: ${CORTEX_VLLM_IMAGE:-vllm-rocm-strix:latest}
+    pull_policy: never
     container_name: cortex-vllm-service
+    entrypoint: ["python", "-m", "vllm.entrypoints.openai.api_server"]
     command: >
-      python -m vllm.entrypoints.openai.api_server --model "${CORTEX_VLLM_MODEL}" --quantization fp8 --kv-cache-dtype fp8
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video
-      - render
+      --model "${CORTEX_VLLM_MODEL:-/models/vllm/Qwen2.5-Coder-14B-Instruct}" 
+      --host 0.0.0.0 
+      --port 8000
+      --gpu-memory-utilization 0.45
+      --max-model-len 32768
+      --enforce-eager
+      --trust-remote-code
+    <<: *rocm-devices
     environment:
-      <<: *common-env
-      VLLM_GPU_MEMORY_UTILIZATION: "0.45"
-      VLLM_ENFORCE_EAGER: "true"
-      VLLM_MAX_MODEL_LEN: "32768"
-      VLLM_HOST: "0.0.0.0"
-      VLLM_PORT: "8000"
-      HIP_VISIBLE_DEVICES: "0"
-      HSA_OVERRIDE_GFX_VERSION: "11.5.0"
+      <<: [*common-env, *rocm-env]
       HF_TOKEN: "${HF_TOKEN:-}"
     ports:
       - "8000:8000"
     volumes:
-      - ../models:/models
+      - ../models:/models:ro
       - ../models/vllm-cache:/root/.cache/huggingface
     shm_size: '16gb'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,7 +63,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 40G
+          memory: 48G
         reservations:
           memory: 40G
           cpus: '8'
@@ -82,7 +92,7 @@ services:
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-k34AS6HSKZPdbnhN2-3m0A}
       - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=5678
       - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
@@ -93,6 +103,7 @@ services:
       - EXECUTIONS_DATA_PRUNE=true
       - EXECUTIONS_DATA_MAX_AGE=24
       - N8N_USER_MANAGEMENT_DISABLED=true
+    user: "1000:1000"
     volumes:
       - ../n8n_data:/home/node/.n8n
     healthcheck:
@@ -111,11 +122,17 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: cortex
-      POSTGRES_USER: cortex
-      POSTGRES_PASSWORD: cortex
+      POSTGRES_DB: ${POSTGRES_DB:-cortex}
+      POSTGRES_USER: ${POSTGRES_USER:-cortex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vFao0TckZ0rABe6mwETSBrCZ-b-j2rDj}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cortex} -d ${POSTGRES_DB:-cortex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     networks:
       - cortex-network

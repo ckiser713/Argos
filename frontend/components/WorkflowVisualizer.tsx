@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import ReactFlow, { 
   Background, 
   Controls, 
@@ -10,9 +10,11 @@ import ReactFlow, {
   useEdgesState,
   MarkerType
 } from 'reactflow';
-import { Play, Pause, RefreshCw, Box, Layers, AlertCircle, GitMerge, BrainCircuit, Terminal, CheckCircle, X, Activity, Repeat } from 'lucide-react';
+import { Play, Pause, RefreshCw, Box, Layers, AlertCircle, GitMerge, BrainCircuit, Terminal, CheckCircle, X, Activity, Repeat, MessageSquare, Code, Book, Eye, Shield } from 'lucide-react';
 import { NeonButton } from './NeonButton';
 import { GlassCard } from './GlassCard';
+import { useCurrentProject } from '@src/hooks/useProjects';
+import { useAgentRuns, useAgentRunNodeStates, useAgentStream } from '@src/hooks/useAgentRuns';
 
 // --- Custom Node Component ---
 const NeonNode = ({ data, selected }: { data: any, selected: boolean }) => {
@@ -86,22 +88,144 @@ const nodeTypes = {
   neon: NeonNode,
 };
 
-// Mock data removed - should fetch from agent runs API
-// TODO: Replace with real agent run workflow state from useAgentRuns hook
+// Define workflow nodes representing the Cortex agent pipeline
+const createInitialNodes = (): Node[] => [
+  { id: 'start', type: 'neon', position: { x: 300, y: 0 }, data: { label: 'Start', type: 'start', status: 'pending', icon: Play, payload: {} } },
+  { id: 'orchestrator', type: 'neon', position: { x: 300, y: 100 }, data: { label: 'Orchestrator', type: 'process', status: 'pending', icon: BrainCircuit, payload: {} } },
+  { id: 'planner', type: 'neon', position: { x: 150, y: 200 }, data: { label: 'Planner', type: 'process', status: 'pending', icon: MessageSquare, payload: {} } },
+  { id: 'coder', type: 'neon', position: { x: 450, y: 200 }, data: { label: 'Coder', type: 'process', status: 'pending', icon: Code, payload: {} } },
+  { id: 'super_reader', type: 'neon', position: { x: 150, y: 320 }, data: { label: 'Super Reader', type: 'process', status: 'pending', icon: Book, payload: {} } },
+  { id: 'fast_rag', type: 'neon', position: { x: 450, y: 320 }, data: { label: 'Fast RAG', type: 'process', status: 'pending', icon: Eye, payload: {} } },
+  { id: 'critique', type: 'neon', position: { x: 300, y: 420 }, data: { label: 'Critique', type: 'decision', status: 'pending', icon: AlertCircle, iteration: 0, payload: {} } },
+  { id: 'governance', type: 'neon', position: { x: 500, y: 420 }, data: { label: 'Governance', type: 'process', status: 'pending', icon: Shield, payload: {} } },
+  { id: 'final', type: 'neon', position: { x: 300, y: 540 }, data: { label: 'Complete', type: 'end', status: 'pending', icon: CheckCircle, payload: {} } },
+];
+
+const createInitialEdges = (): Edge[] => [
+  { id: 'e-start-orchestrator', source: 'start', target: 'orchestrator', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-orchestrator-planner', source: 'orchestrator', target: 'planner', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-orchestrator-coder', source: 'orchestrator', target: 'coder', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-planner-super_reader', source: 'planner', target: 'super_reader', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-coder-fast_rag', source: 'coder', target: 'fast_rag', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-super_reader-critique', source: 'super_reader', target: 'critique', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-fast_rag-critique', source: 'fast_rag', target: 'critique', animated: false, style: { stroke: '#333', strokeWidth: 1 } },
+  { id: 'e-critique-governance', source: 'critique', target: 'governance', sourceHandle: 'retry', animated: false, style: { stroke: '#ffbf00', strokeWidth: 1 }, label: 'REVIEW' },
+  { id: 'e-governance-orchestrator', source: 'governance', target: 'orchestrator', animated: false, style: { stroke: '#ffbf00', strokeWidth: 1 }, label: 'RETRY' },
+  { id: 'e-critique-final', source: 'critique', target: 'final', animated: false, style: { stroke: '#333', strokeWidth: 1 }, label: 'APPROVE' },
+];
 
 export const WorkflowVisualizer: React.FC = () => {
   const { project } = useCurrentProject();
-  const projectId = project?.id;
-  // TODO: Use useAgentRuns hook to fetch real workflow state
-  // const { data: agentRuns } = useAgentRuns(projectId);
+  const projectId = project?.id ?? '';
   
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  // Fetch the list of agent runs for this project
+  const { data: agentRunsData } = useAgentRuns(projectId);
+  const activeRunId = useMemo(() => {
+    // Find active (running) run, or most recent one
+    if (!agentRunsData?.items?.length) return undefined;
+    const running = agentRunsData.items.find((r: { status: string }) => r.status === 'running');
+    return running?.id ?? agentRunsData.items[0]?.id;
+  }, [agentRunsData]);
+  
+  // Fetch node states for the active run
+  const { data: nodeStatesData } = useAgentRunNodeStates(projectId, activeRunId ?? '');
+  
+  // Subscribe to real-time updates via WebSocket
+  const { isConnected: streamConnected, events: streamEvents } = useAgentStream({
+    projectId,
+    runId: activeRunId,
+    enabled: !!projectId && !!activeRunId,
+  });
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState(createInitialNodes());
+  const [edges, setEdges, onEdgesChange] = useEdgesState(createInitialEdges());
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
-  // Simulation Sequence (Flattened loop for demo)
+  // Update nodes based on real node states from API
+  useEffect(() => {
+    if (!nodeStatesData?.items) return;
+    
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        // Find matching node state from API
+        const nodeState = nodeStatesData.items.find(
+          (ns: { nodeId: string }) => ns.nodeId.toLowerCase() === node.id.toLowerCase()
+        );
+        
+        if (!nodeState) return node;
+        
+        // Map API status to visualization status
+        let status = 'pending';
+        if (nodeState.status === 'running' || nodeState.status === 'active') {
+          status = 'active';
+        } else if (nodeState.status === 'completed' || nodeState.status === 'success') {
+          status = 'completed';
+        } else if (nodeState.status === 'failed' || nodeState.status === 'error') {
+          status = 'error';
+        }
+        
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            status,
+            iteration: nodeState.iteration ?? node.data.iteration,
+            payload: nodeState.payload ?? node.data.payload,
+          },
+        };
+      })
+    );
+    
+    // Animate edges based on active nodes
+    const activeNodeIds = nodeStatesData.items
+      .filter((ns: { status: string }) => ns.status === 'running' || ns.status === 'active')
+      .map((ns: { nodeId: string }) => ns.nodeId.toLowerCase());
+    
+    setEdges((currentEdges) =>
+      currentEdges.map((edge) => {
+        const targetActive = activeNodeIds.includes(edge.target);
+        if (targetActive) {
+          return { ...edge, animated: true, style: { stroke: '#00f0ff', strokeWidth: 2 } };
+        }
+        return { ...edge, animated: false, style: { stroke: '#333', strokeWidth: 1 } };
+      })
+    );
+  }, [nodeStatesData, setNodes, setEdges]);
+
+  // Also update from WebSocket stream events
+  useEffect(() => {
+    if (!streamEvents.length) return;
+    
+    // Get the most recent nodeState event
+    const nodeStateEvents = streamEvents.filter((e) => e.type === 'nodeState' && e.nodeState);
+    if (!nodeStateEvents.length) return;
+    
+    const latestEvent = nodeStateEvents[nodeStateEvents.length - 1];
+    if (!latestEvent.nodeState) return;
+    
+    const { nodeId, status: apiStatus, iteration, payload } = latestEvent.nodeState as { nodeId: string; status: string; iteration?: number; payload?: unknown };
+    
+    let status = 'pending';
+    if (apiStatus === 'running' || apiStatus === 'active') {
+      status = 'active';
+    } else if (apiStatus === 'completed' || apiStatus === 'success') {
+      status = 'completed';
+    } else if (apiStatus === 'failed' || apiStatus === 'error') {
+      status = 'error';
+    }
+    
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id.toLowerCase() === nodeId.toLowerCase()
+          ? { ...node, data: { ...node.data, status, iteration: iteration ?? node.data.iteration, payload: payload ?? node.data.payload } }
+          : node
+      )
+    );
+  }, [streamEvents, setNodes]);
+
+  // Simulation Sequence (for demo/fallback when no live run)
   // Logic: Start -> Planner -> Draft -> Critique -> Router (Fail) -> Draft -> Critique -> Router (Pass) -> Final
   const simulationSequence = [
     { active: 'start', payloadUpdate: {} },
@@ -191,8 +315,8 @@ export const WorkflowVisualizer: React.FC = () => {
   const handleReset = () => {
       setIsPlaying(false);
       setCurrentStepIndex(0);
-      setNodes(initialNodes);
-      setEdges(initialEdges);
+      setNodes(createInitialNodes());
+      setEdges(createInitialEdges());
   };
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -205,9 +329,17 @@ export const WorkflowVisualizer: React.FC = () => {
       {/* Workflow Canvas */}
       <div className="flex-1 h-full rounded-xl overflow-hidden border border-white/10 bg-void relative">
          <div className="absolute top-4 left-4 z-10 flex gap-2">
-            <NeonButton variant="cyan" onClick={() => setIsPlaying(!isPlaying)} icon={isPlaying ? <Pause size={14}/> : <Play size={14}/>}>
-               {isPlaying ? 'PAUSE_ORCHESTRATION' : 'RUN_SIMULATION'}
-            </NeonButton>
+            {!activeRunId && (
+              <NeonButton variant="cyan" onClick={() => setIsPlaying(!isPlaying)} icon={isPlaying ? <Pause size={14}/> : <Play size={14}/>}>
+                 {isPlaying ? 'PAUSE_SIMULATION' : 'RUN_SIMULATION'}
+              </NeonButton>
+            )}
+            {activeRunId && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-cyan/20 border border-cyan/40 rounded-md text-cyan text-xs font-mono">
+                <Activity size={14} className={streamConnected ? 'animate-pulse' : ''} />
+                {streamConnected ? 'LIVE_STREAMING' : 'POLLING'}
+              </div>
+            )}
             <NeonButton variant="purple" onClick={handleReset} icon={<RefreshCw size={14}/>}>
                RESET
             </NeonButton>

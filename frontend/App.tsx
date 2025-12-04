@@ -18,6 +18,7 @@ import { SoundProvider } from './components/SoundManager';
 import { ContextItem } from './components/ContextPrism';
 import { Activity, Shield, Cpu, Terminal, Wifi, Database } from 'lucide-react';
 import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
+import { useSystemStatus, useModelLanesStatus } from '@src/hooks/useSystemStatus';
 import { useCortexStore } from '@src/state/cortexStore';
 import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
@@ -25,12 +26,7 @@ import { Node, Edge, ReactFlowProvider } from 'reactflow';
 // TODO: Replace with real API calls to fetch context items and workflow graphs
 
 const AppContent: React.FC = () => {
-  const [systemStatus, setSystemStatus] = useState<'nominal' | 'warning' | 'critical' | 'warming_up'>('nominal');
   const [activeTab, setActiveTab] = useState('mission_control'); 
-  // Mock VRAM removed - should fetch from system status API
-  const [vram, setVram] = useState(0);
-  // Mock logs removed - should fetch from system logs API or agent run logs
-  const [logs, setLogs] = useState<string[]>([]);
 
   // Workflow Simulation State
   const [wfActiveNode, setWfActiveNode] = useState<string | null>(null);
@@ -38,6 +34,53 @@ const AppContent: React.FC = () => {
 
   // Context State - initialized empty, should be populated from API
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+
+  // Live system status from backend API
+  const { data: systemStatusData, isLoading: statusLoading } = useSystemStatus();
+  const { data: modelLanesData } = useModelLanesStatus();
+
+  // Derive status values from live API data
+  const systemStatus = systemStatusData?.status ?? 'nominal';
+  const vram = systemStatusData?.gpu?.used_vram_gb 
+    ? Math.round((systemStatusData.gpu.used_vram_gb / (systemStatusData.gpu.total_vram_gb ?? 1)) * 100) 
+    : 0;
+  const cpuLoad = systemStatusData?.cpu?.load_pct ?? 0;
+  const memoryUsed = systemStatusData?.memory?.used_gb ?? 0;
+  const memoryTotal = systemStatusData?.memory?.total_gb ?? 1;
+  const contextUsed = systemStatusData?.context?.used_tokens ?? 0;
+  const contextTotal = systemStatusData?.context?.total_tokens ?? 8000000;
+  const activeAgentRuns = systemStatusData?.active_agent_runs ?? 0;
+  const currentModel = modelLanesData?.lane_configs?.[modelLanesData?.current_lane ?? '']?.model_name ?? 'Llama-3.3-70B';
+
+  // Generate system logs from status data
+  const logs = React.useMemo(() => {
+    const logLines: string[] = [];
+    if (systemStatusData) {
+      logLines.push(`[SYS] Status: ${systemStatus.toUpperCase()}`);
+      if (systemStatusData.gpu) {
+        logLines.push(`[GPU] VRAM: ${systemStatusData.gpu.used_vram_gb?.toFixed(1) ?? '?'}/${systemStatusData.gpu.total_vram_gb?.toFixed(1) ?? '?'} GB`);
+      }
+      logLines.push(`[CPU] Load: ${cpuLoad.toFixed(1)}% (${systemStatusData.cpu?.num_cores ?? '?'} cores)`);
+      logLines.push(`[MEM] ${memoryUsed.toFixed(1)}/${memoryTotal.toFixed(1)} GB`);
+      if (modelLanesData?.current_lane) {
+        logLines.push(`[LANE] Active: ${modelLanesData.current_lane}`);
+      }
+      if (modelLanesData?.is_switching) {
+        logLines.push(`[LANE] WARNING: Model switch in progress...`);
+      }
+      if (activeAgentRuns > 0) {
+        logLines.push(`[AGENT] ${activeAgentRuns} active run(s)`);
+      }
+      if (systemStatusData.reason) {
+        logLines.push(`[ALERT] ${systemStatusData.reason}`);
+      }
+    } else if (statusLoading) {
+      logLines.push('[SYS] Connecting to backend...');
+    } else {
+      logLines.push('[SYS] Waiting for system status...');
+    }
+    return logLines;
+  }, [systemStatusData, modelLanesData, systemStatus, cpuLoad, memoryUsed, memoryTotal, activeAgentRuns, statusLoading]);
 
   // Load projects and set current project
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
@@ -50,25 +93,6 @@ const AppContent: React.FC = () => {
       setCurrentProjectId(projects[0].id);
     }
   }, [projects, currentProject, setCurrentProjectId]);
-
-  // Mock simulation removed - should fetch real system status and logs from API
-  // TODO: Add system status API endpoint and use it here
-  // useEffect(() => {
-  //   const interval = setInterval(async () => {
-  //     const status = await getSystemStatus();
-  //     setVram(status.memory_metrics?.vram_usage || 0);
-  //     setLogs(status.recent_logs || []);
-  //   }, 5000);
-  //   return () => clearInterval(interval);
-  // }, []);
-
-  useEffect(() => {
-    if (systemStatus === 'warning') {
-      setVram(89);
-    } else {
-      setVram(42);
-    }
-  }, [systemStatus]);
 
   // --- Workflow Simulation Logic ---
   useEffect(() => {

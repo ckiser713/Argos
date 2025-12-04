@@ -1,8 +1,12 @@
 import logging
 import os
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load environment variables from .env file
+load_dotenv()
 
 from app.api.routes import (
     agents,
@@ -72,6 +76,7 @@ def create_app() -> FastAPI:
     def check_nix_environment():
         """Verify that non-local environments run inside Nix shell."""
         settings = get_settings()
+        logger.info(f"Checking nix environment for {settings.cortex_env}")
         if settings.cortex_env != "local":
             if not os.environ.get("IN_NIX_SHELL"):
                 logger.critical("CRITICAL: Non-local environment started outside of Nix shell.")
@@ -81,6 +86,8 @@ def create_app() -> FastAPI:
                 )
             else:
                 logger.info("Nix environment check passed.")
+        else:
+            logger.info("Local environment, skipping nix check.")
 
     # Skip auth in test environment
     if settings.debug or getattr(settings, 'skip_auth', False):
@@ -90,8 +97,20 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def initialize_warmup_monitor() -> None:
-        endpoints = build_lane_health_endpoints(settings)
-        model_warmup_service.start_monitoring(endpoints)
+        """Initialize model warmup monitoring for production environments."""
+        if settings.cortex_env in ["strix", "production"]:
+            logger.info("Initializing model warmup monitoring...")
+            endpoints = build_lane_health_endpoints(settings)
+            model_warmup_service.start_monitoring(endpoints)
+            logger.info(f"Warmup monitoring started for {len(endpoints)} endpoints")
+        else:
+            logger.info("Skipping warmup monitoring in local environment")
+
+    @app.on_event("shutdown")
+    async def shutdown_warmup_monitor() -> None:
+        """Stop warmup monitoring on shutdown."""
+        model_warmup_service.stop_monitoring()
+        logger.info("Warmup monitoring stopped")
 
     # Routers grouped by resource
     app.include_router(auth.router, prefix="/api", tags=["auth"])
