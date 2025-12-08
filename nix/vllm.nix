@@ -81,7 +81,6 @@ rec {
       # ROCm stack (GPU compute)
       rocmPackages.rocm-core
       rocmPackages.rocm-runtime
-      rocmPackages.hip
       rocmPackages.hipcc
       rocmPackages.rocblas
       rocmPackages.rocrand
@@ -93,7 +92,7 @@ rec {
       curl
       git
       wget
-      ca-certificates
+      cacert
       libffi
       openssl
       
@@ -115,8 +114,8 @@ rec {
       
       # ROCm Configuration
       export ROCM_HOME=${rocmPackages.rocm-core}
-      export LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:${rocmPackages.hip}/lib:$LD_LIBRARY_PATH
-      export PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hip}/bin:$PATH
+      export LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:$LD_LIBRARY_PATH
+      export PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hipcc}/bin:$PATH
       
       # AMD GPU Detection & Configuration
       export HIP_VISIBLE_DEVICES=0
@@ -175,8 +174,8 @@ rec {
     
     # ROCm Configuration
     export ROCM_HOME=${rocmPackages.rocm-core}
-    export LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:${rocmPackages.hip}/lib:$LD_LIBRARY_PATH
-    export PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hip}/bin:$PATH
+    export LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:$LD_LIBRARY_PATH
+    export PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hipcc}/bin:$PATH
     
     # AMD GPU Configuration
     export HIP_VISIBLE_DEVICES=''${HIP_VISIBLE_DEVICES:-0}
@@ -286,16 +285,14 @@ rec {
       pythonWithVllm
       rocmPackages.rocm-core
       rocmPackages.rocm-runtime
-      rocmPackages.hip
       rocmPackages.rocblas
       rocmPackages.rocrand
       rocmPackages.rocsparse
-      rocmPackages.hip
       rocmPackages.rocm-device-libs
       
       # Utilities
       curl
-      ca-certificates
+      cacert
       coreutils
       bash
     ];
@@ -306,8 +303,8 @@ rec {
         "PYTHONUNBUFFERED=1"
         "PYTHONDONTWRITEBYTECODE=1"
         "ROCM_HOME=${rocmPackages.rocm-core}"
-        "LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:${rocmPackages.hip}/lib"
-        "PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hip}/bin:/bin:/usr/bin:/usr/local/bin"
+        "LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib"
+        "PATH=${rocmPackages.rocm-smi}/bin:${rocmPackages.hipcc}/bin:/bin:/usr/bin:/usr/local/bin"
         "HIP_VISIBLE_DEVICES=0"
         "HSA_OVERRIDE_GFX_VERSION=11.0.0"
         "VLLM_TARGET_DEVICE=rocm"
@@ -372,7 +369,7 @@ rec {
         "PYTHONUNBUFFERED=1"
         "PYTHONDONTWRITEBYTECODE=1"
         "ROCM_HOME=${rocmPackages.rocm-core}"
-        "LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib:${rocmPackages.hip}/lib"
+        "LD_LIBRARY_PATH=${rocmPackages.rocm-runtime}/lib:${rocmPackages.rocblas}/lib:${rocmPackages.rocblas}/lib64:${rocmPackages.rocsparse}/lib:${rocmPackages.rocrand}/lib"
         "HIP_VISIBLE_DEVICES=0"
         "HSA_OVERRIDE_GFX_VERSION=11.0.0"
         "VLLM_TARGET_DEVICE=rocm"
