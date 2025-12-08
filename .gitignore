@@ -60,7 +60,25 @@ ops/models/
 # Model downloads directory
 # This prevents committing downloaded model binaries into the repo
 ops/models/*
+models/
 
 # Ignore core folder and core dump files (may contain large files / artifacts)
 core/
 core
+
+# Virtual environments
+.venv/
+backend/.venv/
+frontend/.venv/
+
+# Cache directories
+.cache/
+backend/temp_uploads/
+frontend/$HOME/
+$HOME/
+
+# Large binary files
+*.safetensors
+*.gguf
+*.pth
+*.pack
