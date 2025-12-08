@@ -9,18 +9,11 @@ services:
     volumes:
       - ./qdrant_storage:/qdrant/storage
   inference-engine:
-    # Option 1: Use pre-built ROCm image (recommended - faster, optimized)
-    # First run: ./ops/load_rocm_image.sh
-    # Then use the image below (default)
-    image: vllm-rocm-strix:latest
-    
-    # Option 2: Build from source (fallback - slower, requires network)
-    # Uncomment below and comment out 'image:' line above to build from source
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.vllm
-    #   args:
-    #     - HF_TOKEN=${HF_TOKEN:-}
+    # Built via Nix: `nix build .#vllm-container && docker load < result`
+    # Image tag produced by Nix build: vllm-rocm-nix:latest
+    image: vllm-rocm-nix:latest
+    env_file:
+      - ./cortex.env
     
     devices:
       - "/dev/kfd"
@@ -32,11 +25,14 @@ services:
       - "11434:8000" # Maps to standard OpenAI port internally
     shm_size: '16gb'
     volumes:
-      - ./models:/root/.cache/huggingface
+      - ./models:/models
+      - ./models/hf_cache:/models/hf_cache
     environment:
       - HIP_VISIBLE_DEVICES=0
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
       - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HOME=/models/hf_cache
+      - MODEL_PATH=${MODEL_PATH:-/models/orchestrator/bf16}
       # Memory optimization for 128GB unified memory
       # GPU memory utilization: 0.45 = ~48GB for vLLM (leaving ~64GB for llama.cpp)
       - GPU_MEMORY_UTILIZATION=0.45
@@ -50,8 +46,27 @@ services:
       retries: 3
       start_period: 60s
 
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-cortex}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-cortex}
+      - POSTGRES_DB=${POSTGRES_DB:-cortex}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cortex} -d ${POSTGRES_DB:-cortex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   n8n:
     image: n8nio/n8n:latest
+    env_file:
+      - ./cortex.env
     ports:
       - "5678:5678"
     environment:

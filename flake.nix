@@ -8,6 +8,8 @@
   outputs = { self, nixpkgs }:
       let
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      rocmPackages = pkgs.rocmPackages;
+      
       # Avoid packaging large directories (model artifacts, caches) into the flake source
       # when building the development shell. This prevents 'argument list too long' errors
       # when Nix builds derivations based on the repository contents.
@@ -15,6 +17,9 @@
         (builtins.match "^(ops/models|node_modules|\\.venv|\\.cache|rocm|ops/models/.*)$" path) == null
       ) ./.;
       projectRoot = builtins.toString filteredSource;
+      
+      # Import vLLM module
+      vllmModule = import ./nix/vllm.nix { inherit pkgs rocmPackages; lib = pkgs.lib; };
       
       # Backend package - wrapper script that uses poetry
       backend = pkgs.symlinkJoin {
@@ -86,6 +91,13 @@
           ruff
           mypy
           python311Packages.black  # Optional but useful
+
+          # ============================================
+          # vLLM and ROCm Tools (optional)
+          # ============================================
+          vllmModule.vllmServer
+          vllmModule.vllmHealthCheck
+          rocmPackages.rocm-smi
 
           # ============================================
           # System Libraries for Python Packages
@@ -406,5 +418,40 @@
       
       # NixOS module for systemd services
       nixosModules.default = import ./nix/services.nix;
+      
+      # ============================================================
+      # vLLM Packages and Shells
+      # ============================================================
+      
+      packages.x86_64-linux = {
+        # vLLM server executable
+        vllm-server = vllmModule.vllmServer;
+        
+        # Health check utility
+        vllm-health = vllmModule.vllmHealthCheck;
+        
+        # OCI container image
+        vllm-container = vllmModule.vllmOciImage;
+        
+        # Complete vLLM toolset
+        vllm-tools = vllmModule.vllmComplete;
+      };
+      
+      # Development shells
+      devShells.x86_64-linux = {
+        # vLLM development/runtime shell
+        vllm = vllmModule.vllmRuntimeShell;
+        
+        # vLLM with additional debugging tools
+        vllm-debug = pkgs.mkShell {
+          inputsFrom = [ vllmModule.vllmRuntimeShell ];
+          buildInputs = with pkgs; [
+            gdb
+            linuxPackages.perf
+            valgrind
+            strace
+          ];
+        };
+      };
     };
 }

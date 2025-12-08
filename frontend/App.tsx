@@ -15,10 +15,11 @@ import { StrategyDeck } from './components/StrategyDeck';
 import { PmDissection } from './components/PmDissection';
 import { DecisionFlowMap } from './components/DecisionFlowMap';
 import { SoundProvider } from './components/SoundManager';
-import { ContextItem } from './components/ContextPrism';
 import { Activity, Shield, Cpu, Terminal, Wifi, Database } from 'lucide-react';
 import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
 import { useSystemStatus, useModelLanesStatus } from '@src/hooks/useSystemStatus';
+import { useRoadmap } from '@src/hooks/useRoadmap';
+import { useContextBudget, useRemoveContextItem } from '@src/hooks/useContextItems';
 import { useCortexStore } from '@src/state/cortexStore';
 import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
@@ -28,16 +29,15 @@ import { Node, Edge, ReactFlowProvider } from 'reactflow';
 const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState('mission_control'); 
 
-  // Workflow Simulation State
-  const [wfActiveNode, setWfActiveNode] = useState<string | null>(null);
-  const [wfVisited, setWfVisited] = useState<string[]>([]);
-
-  // Context State - initialized empty, should be populated from API
-  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const { project: currentProject } = useCurrentProject();
+  const projectId = currentProject?.id;
 
   // Live system status from backend API
   const { data: systemStatusData, isLoading: statusLoading } = useSystemStatus();
   const { data: modelLanesData } = useModelLanesStatus();
+  const { data: roadmapData, isLoading: roadmapLoading, error: roadmapError } = useRoadmap(projectId);
+  const { data: contextBudget } = useContextBudget(projectId ?? '');
+  const removeContextItem = useRemoveContextItem(projectId ?? '');
 
   // Derive status values from live API data
   const systemStatus = systemStatusData?.status ?? 'nominal';
@@ -47,10 +47,12 @@ const AppContent: React.FC = () => {
   const cpuLoad = systemStatusData?.cpu?.load_pct ?? 0;
   const memoryUsed = systemStatusData?.memory?.used_gb ?? 0;
   const memoryTotal = systemStatusData?.memory?.total_gb ?? 1;
-  const contextUsed = systemStatusData?.context?.used_tokens ?? 0;
-  const contextTotal = systemStatusData?.context?.total_tokens ?? 8000000;
+  const contextUsed = contextBudget?.usedTokens ?? systemStatusData?.context?.used_tokens ?? 0;
+  const contextTotal = contextBudget?.maxTokens ?? systemStatusData?.context?.total_tokens ?? 8000000;
+  const contextItems = contextBudget?.items ?? [];
   const activeAgentRuns = systemStatusData?.active_agent_runs ?? 0;
   const currentModel = modelLanesData?.lane_configs?.[modelLanesData?.current_lane ?? '']?.model_name ?? 'Llama-3.3-70B';
+  const laneEntries = Object.entries(modelLanesData?.lane_configs ?? {});
 
   // Generate system logs from status data
   const logs = React.useMemo(() => {
@@ -82,9 +84,27 @@ const AppContent: React.FC = () => {
     return logLines;
   }, [systemStatusData, modelLanesData, systemStatus, cpuLoad, memoryUsed, memoryTotal, activeAgentRuns, statusLoading]);
 
+  const workflowGraph = React.useMemo(() => {
+    if (!roadmapData) return { nodes: [] as Node[], edges: [] as Edge[], activeNodeId: null as string | null, visitedNodeIds: [] as string[] };
+    const nodes = roadmapData.nodes.map((node, idx) => ({
+      id: node.id,
+      position: { x: (idx % 4) * 240, y: Math.floor(idx / 4) * 160 },
+      data: {
+        label: node.label,
+        status: node.status,
+      },
+    }));
+    const edges = roadmapData.edges.map((edge) => ({
+      id: edge.id ?? `${edge.source}-${edge.target}`,
+      source: edge.source,
+      target: edge.target,
+      data: { kind: edge.kind, label: edge.label },
+    }));
+    return { nodes, edges, activeNodeId: null as string | null, visitedNodeIds: [] as string[] };
+  }, [roadmapData]);
+
   // Load projects and set current project
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
-  const { project: currentProject } = useCurrentProject();
   const setCurrentProjectId = useCortexStore((s) => s.setCurrentProjectId);
 
   // Set first project as current if none selected
@@ -93,36 +113,6 @@ const AppContent: React.FC = () => {
       setCurrentProjectId(projects[0].id);
     }
   }, [projects, currentProject, setCurrentProjectId]);
-
-  // --- Workflow Simulation Logic ---
-  useEffect(() => {
-    if (activeTab !== 'workflow') return;
-
-    // A simple linear simulation path for demo purposes
-    // Path: start -> retrieve -> grade -> web_search -> generate -> finalize
-    const sequence = ['start', 'retrieve', 'grade', 'web_search', 'generate', 'finalize'];
-    let step = 0;
-
-    const runStep = () => {
-      if (step >= sequence.length) {
-        step = 0;
-        setWfVisited([]);
-        setWfActiveNode(null);
-        setTimeout(runStep, 2000); // Pause before restart
-        return;
-      }
-
-      const currentNode = sequence[step];
-      setWfActiveNode(currentNode);
-      setWfVisited(prev => [...new Set([...prev, currentNode])]); // Add to visited
-
-      step++;
-      setTimeout(runStep, 1500); // Time between steps
-    };
-
-    const timer = setTimeout(runStep, 500);
-    return () => clearTimeout(timer);
-  }, [activeTab]);
 
   // Show loading state while projects are loading
   if (projectsLoading) {
@@ -149,8 +139,8 @@ const AppContent: React.FC = () => {
   }
 
   const handleEjectContext = (id: string) => {
-    setContextItems(prev => prev.filter(item => item.id !== id));
-    setLogs(prev => [...prev, `[CONTEXT_MGR] Ejected item ${id} from memory.`].slice(-8));
+    if (!projectId) return;
+    removeContextItem.mutate(id);
   };
 
 
@@ -271,7 +261,7 @@ const AppContent: React.FC = () => {
                </div>
              </div>
              <div className="flex items-center justify-center h-full bg-panel/50 rounded-xl">
-               <p className="text-gray-400 font-mono">Knowledge Nexus - Coming Soon</p>
+               <KnowledgeNexus />
              </div>
           </motion.div>
         );
@@ -316,14 +306,15 @@ const AppContent: React.FC = () => {
                <h2 className="text-2xl font-mono text-white tracking-wide">LANGGRAPH_CONSTRUCT</h2>
                <p className="text-gray-500 font-mono text-xs mt-1">REAL-TIME EXECUTION TRACING</p>
             </div>
-            <WorkflowConstruct 
-              graphState={{
-                nodes: [], // TODO: Fetch from API
-                edges: [], // TODO: Fetch from API
-                activeNodeId: wfActiveNode,
-                visitedNodeIds: wfVisited
-              }}
-            />
+           {roadmapLoading && (
+             <div className="flex-1 flex items-center justify-center text-gray-400 font-mono">Loading workflow graph...</div>
+           )}
+           {roadmapError && (
+             <div className="flex-1 flex items-center justify-center text-amber font-mono">Failed to load workflow graph</div>
+           )}
+           {!roadmapLoading && !roadmapError && (
+             <WorkflowConstruct graphState={workflowGraph} />
+           )}
           </motion.div>
         );
 
@@ -366,10 +357,10 @@ const AppContent: React.FC = () => {
                   <div className="space-y-4 font-mono text-sm">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-400">CPU_LOAD</span>
-                      <span className="text-cyan"><ScrambleText text="34%" duration={800} /></span>
+                      <span className="text-cyan"><ScrambleText text={`${cpuLoad.toFixed(1)}%`} duration={800} /></span>
                     </div>
                     <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan w-[34%] shadow-neon-cyan"></div>
+                      <div className="h-full bg-cyan shadow-neon-cyan" style={{ width: `${Math.min(cpuLoad, 100)}%` }}></div>
                     </div>
 
                     <div className="flex justify-between items-center">
@@ -386,21 +377,27 @@ const AppContent: React.FC = () => {
                     </div>
 
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-400">NET_UPLINK</span>
-                      <span className="text-purple"><ScrambleText text="1.2 GB/s" duration={1200} /></span>
+                      <span className="text-gray-400">MEM_USAGE</span>
+                      <span className="text-purple">
+                        <ScrambleText text={`${memoryUsed.toFixed(1)} / ${memoryTotal.toFixed(1)} GB`} duration={1200} />
+                      </span>
                     </div>
                     <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                      <div className="h-full bg-purple w-[78%] shadow-neon-purple"></div>
+                      <div className="h-full bg-purple shadow-neon-purple" style={{ width: `${Math.min((memoryUsed / (memoryTotal || 1)) * 100, 100)}%` }}></div>
                     </div>
                   </div>
                 </GlassCard>
 
                 <GlassCard variant="void" title="ACTIVE_NODES">
                   <div className="grid grid-cols-2 gap-2">
-                    {[1, 2, 3, 4].map(i => (
-                      <div key={i} className="bg-white/5 p-2 rounded border border-white/10 flex items-center justify-center flex-col gap-1 hover:bg-white/10 transition-colors cursor-pointer group">
+                    {laneEntries.length === 0 && (
+                      <div className="text-xs text-gray-500 font-mono col-span-2">No lanes configured</div>
+                    )}
+                    {laneEntries.map(([laneId, laneCfg]) => (
+                      <div key={laneId} className="bg-white/5 p-2 rounded border border-white/10 flex items-center justify-center flex-col gap-1 hover:bg-white/10 transition-colors cursor-pointer group">
                         <Database size={16} className="text-gray-500 group-hover:text-cyan transition-colors" />
-                        <span className="text-xs text-gray-400 font-mono">NODE_0{i}</span>
+                        <span className="text-xs text-gray-300 font-mono">{laneId.toUpperCase()}</span>
+                        <span className="text-[10px] text-gray-500 font-mono truncate max-w-[120px]">{laneCfg?.model_name ?? 'unknown'}</span>
                       </div>
                     ))}
                   </div>
@@ -494,9 +491,9 @@ const AppContent: React.FC = () => {
 
   return (
     <Layout
-      currentModel="Llama-3.3-70B"
+      currentModel={currentModel}
       vramUsage={vram}
-      contextUsage={{ used: Math.floor(usedTokens / 1000), total: 128, unit: 'k' }}
+      contextUsage={{ used: contextUsed, total: contextTotal || 1, unit: 'tokens' }}
       systemStatus={systemStatus}
       activeTab={activeTab}
       onTabChange={setActiveTab}

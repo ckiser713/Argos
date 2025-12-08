@@ -22,10 +22,9 @@ in
       User = "nexus";
       Group = "nexus";
       WorkingDirectory = "${projectRoot}/backend";
+      EnvironmentFile = "/etc/cortex/cortex.env";
       Environment = [
         "CORTEX_ENV=production"
-        "CORTEX_QDRANT_URL=http://localhost:6333"
-        "CORTEX_ATLAS_DB_PATH=${projectRoot}/backend/atlas.db"
         "PATH=${pkgs.python311}/bin:${pkgs.poetry}/bin:$PATH"
       ];
       ExecStart = "${pkgs.bash}/bin/bash -c 'cd ${projectRoot}/backend && ${pkgs.poetry}/bin/poetry run ${pkgs.python311}/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000'";
@@ -46,6 +45,7 @@ in
       User = "nexus";
       Group = "nexus";
       WorkingDirectory = "${projectRoot}/frontend";
+      EnvironmentFile = "/etc/cortex/cortex.env";
       Environment = [
         "NODE_ENV=production"
         "PATH=${pkgs.nodejs_20}/bin:${pkgs.nodePackages.pnpm}/bin:$PATH"
