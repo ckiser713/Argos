@@ -16,8 +16,9 @@
 #
 # Prerequisites:
 #   - Copy ../.env.example to ../.env and configure
-#   - Download models: ./download_all_models.sh
-#   - Ensure /data/cortex-models exists with models
+#   - Set MODELS_PATH to your host model root (e.g., /data/cortex-models)
+#   - Download models: ./ops/download_all_models.sh
+#   - (Optional) Minimal smoke models: ./ops/download_minimal_models.sh
 # =============================================================================
 
 version: '3.8'
@@ -25,11 +26,20 @@ version: '3.8'
 # Shared environment variables
 x-common-env: &common-env
   CORTEX_ENV: ${CORTEX_ENV:-strix}
+  RUNNING_IN_DOCKER: "1"
   CORTEX_AUTH_SECRET: ${CORTEX_AUTH_SECRET:?CORTEX_AUTH_SECRET is required}
   CORTEX_DATABASE_URL: postgresql://cortex:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/cortex
   CORTEX_QDRANT_URL: http://qdrant:6333
   CORTEX_N8N_BASE_URL: http://n8n:5678
   CORTEX_LLM_BASE_URL: http://inference-vllm:8000/v1
+   # Storage: default to local persistent volume unless explicitly set to s3/minio
+  CORTEX_STORAGE_BACKEND: ${CORTEX_STORAGE_BACKEND:-local}
+  CORTEX_ALLOW_LOCAL_STORAGE: ${CORTEX_ALLOW_LOCAL_STORAGE:-1}
+  CORTEX_STORAGE_LOCAL_DIR: ${CORTEX_STORAGE_LOCAL_DIR:-/app/storage_uploads}
+  CORTEX_STORAGE_BUCKET: ${CORTEX_STORAGE_BUCKET:-cortex-ingest}
+  CORTEX_STORAGE_ENDPOINT_URL: ${CORTEX_STORAGE_ENDPOINT_URL:-}
+  CORTEX_STORAGE_ACCESS_KEY: ${CORTEX_STORAGE_ACCESS_KEY:-}
+  CORTEX_STORAGE_SECRET_KEY: ${CORTEX_STORAGE_SECRET_KEY:-}
   HF_TOKEN: ${HF_TOKEN:-}
 
 x-model-paths: &model-paths
@@ -50,10 +60,48 @@ x-restart-policy: &restart-policy
 
 services:
   # ===========================================================================
+  # Queue Broker - Redis
+  # ===========================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: cortex-redis
+    <<: *restart-policy
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      <<: *healthcheck-defaults
+      start_period: 10s
+    networks:
+      - cortex-network
+
+  # ===========================================================================
+  # Model Preflight - verifies model paths exist before starting inference
+  # ===========================================================================
+  model-preflight:
+    image: alpine:3.20
+    container_name: cortex-model-preflight
+    command: >
+      sh -c "
+        /preflight/model-preflight.sh ${CORTEX_LANE_ORCHESTRATOR_MODEL_PATH} &&
+        /preflight/model-preflight.sh ${CORTEX_LANE_CODER_MODEL_PATH} &&
+        /preflight/model-preflight.sh ${CORTEX_LANE_FAST_RAG_MODEL_PATH} &&
+        /preflight/model-preflight.sh ${CORTEX_LANE_SUPER_READER_MODEL_PATH} &&
+        /preflight/model-preflight.sh ${CORTEX_LANE_GOVERNANCE_MODEL_PATH}
+      "
+    environment:
+      <<: *model-paths
+    volumes:
+      - cortex_models:/models:ro
+      - ./model-preflight.sh:/preflight/model-preflight.sh:ro
+    networks:
+      - cortex-network
+    restart: "no"
+
+  # ===========================================================================
   # Reverse Proxy - Caddy with automatic HTTPS
   # ===========================================================================
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.8.4-alpine
     container_name: cortex-caddy
     <<: *restart-policy
     ports:
@@ -63,6 +111,15 @@ services:
     environment:
       CORTEX_DOMAIN: ${CORTEX_DOMAIN:-localhost}
       CORTEX_ADMIN_EMAIL: ${CORTEX_ADMIN_EMAIL:-admin@localhost}
+      # Rate limits (API and webhooks)
+      CORTEX_RATE_LIMIT_EVENTS: ${CORTEX_RATE_LIMIT_EVENTS:-300}
+      CORTEX_RATE_LIMIT_WINDOW: ${CORTEX_RATE_LIMIT_WINDOW:-1m}
+      CORTEX_RATE_LIMIT_BURST: ${CORTEX_RATE_LIMIT_BURST:-50}
+      CORTEX_WEBHOOK_RATE_EVENTS: ${CORTEX_WEBHOOK_RATE_EVENTS:-120}
+      CORTEX_WEBHOOK_RATE_WINDOW: ${CORTEX_WEBHOOK_RATE_WINDOW:-1m}
+      CORTEX_WEBHOOK_RATE_BURST: ${CORTEX_WEBHOOK_RATE_BURST:-30}
+      # n8n UI/IP allowlist (defaults to private ranges; override for VPN/allowlist)
+      N8N_ALLOWED_IPS: "${N8N_ALLOWED_IPS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -81,7 +138,7 @@ services:
   # Database - PostgreSQL
   # ===========================================================================
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15.8-alpine
     container_name: cortex-postgres
     <<: *restart-policy
     environment:
@@ -136,7 +193,7 @@ services:
   # Vector Database - Qdrant
   # ===========================================================================
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:1.13.3
     container_name: cortex-qdrant
     <<: *restart-policy
     volumes:
@@ -158,16 +215,19 @@ services:
   # LLM Inference - vLLM (ROCm/Strix Halo)
   # ===========================================================================
   inference-vllm:
-    image: ${CORTEX_VLLM_IMAGE:-vllm-rocm-strix:latest}
+    # Set CORTEX_VLLM_IMAGE to a pinned tag (no :latest)
+    image: ${CORTEX_VLLM_IMAGE:?CORTEX_VLLM_IMAGE must be set to a pinned tag}
     container_name: cortex-vllm
     <<: *restart-policy
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      python -m vllm.entrypoints.openai.api_server
-      --model "${CORTEX_LANE_ORCHESTRATOR_MODEL:-deepseek-ai/DeepSeek-R1-Distill-Qwen-32B}"
-      --quantization fp8
-      --kv-cache-dtype fp8
-      --host 0.0.0.0
-      --port 8000
+      /preflight/model-preflight.sh "${CORTEX_LANE_ORCHESTRATOR_MODEL_PATH}" &&
+      exec python -m vllm.entrypoints.openai.api_server
+        --model "${CORTEX_LANE_ORCHESTRATOR_MODEL_PATH}"
+        --quantization fp8
+        --kv-cache-dtype fp8
+        --host 0.0.0.0
+        --port 8000
     devices:
       - /dev/kfd
       - /dev/dri
@@ -182,14 +242,19 @@ services:
       HIP_VISIBLE_DEVICES: ${HIP_VISIBLE_DEVICES:-0}
       HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-11.5.0}
       HF_TOKEN: ${HF_TOKEN:-}
+      MODEL_PATH: ${CORTEX_LANE_ORCHESTRATOR_MODEL_PATH}
     volumes:
       - cortex_models:/models:ro
       - vllm_cache:/root/.cache/huggingface
+      - ./model-preflight.sh:/preflight/model-preflight.sh:ro
     shm_size: '16gb'
     networks:
       - cortex-network
+    depends_on:
+      model-preflight:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "/preflight/model-preflight.sh \"${CORTEX_LANE_ORCHESTRATOR_MODEL_PATH}\" && curl -f http://localhost:8000/health"]
       <<: *healthcheck-defaults
       start_period: 180s
     deploy:
@@ -203,11 +268,12 @@ services:
   # LLM Inference - llama.cpp (for SUPER_READER and GOVERNANCE)
   # ===========================================================================
   llama-cpp:
-    image: ghcr.io/ggerganov/llama.cpp:server-rocm
+    # Set LLAMA_CPP_IMAGE to a pinned tag (e.g., ghcr.io/ggerganov/llama.cpp:server-rocm-0.2.90)
+    image: ${LLAMA_CPP_IMAGE:?LLAMA_CPP_IMAGE must be set to a pinned tag (e.g., ghcr.io/ggerganov/llama.cpp:server-rocm-0.2.90)}
     container_name: cortex-llama-cpp
     <<: *restart-policy
     command: >
-      --model /models/gguf/nemotron-8b-instruct.Q4_K_M.gguf
+      --model ${CORTEX_LANE_SUPER_READER_MODEL_PATH}
       --ctx-size 131072
       --n-gpu-layers 99
       --host 0.0.0.0
@@ -219,14 +285,19 @@ services:
       - video
       - render
     environment:
+      <<: *model-paths
       HIP_VISIBLE_DEVICES: ${HIP_VISIBLE_DEVICES:-0}
       HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-11.5.0}
     volumes:
       - cortex_models:/models:ro
+      - ./model-preflight.sh:/preflight/model-preflight.sh:ro
     networks:
       - cortex-network
+    depends_on:
+      model-preflight:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD-SHELL", "/preflight/model-preflight.sh \"${CORTEX_LANE_SUPER_READER_MODEL_PATH}\" && curl -f http://localhost:8080/health"]
       <<: *healthcheck-defaults
       start_period: 120s
     deploy:
@@ -240,22 +311,25 @@ services:
   # Workflow Automation - n8n
   # ===========================================================================
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.82.1
     container_name: cortex-n8n
     <<: *restart-policy
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?N8N_PASSWORD is required}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:?N8N_BASIC_AUTH_USER is required}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:?N8N_BASIC_AUTH_PASSWORD is required}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
       - N8N_HOST=${CORTEX_DOMAIN:-localhost}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - WEBHOOK_URL=https://${CORTEX_DOMAIN:-localhost}/webhooks/
+      - N8N_DIAGNOSTICS_ENABLED=false
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
       - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
       - EXECUTIONS_DATA_PRUNE=true
       - EXECUTIONS_DATA_MAX_AGE=168  # 7 days
+      - N8N_USER_MANAGEMENT_DISABLED=true
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
@@ -280,14 +354,20 @@ services:
       CORTEX_LANE_FAST_RAG_URL: http://inference-vllm:8000/v1
       CORTEX_LANE_SUPER_READER_URL: http://llama-cpp:8080/v1
       CORTEX_LANE_GOVERNANCE_URL: http://llama-cpp:8080/v1
+      CORTEX_CELERY_BROKER_URL: redis://redis:6379/0
+      CORTEX_CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CORTEX_TASKS_EAGER: "0"
     volumes:
       - backend_data:/app/data
       - cortex_models:/models:ro
+      - storage_uploads:/app/storage_uploads
     depends_on:
       postgres:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     networks:
       - cortex-network
     healthcheck:
@@ -301,6 +381,63 @@ services:
           memory: 2G
 
   # ===========================================================================
+  # Celery Worker - Ingest queue
+  # ===========================================================================
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.backend
+    container_name: cortex-celery-worker
+    <<: *restart-policy
+    command: >
+      celery -A app.worker.celery_app worker
+        -Q ingest
+        --loglevel=info
+    environment:
+      <<: [*common-env, *model-paths]
+      CORTEX_CELERY_BROKER_URL: redis://redis:6379/0
+      CORTEX_CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CORTEX_TASKS_EAGER: "0"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    networks:
+      - cortex-network
+    volumes:
+      - cortex_models:/models:ro
+      - storage_uploads:/app/storage_uploads
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+
+  # ===========================================================================
+  # Observability - Prometheus (optional)
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: cortex-prometheus
+    <<: *restart-policy
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - cortex-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ===========================================================================
   # Frontend Builder - Build and serve React app
   # ===========================================================================
   frontend-builder:
@@ -308,6 +445,9 @@ services:
       context: ..
       dockerfile: Dockerfile.frontend
       target: builder
+      args:
+        VITE_CORTEX_API_BASE_URL: https://${CORTEX_DOMAIN:-localhost}
+        VITE_CORTEX_WS_BASE_URL: wss://${CORTEX_DOMAIN:-localhost}
     container_name: cortex-frontend-builder
     environment:
       VITE_CORTEX_API_BASE_URL: https://${CORTEX_DOMAIN:-localhost}
@@ -357,7 +497,11 @@ volumes:
     driver: local
   backend_data:
     driver: local
+  storage_uploads:
+    driver: local
   vllm_cache:
+    driver: local
+  prometheus_data:
     driver: local
   
   # Caddy
@@ -376,7 +520,7 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MODELS_PATH:-/data/cortex-models}
+      device: ${MODELS_PATH:?MODELS_PATH is required}
 
 # =============================================================================
 # Networks

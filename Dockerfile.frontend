@@ -1,19 +1,36 @@
-FROM node:20-bullseye-slim
+FROM node:20-bullseye-slim AS builder
 
 WORKDIR /app
 
+# Install pnpm (workspace-aware)
+RUN npm install -g pnpm@10.23.0
+
+# Copy workspace manifests first for better caching
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
-COPY frontend/ ./frontend
 
-# Install pnpm and build
-RUN npm install -g pnpm@10.23.0
-RUN pnpm install --silent
+# Build-time API endpoints (override via build args)
+ARG VITE_CORTEX_API_BASE_URL=http://localhost:8000
+ARG VITE_CORTEX_WS_BASE_URL=ws://localhost:8000
+ENV VITE_CORTEX_API_BASE_URL=${VITE_CORTEX_API_BASE_URL}
+ENV VITE_CORTEX_WS_BASE_URL=${VITE_CORTEX_WS_BASE_URL}
+
+# Install deps and build
+COPY frontend/ ./frontend
+RUN pnpm install --frozen-lockfile --silent
 RUN cd frontend && pnpm build
 
-# Serve built files using serve
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* && \
-	npm install -g serve@14
-CMD ["sh", "-c", "servedir=frontend/dist && serve -s $servedir -l tcp://0.0.0.0:5173"]
+# -----------------------------------------------------------------------------
+# Runtime image to serve the built assets (used by e2e/local compose)
+# -----------------------------------------------------------------------------
+FROM node:20-bullseye-slim AS runtime
+WORKDIR /app
+
+# Minimal runtime deps for static serving
+RUN npm install -g serve@14
+
+# Copy built assets
+COPY --from=builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 5173
+CMD ["sh", "-c", "servedir=frontend/dist && serve -s $servedir -l tcp://0.0.0.0:5173"]

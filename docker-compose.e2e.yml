@@ -11,24 +11,53 @@ services:
       - CORTEX_SKIP_AUTH=true
       - CORTEX_ATLAS_DB_PATH=/app/test_atlas.db
       - CORTEX_ENV=local
+      - CORTEX_E2E_MOCK_LANES=1
       - CORTEX_QDRANT_URL=http://qdrant:6333
+      - CORTEX_CELERY_BROKER_URL=redis://redis:6379/0
+      - CORTEX_CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CORTEX_TASKS_EAGER=false
+      - CORTEX_STORAGE_BACKEND=s3
+      - CORTEX_STORAGE_ENDPOINT_URL=http://minio:9000
+      - CORTEX_STORAGE_BUCKET=cortex-ingest
+      - CORTEX_STORAGE_ACCESS_KEY=minioadmin
+      - CORTEX_STORAGE_SECRET_KEY=minioadmin
+      - CORTEX_STORAGE_SECURE=false
+    volumes:
+      - test_atlas_db:/app/test_atlas.db
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/ready"]
       interval: 10s
       retries: 6
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        VITE_CORTEX_API_BASE_URL: http://backend:8000
+        VITE_CORTEX_WS_BASE_URL: ws://backend:8000
     ports:
       - 5173:5173
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - VITE_CORTEX_API_BASE_URL=http://backend:8000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:5173',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
       interval: 10s
       retries: 6
 
@@ -40,8 +69,10 @@ services:
     volumes:
       - ./:/work
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     environment:
       - PLAYWRIGHT_BASE_URL=http://frontend:5173
       - PLAYWRIGHT_API_BASE=http://backend:8000/api
@@ -53,10 +84,77 @@ services:
     tty: false
     # --- Keep these in the first `environment` block to avoid duplication
 
+  ingest-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "ingest", "--loglevel=info"]
+    environment:
+      - CORTEX_SKIP_AUTH=true
+      - CORTEX_E2E_MOCK_LANES=1
+      - CORTEX_ATLAS_DB_PATH=/app/test_atlas.db
+      - CORTEX_ENV=local
+      - CORTEX_QDRANT_URL=http://qdrant:6333
+      - CORTEX_CELERY_BROKER_URL=redis://redis:6379/0
+      - CORTEX_CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CORTEX_STORAGE_BACKEND=s3
+      - CORTEX_STORAGE_ENDPOINT_URL=http://minio:9000
+      - CORTEX_STORAGE_BUCKET=cortex-ingest
+      - CORTEX_STORAGE_ACCESS_KEY=minioadmin
+      - CORTEX_STORAGE_SECRET_KEY=minioadmin
+      - CORTEX_STORAGE_SECURE=false
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - test_atlas_db:/app/test_atlas.db
+
   qdrant:
     image: qdrant/qdrant:latest
+    ports:
+      - 6333:6333
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      # qdrant image lacks curl/wget/nc; keep a lightweight always-true check to satisfy depends_on
+      test: ["CMD", "true"]
+      interval: 10s
+      retries: 3
+      start_period: 5s
     # No healthcheck for qdrant; some minimal images lack curl and other utilities.
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      retries: 12
+      start_period: 15s
 volumes:
   qdrant_data:
+  minio_data:
+  test_atlas_db:
