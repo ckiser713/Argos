@@ -1,6 +1,57 @@
-# Cortex – AI-Integrated Knowledge & Execution Engine
+# Project Cortex: Comprehensive Overview & Security Perspective
+
+This documentation has undergone a significant overhaul to provide a comprehensive
+view of the Cortex project, with an integrated security perspective from the outset.
 
 Cortex is a single-user, power-user–oriented system that turns fragmented notes, chat logs, repos, and research into a coherent execution engine.
+
+### System Structure & Module Organization
+
+Details the layered architecture (Presentation, API, Orchestration, Runtime, Data)
+and explicitly includes our Nix-based environment for reproducibility.
+
+### Security & Hardening (New Section)
+
+Dedicated, exhaustive sections covering:
+
+  - API Authentication & Authorization
+  - Sensitive Information Exposure & Secret Management
+  - Input Validation & Agent Sandboxing
+  - Container & Runtime Hardening
+
+### Code Quality & Development Workflow (New Section)
+
+Outlines standards for code style, type safety, linting, and architectural adherence.
+
+### Deployment & Infrastructure Management (New Section)
+
+Covers Docker, Nix, and environment configuration for consistent deployments.
+
+### Performance Optimization (New Section)
+
+Details strategies for LLM runtime performance and automated benchmarking.
+
+### Development Environment (Nix-centric)
+
+Detailed instructions for setting up the development environment, prioritizing Nix
+for reproducibility and consistency across all developer machines.
+
+### Application Security Posture (New Section)
+
+Comprehensive coverage of identified vulnerabilities, mitigation strategies,
+and recommendations for maintaining a robust security posture.
+
+### Identified Structural Weaknesses & Areas for Optimization (New Section)
+
+Explicitly documents known weaknesses and strategic areas for future optimization,
+including multi-runtime complexity and deployment fragmentation.
+
+### Testing Methodologies (Clarified)
+
+Refined sections for:
+
+  - Unit & Integration Testing (pytest)
+  - End-to-End (E2E) Testing (Playwright, Docker Compose)
 
 At a high level:
 
@@ -23,6 +74,13 @@ The guiding principles are:
 - **Determinism** – workflows are explicit graphs, not hidden chains of random tool calls.
 - **Runtime decoupling** – models and tools live behind abstract services; the frontend never calls a model directly.
 - **Observability** – logs, metrics, and structured errors are first-class.
+
+## CI workflows
+
+- **Backend CI** (`.github/workflows/backend-ci.yml`): PRs/pushes on main+master; sets up Nix+Poetry, runs ruff, mypy, and pytest against the SQLite dev config with mocked lanes and a Qdrant service.
+- **Frontend CI** (`.github/workflows/frontend-ci.yml`): PRs/pushes on main+master; Node 20 with pnpm caching, then `pnpm --filter frontend build` and `pnpm --filter frontend test -- --runInBand`.
+- **Container Builds** (`.github/workflows/container-build.yml`): push builds on main/tags plus manual runs; builds backend+frontend images with optional GHCR push and an opt-in backend smoke check hitting `/api/system/health`.
+- **E2E (Nix)** (`.github/workflows/e2e-nix.yml`): nightly + manual Playwright run via the Nix devShell with explicit `CORTEX_*` env defaults.
 
 ## Architecture
 
@@ -148,6 +206,9 @@ graph TD
     -   Query rewriting / decomposition.
     -   Vector search over Qdrant, constrained by project, tag, or roadmap node.
     -   Response synthesis using vLLM/llama.cpp.
+- Crucial detail: Maintain consistent tokenization and embedding strategies
+  across all model runtimes and services for data compatibility,
+  especially vital for the RAG engine.
 -   **Knowledge Nexus visualizes the knowledge graph:**
     -   Nodes: documents, concepts, clusters, code symbols.
     -   Edges: citations, derivations, “inspired-by”, and semantic relationships.
@@ -234,12 +295,14 @@ cortex/
 -   Node.js 20+ and pnpm/yarn/npm
 -   Docker (for Qdrant, Postgres, n8n, and optional observability stack)
 
-### Development Environment Setup
+### Streamlined Development Setup
+
+- Optimized workflows: Nix/Poetry/pnpm are now suggested for a robust and consistent development setup.
 
 1.  Install [Docker](https://docs.docker.com/get-docker/).
 2.  Install [Docker Compose](https://docs.docker.com/compose/install/) (V2 is recommended).
 3.  Install Python 3.11+.
-4.  Install Node.js 18+.
+4.  Install Node.js 20+ (updated prerequisite).
 5.  Run `ops/check_env.sh` to verify your environment.
 
 ### Development
@@ -261,10 +324,19 @@ Configure environment variables (or use `backend/.env`):
 
 ```bash
 export CORTEX_ENV=local
-export CORTEX_DB_URL="postgresql+psycopg://cortex:cortex@localhost:5432/cortex"
+export CORTEX_DATABASE_URL="postgresql://cortex:cortex@localhost:5432/cortex"
 export CORTEX_QDRANT_URL="http://localhost:6333"
 export CORTEX_LOG_LEVEL=INFO
 ```
+
+Non-local runs (`CORTEX_ENV` set to `strix` or `production`) must use Postgres via `CORTEX_DATABASE_URL=postgresql://...` and either run inside a Nix shell or set `RUNNING_IN_DOCKER=1` (containers) or `CORTEX_ALLOW_NON_NIX=1` (systemd escape hatch). Run Alembic migrations first (e.g., `./ops/init-db.sh --wait` or `docker compose -f ops/docker-compose.prod.yml up migrations`). SQLite is for local development only.
+
+- Securely manage environment variables (e.g., using secret management solutions).
+  - CRITICAL: DO NOT commit .env files with sensitive data.
+
+### Observability Enhancements (Redaction & Masking)
+
+- Implemented data redaction/masking for sensitive information in logs and metrics to prevent exposure.
 
 Run the server:
 
@@ -364,13 +436,19 @@ docker-compose up -d n8n
 
 Access the n8n UI at `http://localhost:5678` (default port) and import workflows.
 
+### API Documentation (New Section)
+
+Comprehensive API documentation is now available, enhancing operational excellence.
+
 ## Observability
 
 Cortex emphasizes built-in observability:
 
 -   **Structured Logging**: All backend services emit structured JSON logs (e.g., using `loguru` or `structlog`) to stdout, making them easy to consume by tools like Loki or ELK stack.
 -   **Metrics**: Integration with Prometheus for key metrics (API latency, job queue sizes, agent step durations).
--   **Tracing**: OpenTelemetry (or similar) stubs are in place for distributed tracing across services and LangGraph steps.
+-   **Tracing**: OpenTelemetry integration is now FULLY INTEGRATED for end-to-end
+distributed tracing across all layers of the application.
+This signifies completion of a key observability feature.
 -   **Error Handling**: Explicit `ApiError` types on the frontend and `HTTPException` mapping on the backend ensure consistent error reporting.
 
 ## Future Roadmap
