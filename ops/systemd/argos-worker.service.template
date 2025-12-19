@@ -1,0 +1,14 @@
+[Unit]
+Description=Argos Celery Worker
+After=network.target redis.service postgresql.service
+
+[Service]
+User=argos
+Group=argos
+WorkingDirectory=/opt/argos/backend
+EnvironmentFile=/etc/argos/argos.env
+ExecStart=/usr/bin/poetry run celery -A app.worker worker --loglevel=info
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

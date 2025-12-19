@@ -1,0 +1,16 @@
+[Unit]
+Description=Argos Frontend Service
+After=network.target argos-backend.service
+
+[Service]
+User=argos
+Group=argos
+WorkingDirectory=/opt/argos/frontend
+EnvironmentFile=/etc/argos/argos.env
+# Note: In production, it's better to serve the 'dist' folder via Nginx/Caddy
+# This is a portable systemd version using 'serve' or similar
+ExecStart=/usr/bin/pnpm run preview --host 0.0.0.0 --port 5173
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

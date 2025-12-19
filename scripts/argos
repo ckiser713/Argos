@@ -22,6 +22,9 @@ def main():
     test_parser = subparsers.add_parser("test", help="Run tests")
     test_parser.add_argument("--e2e", action="store_true", help="Run E2E tests")
 
+    # deploy command
+    deploy_parser = subparsers.add_parser("deploy", help="Deploy to systemd (Production)")
+
     # ingest command
     ingest_parser = subparsers.add_parser("ingest", help="Ingest a source")
     ingest_parser.add_argument("path", help="Path to file or directory")
@@ -39,6 +42,10 @@ def main():
         else:
             print("🧪 Running backend tests...")
             run_cmd("cd backend && poetry run pytest")
+
+    elif args.command == "deploy":
+        print("🚀 Initiating Nix-based production deployment...")
+        run_cmd("bash scripts/nix_deploy.sh")
 
     elif args.command == "ingest":
         print(f"📥 Ingesting: {args.path}")

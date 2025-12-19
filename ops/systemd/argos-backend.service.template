@@ -1,0 +1,14 @@
+[Unit]
+Description=Argos Backend Service
+After=network.target postgresql.service qdrant.service
+
+[Service]
+User=argos
+Group=argos
+WorkingDirectory=/opt/argos/backend
+EnvironmentFile=/etc/argos/argos.env
+ExecStart=/usr/bin/poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
