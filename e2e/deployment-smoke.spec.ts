@@ -23,12 +23,12 @@ test.describe.serial("Deployment Smoke Tests", () => {
 
     try {
       // Ensure clean state
-      await execAsync(`docker-compose -f ${COMPOSE_FILE} down -v`, {
+      await execAsync(`docker compose -f ${COMPOSE_FILE} down -v`, {
         timeout: 30000,
       });
 
       // Start services
-      await execAsync(`docker-compose -f ${COMPOSE_FILE} up -d --build`, {
+      await execAsync(`docker compose -f ${COMPOSE_FILE} up -d --build`, {
         timeout: 300000, // 5 min for builds
       });
 
@@ -40,7 +40,7 @@ test.describe.serial("Deployment Smoke Tests", () => {
 
       while (attempts < maxAttempts) {
         const { stdout } = await execAsync(
-          `docker-compose -f ${COMPOSE_FILE} ps --format json`
+          `docker compose -f ${COMPOSE_FILE} ps --format json`
         );
 
         const services = stdout
@@ -80,7 +80,7 @@ test.describe.serial("Deployment Smoke Tests", () => {
       // Print logs for debugging
       try {
         const { stdout: logs } = await execAsync(
-          `docker-compose -f ${COMPOSE_FILE} logs --tail=50`
+          `docker compose -f ${COMPOSE_FILE} logs --tail=50`
         );
         console.error("Service logs:", logs);
       } catch {}
@@ -94,13 +94,13 @@ test.describe.serial("Deployment Smoke Tests", () => {
     // Print final logs
     try {
       const { stdout: logs } = await execAsync(
-        `docker-compose -f ${COMPOSE_FILE} logs --tail=100`
+        `docker compose -f ${COMPOSE_FILE} logs --tail=100`
       );
       console.log("Final service logs:", logs);
     } catch {}
 
     // Teardown
-    await execAsync(`docker-compose -f ${COMPOSE_FILE} down -v`, {
+    await execAsync(`docker compose -f ${COMPOSE_FILE} down -v`, {
       timeout: 60000,
     });
   });
@@ -286,7 +286,7 @@ test.describe.serial("Deployment Smoke Tests", () => {
 
   test("environment variables set correctly", async () => {
     const { stdout } = await execAsync(
-      `docker-compose -f ${COMPOSE_FILE} exec -T backend env | grep RUNNING_IN_DOCKER`
+      `docker compose -f ${COMPOSE_FILE} exec -T backend env | grep RUNNING_IN_DOCKER`
     );
 
     expect(stdout.trim()).toBe("RUNNING_IN_DOCKER=1");
@@ -294,7 +294,7 @@ test.describe.serial("Deployment Smoke Tests", () => {
 
   test("docker-compose services all running", async () => {
     const { stdout } = await execAsync(
-      `docker-compose -f ${COMPOSE_FILE} ps --format json`
+      `docker compose -f ${COMPOSE_FILE} ps --format json`
     );
 
     const services = stdout
