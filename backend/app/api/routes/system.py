@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from functools import lru_cache
+from time import time
+from typing import Any, Dict, Literal, Optional
 
 from app.config import get_settings
 from app.domain.models import MessageResponse  # Keep MessageResponse if still needed
 from app.domain.system_metrics import SystemStatus
 from app.services.health_service import readiness_report
+from app.services.model_warmup_service import model_warmup_service, LaneStatus
 from app.services.qdrant_service import qdrant_service
 from app.services.system_metrics_service import get_system_status
+from app.database import check_database_connection
 from fastapi import APIRouter, HTTPException
 import requests
 from pydantic import BaseModel
@@ -17,6 +21,10 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/system", tags=["system"])
+
+# Cache startup progress for 2 seconds to avoid hammering services
+_startup_progress_cache = {"data": None, "timestamp": 0.0}
+_CACHE_TTL = 2.0  # seconds
 
 
 class EmbeddingHealthResponse(BaseModel):
@@ -72,6 +80,74 @@ def embedding_health() -> EmbeddingHealthResponse:
         error=status.get("embedding_error") or status.get("code_embedding_error"),
         client_error=status.get("client_error"),
     )
+
+
+@router.get(
+    "/startup-progress",
+    summary="Get system startup progress",
+    description="Returns readiness state of all system components (lanes, database, embeddings)",
+    tags=["system"],
+)
+async def get_startup_progress():
+    """
+    Get current startup progress of all system components.
+
+    Returns:
+        - lanes: Status of each model lane (healthy/loading/unavailable/error)
+        - database: Database connection status
+        - embeddings: Embedding service readiness
+        - ready: Overall system readiness (all critical components healthy)
+    """
+    global _startup_progress_cache
+
+    # Check cache
+    now = time()
+    if (_startup_progress_cache["data"] is not None and
+        now - _startup_progress_cache["timestamp"] < _CACHE_TTL):
+        return _startup_progress_cache["data"]
+
+    settings = get_settings()
+
+    # Check database
+    db_ready = check_database_connection()
+
+    # Check embeddings
+    embeddings_ready = False
+    embeddings_info = None
+    try:
+        health = qdrant_service.ensure_ready(require_embeddings=False)
+        embeddings_ready = health.get("can_generate_embeddings", False)
+        embeddings_info = {
+            "model": health.get("embedding_model"),
+            "device": health.get("device"),
+        }
+    except Exception as e:
+        logger.warning(f"Embeddings health check failed: {e}")
+
+    # Get lane statuses
+    lane_statuses = model_warmup_service.get_all_lane_statuses()
+
+    # Determine overall readiness
+    critical_components_ready = (
+        db_ready and
+        (embeddings_ready or not settings.require_embeddings)
+    )
+
+    result = {
+        "database": db_ready,
+        "embeddings": {
+            "ready": embeddings_ready,
+            "info": embeddings_info,
+        },
+        "lanes": lane_statuses,
+        "ready": critical_components_ready,
+        "timestamp": now,
+    }
+
+    # Update cache
+    _startup_progress_cache = {"data": result, "timestamp": now}
+
+    return result
 
 
 @router.get(

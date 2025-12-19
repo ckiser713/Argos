@@ -183,6 +183,18 @@ class Settings(BaseSettings):
     lane_governance_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_GOVERNANCE_BACKEND")
     # lane_orchestrator_url already defined above
 
+    # --- Lane Warmup & Startup Settings ---
+    strict_lane_startup: bool = Field(
+        default=False,
+        env="ARGOS_STRICT_LANE_STARTUP",
+        description="If True, fail fast when lanes are unavailable at startup. If False, warn and continue.",
+    )
+    lane_warmup_timeout: int = Field(
+        default=30,
+        env="ARGOS_LANE_WARMUP_TIMEOUT",
+        description="Timeout in seconds for lane warmup during startup",
+    )
+
     @model_validator(mode="after")
     def set_strix_defaults(self) -> "Settings":
         db_url = (self.database_url or "").strip()
@@ -227,6 +239,9 @@ class Settings(BaseSettings):
             if not os.environ.get("ARGOS_REQUIRE_EMBEDDINGS"):
                 # Enforce embeddings in non-local environments unless explicitly overridden
                 self.require_embeddings = True
+            # Enforce strict lane startup in production
+            if not os.environ.get("ARGOS_STRICT_LANE_STARTUP"):
+                self.strict_lane_startup = True
                 
         if self.argos_env == "strix":
             self.llm_backend = "local_http"  # Use local HTTP client instead of OpenAI
@@ -284,6 +299,18 @@ class Settings(BaseSettings):
             # During local development and testing, default to skipping auth unless explicitly overridden
             if os.environ.get("ARGOS_SKIP_AUTH") is None:
                 self.skip_auth = True
+
+        # Validate lane warmup timeout
+        if self.lane_warmup_timeout < 5:
+            logger.warning(
+                "ARGOS_LANE_WARMUP_TIMEOUT is very low (%ds); consider increasing to at least 10s",
+                self.lane_warmup_timeout,
+            )
+        elif self.lane_warmup_timeout > 300:
+            logger.warning(
+                "ARGOS_LANE_WARMUP_TIMEOUT is very high (%ds); startup may hang for extended periods",
+                self.lane_warmup_timeout,
+            )
         return self
 
 

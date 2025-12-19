@@ -1,4 +1,50 @@
-# Deployment Guide - Nix Environment
+# Deployment Guide
+
+> **Note:** This guide covers Nix-based development deployment. For production deployments, see [DEPLOYMENT_MODES.md](./DEPLOYMENT_MODES.md) for a comparison of Docker Compose, Systemd, and Nix options.
+
+## Choosing a Deployment Mode
+
+Argos supports multiple deployment modes:
+
+- **Docker Compose** (Recommended for production) - See [docker-compose.yml](../ops/docker-compose.yml) and [docker-compose.prod.yml](../ops/docker-compose.prod.yml)
+- **Systemd** (Bare metal servers) - See [systemd templates](../ops/systemd/)
+- **Nix** (Development) - Covered in this guide
+
+For a detailed comparison, see [DEPLOYMENT_MODES.md](./DEPLOYMENT_MODES.md).
+
+---
+
+## Docker Compose Production Deployment
+
+For production deployments using Docker Compose:
+
+```bash
+# Copy and customize environment
+cp ops/.env.example.prod ops/.env
+# Edit ops/.env with your secrets
+
+# Build and start production stack
+docker-compose -f ops/docker-compose.prod.yml up -d --build
+
+# Check services
+docker-compose -f ops/docker-compose.prod.yml ps
+
+# View logs
+docker-compose -f ops/docker-compose.prod.yml logs -f backend
+```
+
+The production compose stack includes:
+- Backend (FastAPI) with Celery worker
+- Frontend (nginx-served static build)
+- Caddy reverse proxy with automatic TLS
+- PostgreSQL, Qdrant, Redis, MinIO
+- Health checks and dependency management
+
+See [DEPLOYMENT_MODES.md](./DEPLOYMENT_MODES.md) for details.
+
+---
+
+# Nix Development Environment
 
 ## Prerequisites
 
@@ -51,7 +97,7 @@ pnpm exec playwright install --with-deps
 
 ## Step 3: Start Docker Services (prod compose)
 
-Prepare env: copy `ops/cortex.env.example` to `ops/.env` and fill **required** values:
+Prepare env: copy `ops/.env.example.prod` to `ops/.env` and fill **required** values:
 - `ARGOS_AUTH_SECRET`, `POSTGRES_PASSWORD`, `ARGOS_DOMAIN`, `ARGOS_ADMIN_EMAIL`
 - `MODELS_PATH`, `ARGOS_VLLM_IMAGE`, `LLAMA_CPP_IMAGE`, `HF_TOKEN` (if private models)
 - `N8N_BASIC_AUTH_USER/PASSWORD`, `N8N_ENCRYPTION_KEY`
@@ -99,6 +145,42 @@ The Nix shell automatically sets:
 - `PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright`
 
 For staging/production, set `ARGOS_DATABASE_URL` to your Postgres instance and run inside the Nix shell, or set `RUNNING_IN_DOCKER=1` (containers) / `ARGOS_ALLOW_NON_NIX=1` (systemd) to relax the guard. SQLite is only supported for `ARGOS_ENV=local`.
+
+## Runtime Environment Guards
+
+The backend includes validation to ensure it runs in appropriate environments:
+
+### For Docker/Compose Deployments
+
+The Dockerfile automatically sets:
+```dockerfile
+ENV RUNNING_IN_DOCKER=1
+```
+
+### For Systemd Deployments
+
+The service template sets:
+```systemd
+Environment="CORTEX_ALLOW_NON_NIX=1"
+```
+
+### For Nix Deployments
+
+The Nix shell automatically sets:
+```bash
+export IN_NIX_SHELL=1
+```
+
+### Manual Override (Emergency)
+
+If you need to bypass the guard temporarily:
+```bash
+ARGOS_ALLOW_NON_NIX=1 poetry run uvicorn app.main:app
+```
+
+⚠️ **Warning:** Only use manual overrides for debugging. Production deployments should use proper guards.
+
+For more details on when each guard is required, see [DEPLOYMENT_MODES.md#runtime-guards](./DEPLOYMENT_MODES.md#runtime-guards).
 
 ## Embeddings & Qdrant
 

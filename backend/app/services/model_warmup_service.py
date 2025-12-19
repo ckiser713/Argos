@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Sequence
+from typing import Dict, Literal, Sequence
 from urllib.parse import urlparse
 
 import requests
 
 from app.config import Settings
+
+LaneStatus = Literal["healthy", "loading", "unavailable", "error"]
 
 
 class ModelWarmupService:
@@ -27,6 +29,7 @@ class ModelWarmupService:
         self._ready: bool = False
         self._last_error: str | None = None
         self._endpoints: tuple[str, ...] = ()
+        self._endpoint_status: Dict[str, Dict] = {}
         self._monitor_task: asyncio.Task | None = None
         self._logger = logging.getLogger(__name__)
 
@@ -37,6 +40,12 @@ class ModelWarmupService:
     def status_reason(self) -> str | None:
         with self._lock:
             return self._last_error
+
+    @property
+    def _monitoring_active(self) -> bool:
+        """Check if monitoring is currently active."""
+        with self._lock:
+            return self._monitor_task is not None and not self._monitor_task.done()
 
     def _mark_ready(self) -> None:
         with self._lock:
@@ -67,18 +76,77 @@ class ModelWarmupService:
         except RuntimeError:
             self._logger.warning("Cannot start model warmup monitor without running event loop.")
             return
-        self._monitor_task = loop.create_task(self._monitor_loop(normalized))
+            self._monitor_task = loop.create_task(self._monitor_loop(normalized))
+
+    def get_lane_status(self, endpoint_url: str) -> LaneStatus:
+        """Get current status of a lane endpoint."""
+        if not self._monitoring_active:
+            return "unavailable"
+
+        endpoint_state = self._endpoint_status.get(endpoint_url)
+        if not endpoint_state:
+            return "unavailable"
+
+        if endpoint_state.get("is_healthy"):
+            return "healthy"
+        elif endpoint_state.get("is_warming_up"):
+            return "loading"
+        elif endpoint_state.get("last_error"):
+            return "error"
+        else:
+            return "unavailable"
+
+    def get_all_lane_statuses(self) -> Dict[str, LaneStatus]:
+        """Get status of all monitored lanes."""
+        statuses = {}
+        for endpoint_url in self._endpoints:
+            # Extract lane name from URL (e.g., "http://llama-super-reader:8080" -> "super_reader")
+            lane_name = self._extract_lane_name(endpoint_url)
+            statuses[lane_name] = self.get_lane_status(endpoint_url)
+        return statuses
+
+    def _extract_lane_name(self, url: str) -> str:
+        """Extract lane name from endpoint URL."""
+        # Simple heuristic: extract hostname and convert to snake_case
+        from urllib.parse import urlparse
+        hostname = urlparse(url).hostname or "unknown"
+        if "super-reader" in hostname:
+            return "super_reader"
+        elif "governance" in hostname:
+            return "governance"
+        elif "orchestrator" in hostname or "vllm" in hostname:
+            return "orchestrator"
+        elif "coder" in hostname:
+            return "coder"
+        elif "fast-rag" in hostname:
+            return "fast_rag"
+        return hostname.replace("-", "_")
 
     async def _monitor_loop(self, endpoints: tuple[str, ...]) -> None:
         try:
             while not self.is_ready():
                 errors: list[str] = []
+                all_healthy = True
+
                 for endpoint in endpoints:
                     success, reason = await asyncio.to_thread(self._probe_endpoint, endpoint)
-                    if not success:
-                        errors.append(f"{endpoint}: {reason}")
+                    with self._lock:
+                        if success:
+                            self._endpoint_status[endpoint] = {
+                                "is_healthy": True,
+                                "is_warming_up": False,
+                                "last_error": None,
+                            }
+                        else:
+                            all_healthy = False
+                            self._endpoint_status[endpoint] = {
+                                "is_healthy": False,
+                                "is_warming_up": True,
+                                "last_error": reason,
+                            }
+                            errors.append(f"{endpoint}: {reason}")
 
-                if not errors:
+                if all_healthy:
                     self._logger.info("Model lanes are healthy.")
                     self._mark_ready()
                     return

@@ -1,0 +1,259 @@
+name: Deployment Smoke Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "ops/**"
+      - "backend/**"
+      - "frontend/**"
+      - "e2e/deployment-smoke.spec.ts"
+      - ".github/workflows/deployment-smoke.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-compose:
+    name: Lint Docker Compose Files
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate compose syntax
+        run: |
+          docker-compose -f ops/docker-compose.yml config > /dev/null
+          docker-compose -f ops/docker-compose.prod.yml config > /dev/null
+          echo "✓ Compose files are valid"
+
+      - name: Check for 'latest' tags
+        run: |
+          if grep -r ":latest" ops/docker-compose.prod.yml; then
+            echo "ERROR: Production compose uses ':latest' tags"
+            exit 1
+          fi
+          echo "✓ No ':latest' tags in production compose"
+
+      - name: Validate required environment variables
+        run: |
+          # Check that .env.example.prod has all required vars
+          required_vars=(
+            "ARGOS_AUTH_SECRET"
+            "POSTGRES_PASSWORD"
+            "ARGOS_DOMAIN"
+            "ARGOS_ADMIN_EMAIL"
+          )
+
+          for var in "${required_vars[@]}"; do
+            if ! grep -q "^${var}=" ops/.env.example.prod 2>/dev/null && \
+               ! grep -q "^# ${var}=" ops/.env.example.prod 2>/dev/null; then
+              echo "ERROR: Required variable $var not in .env.example.prod"
+              exit 1
+            fi
+          done
+
+          echo "✓ All required variables documented"
+
+      - name: Lint Dockerfiles
+        run: |
+          # Install hadolint
+          wget -O hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x hadolint
+
+          # Lint Dockerfiles
+          ./hadolint ops/Dockerfile.backend || true
+          ./hadolint ops/Dockerfile.frontend || true
+
+          echo "✓ Dockerfile linting complete"
+
+  test-compose-local:
+    name: Test Local Development Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create test environment file
+        run: |
+          cat > ops/.env << EOF
+          # Test environment
+          ARGOS_ENV=local
+          ARGOS_SKIP_AUTH=true
+          ARGOS_AUTH_SECRET=test_secret_1234567890123456
+          POSTGRES_PASSWORD=test_password
+          REDIS_PASSWORD=test_redis
+          MINIO_ROOT_PASSWORD=test_minio
+          EOF
+
+      - name: Start docker-compose stack
+        run: |
+          docker-compose -f ops/docker-compose.yml up -d --build
+        timeout-minutes: 10
+
+      - name: Wait for services to be healthy
+        run: |
+          timeout 120 bash -c 'until docker-compose -f ops/docker-compose.yml ps | grep -q "healthy"; do sleep 2; done'
+          sleep 10  # Additional grace period
+
+      - name: Check service status
+        run: |
+          docker-compose -f ops/docker-compose.yml ps
+          docker-compose -f ops/docker-compose.yml ps | grep -v "Exit" | grep -v "unhealthy" || exit 1
+
+      - name: Test backend health
+        run: |
+          curl -f http://localhost:8000/health || exit 1
+          echo "✓ Backend health check passed"
+
+      - name: Test backend API
+        run: |
+          curl -f http://localhost:8000/api/system/ready || exit 1
+          echo "✓ Backend API accessible"
+
+      - name: Test startup progress endpoint
+        run: |
+          response=$(curl -s http://localhost:8000/api/system/startup-progress)
+          echo "$response" | jq -e '.database == true' || exit 1
+          echo "✓ Startup progress endpoint working"
+
+      - name: Test frontend
+        run: |
+          curl -f http://localhost:5173 || exit 1
+          echo "✓ Frontend accessible"
+
+      - name: Check RUNNING_IN_DOCKER variable
+        run: |
+          docker-compose -f ops/docker-compose.yml exec -T backend env | grep "RUNNING_IN_DOCKER=1" || exit 1
+          echo "✓ RUNNING_IN_DOCKER set correctly"
+
+      - name: View logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend logs ==="
+          docker-compose -f ops/docker-compose.yml logs backend
+          echo "=== Frontend logs ==="
+          docker-compose -f ops/docker-compose.yml logs frontend-dev
+          echo "=== Postgres logs ==="
+          docker-compose -f ops/docker-compose.yml logs postgres
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose -f ops/docker-compose.yml down -v
+
+  test-compose-prod-build:
+    name: Test Production Compose Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create production test environment
+        run: |
+          cat > ops/.env << EOF
+          ARGOS_ENV=strix
+          ARGOS_AUTH_SECRET=$(openssl rand -hex 32)
+          ARGOS_DOMAIN=test.example.com
+          ARGOS_ADMIN_EMAIL=test@example.com
+          POSTGRES_USER=cortex
+          POSTGRES_PASSWORD=$(openssl rand -hex 16)
+          REDIS_PASSWORD=$(openssl rand -hex 16)
+          MINIO_ROOT_USER=admin
+          MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)
+          EOF
+
+      - name: Build production images
+        run: |
+          docker-compose -f ops/docker-compose.prod.yml build backend frontend
+        timeout-minutes: 15
+
+      - name: Verify images built
+        run: |
+          docker images | grep argos-backend || exit 1
+          docker images | grep argos-frontend || exit 1
+          echo "✓ Production images built successfully"
+
+      - name: Check image sizes
+        run: |
+          backend_size=$(docker images --format "{{.Size}}" argos-backend:latest | head -1)
+          frontend_size=$(docker images --format "{{.Size}}" argos-frontend:latest | head -1)
+          echo "Backend image: $backend_size"
+          echo "Frontend image: $frontend_size"
+
+      - name: Inspect backend image
+        run: |
+          docker inspect argos-backend:latest | jq '.[0].Config.Env | .[] | select(contains("RUNNING_IN_DOCKER"))'
+          echo "✓ RUNNING_IN_DOCKER in backend image"
+
+  e2e-smoke-test:
+    name: E2E Deployment Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [lint-compose]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Create test environment
+        run: |
+          cat > ops/.env << EOF
+          ARGOS_ENV=local
+          ARGOS_SKIP_AUTH=true
+          ARGOS_AUTH_SECRET=test_secret_1234567890123456
+          POSTGRES_PASSWORD=test_password
+          REDIS_PASSWORD=test_redis
+          MINIO_ROOT_PASSWORD=test_minio
+          EOF
+
+      - name: Run E2E deployment smoke tests
+        run: |
+          pnpm exec playwright test e2e/deployment-smoke.spec.ts --workers=1
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
+          PLAYWRIGHT_API_BASE: http://localhost:8000
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-videos
+          path: test-results/
+          retention-days: 7

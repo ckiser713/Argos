@@ -7,6 +7,8 @@ User=argos
 Group=argos
 WorkingDirectory=/opt/argos/backend
 EnvironmentFile=/etc/argos/argos.env
+# Runtime guard for systemd deployment (allows running outside Nix shell)
+Environment="CORTEX_ALLOW_NON_NIX=1"
 ExecStart=/usr/bin/poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 

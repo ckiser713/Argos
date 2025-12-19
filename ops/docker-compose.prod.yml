@@ -1,0 +1,381 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16.2
+    container_name: argos-postgres-prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cortex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: cortex
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cortex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: argos-qdrant-prod
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # Redis Cache & Broker
+  redis:
+    image: redis:7-alpine
+    container_name: argos-redis-prod
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # MinIO S3-compatible storage
+  minio:
+    image: minio/minio:RELEASE.2024-01-01T16-36-33Z
+    container_name: argos-minio-prod
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # Database Migrations (run once before backend starts)
+  migrations:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.backend
+    container_name: argos-migrations
+    environment:
+      ARGOS_DATABASE_URL: postgresql://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD}@postgres:5432/cortex
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...';
+        until pg_isready -h postgres -U ${POSTGRES_USER:-cortex}; do sleep 2; done;
+        echo 'Running migrations...';
+        cd /app/backend && poetry run alembic upgrade head;
+        echo 'Migrations complete';
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - argos-backend
+    restart: "no"
+
+  # Backend API
+  backend:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.backend
+    container_name: argos-backend-prod
+    environment:
+      # Core
+      RUNNING_IN_DOCKER: "1"
+      ARGOS_ENV: ${ARGOS_ENV:-strix}
+      ARGOS_SKIP_AUTH: "false"
+      ARGOS_AUTH_SECRET: ${ARGOS_AUTH_SECRET:?ARGOS_AUTH_SECRET required}
+      ARGOS_LOG_LEVEL: ${ARGOS_LOG_LEVEL:-INFO}
+      ARGOS_LOG_JSON: "true"
+      ARGOS_ALLOWED_ORIGINS: https://${ARGOS_DOMAIN:?ARGOS_DOMAIN required}
+
+      # Database
+      ARGOS_DATABASE_URL: postgresql://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD}@postgres:5432/cortex
+
+      # Services
+      ARGOS_QDRANT_URL: http://qdrant:6333
+      ARGOS_REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_N8N_BASE_URL: http://n8n:5678
+
+      # Storage
+      ARGOS_STORAGE_BACKEND: ${ARGOS_STORAGE_BACKEND:-s3}
+      ARGOS_STORAGE_BUCKET: ${ARGOS_STORAGE_BUCKET:-argos-ingest}
+      ARGOS_STORAGE_ENDPOINT_URL: http://minio:9000
+      ARGOS_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      ARGOS_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      ARGOS_STORAGE_SECURE: "false"
+
+      # Tasks
+      ARGOS_TASKS_EAGER: "false"
+
+      # Lane URLs (production inference services)
+      ARGOS_LANE_SUPER_READER_URL: ${ARGOS_LANE_SUPER_READER_URL:-http://llama-super-reader:8080/v1}
+      ARGOS_LANE_GOVERNANCE_URL: ${ARGOS_LANE_GOVERNANCE_URL:-http://llama-governance:8081/v1}
+      ARGOS_LANE_ORCHESTRATOR_URL: ${ARGOS_LANE_ORCHESTRATOR_URL:-http://inference-vllm:8000/v1}
+      ARGOS_LANE_CODER_URL: ${ARGOS_LANE_CODER_URL:-http://inference-vllm:8000/v1}
+      ARGOS_LANE_FAST_RAG_URL: ${ARGOS_LANE_FAST_RAG_URL:-http://inference-vllm:8000/v1}
+
+      # Graceful startup
+      ARGOS_STRICT_LANE_STARTUP: "${ARGOS_STRICT_LANE_STARTUP:-true}"
+      ARGOS_LANE_WARMUP_TIMEOUT: "${ARGOS_LANE_WARMUP_TIMEOUT:-30}"
+      ARGOS_REQUIRE_EMBEDDINGS: "true"
+
+      # Observability
+      ARGOS_ENABLE_TRACING: "${ARGOS_ENABLE_TRACING:-false}"
+      ARGOS_OTEL_EXPORTER_ENDPOINT: ${ARGOS_OTEL_EXPORTER_ENDPOINT:-}
+    expose:
+      - "8000"
+    volumes:
+      - backend-storage:/app/storage_uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - argos-backend
+      - argos-frontend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # Celery Worker
+  worker:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.backend
+    container_name: argos-worker-prod
+    command: >
+      sh -c "cd /app/backend && poetry run celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4"
+    environment:
+      # Same as backend, but no port binding
+      RUNNING_IN_DOCKER: "1"
+      ARGOS_ENV: ${ARGOS_ENV:-strix}
+      ARGOS_AUTH_SECRET: ${ARGOS_AUTH_SECRET}
+      ARGOS_LOG_LEVEL: ${ARGOS_LOG_LEVEL:-INFO}
+      ARGOS_LOG_JSON: "true"
+      ARGOS_DATABASE_URL: postgresql://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD}@postgres:5432/cortex
+      ARGOS_QDRANT_URL: http://qdrant:6333
+      ARGOS_REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      ARGOS_STORAGE_BACKEND: ${ARGOS_STORAGE_BACKEND:-s3}
+      ARGOS_STORAGE_BUCKET: ${ARGOS_STORAGE_BUCKET:-argos-ingest}
+      ARGOS_STORAGE_ENDPOINT_URL: http://minio:9000
+      ARGOS_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      ARGOS_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      ARGOS_STORAGE_SECURE: "false"
+      ARGOS_TASKS_EAGER: "false"
+    volumes:
+      - backend-storage:/app/storage_uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # Frontend (static build served by nginx)
+  frontend:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.frontend
+      args:
+        VITE_CORTEX_API_BASE_URL: /api
+    container_name: argos-frontend-prod
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - argos-frontend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:2.7-alpine
+    container_name: argos-caddy-prod
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      ARGOS_DOMAIN: ${ARGOS_DOMAIN:?ARGOS_DOMAIN required}
+      ARGOS_ADMIN_EMAIL: ${ARGOS_ADMIN_EMAIL:?ARGOS_ADMIN_EMAIL required}
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      - argos-frontend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # n8n Workflow Automation (optional)
+  n8n:
+    image: n8nio/n8n:1.17.1
+    container_name: argos-n8n-prod
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:?N8N_BASIC_AUTH_USER required}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:?N8N_BASIC_AUTH_PASSWORD required}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY required}
+      N8N_HOST: ${ARGOS_DOMAIN}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${ARGOS_DOMAIN}/webhooks/
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    profiles:
+      - n8n
+
+  # Prometheus Metrics (optional)
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: argos-prometheus-prod
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    networks:
+      - argos-backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    profiles:
+      - monitoring
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  redis-data:
+  minio-data:
+  backend-storage:
+  caddy-data:
+  caddy-config:
+  n8n-data:
+  prometheus-data:
+
+networks:
+  argos-backend:
+    driver: bridge
+    internal: true
+  argos-frontend:
+    driver: bridge

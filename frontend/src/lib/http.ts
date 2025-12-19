@@ -48,9 +48,34 @@ export class ApiError extends Error {
   }
 }
 
+function resolveRuntimeApiBaseUrl(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const globalOverride = (window as any).__ARGOS_API_BASE_URL;
+  if (typeof globalOverride === "string" && globalOverride.trim()) {
+    return globalOverride.trim();
+  }
+
+  const metaOverride = window.document
+    ?.querySelector<HTMLMetaElement>('meta[name="argos-api-base-url"]')
+    ?.getAttribute("content");
+  if (metaOverride && metaOverride.trim()) {
+    return metaOverride.trim();
+  }
+
+  if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+
+  return null;
+}
+
 // Base URL & auth token are configurable at runtime, but default to Vite env + localStorage.
-let apiBaseUrl: string =
-  (import.meta as any).env?.VITE_CORTEX_API_BASE_URL ?? "http://localhost:8000";
+let apiBaseUrl: string = (
+  (import.meta as any).env?.VITE_CORTEX_API_BASE_URL ??
+  resolveRuntimeApiBaseUrl() ??
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 type AuthTokenProvider = () => string | null | undefined;
 
@@ -65,6 +90,10 @@ let authTokenProvider: AuthTokenProvider | null = () =>
  */
 export function setApiBaseUrl(url: string) {
   apiBaseUrl = url.replace(/\/+$/, "");
+}
+
+export function getApiBaseUrl() {
+  return apiBaseUrl;
 }
 
 /**

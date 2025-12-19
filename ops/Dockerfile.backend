@@ -1,0 +1,72 @@
+# Stage 1: Build dependencies
+FROM python:3.11.10-slim-bookworm AS builder
+
+# Install system dependencies for building Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+
+WORKDIR /build
+
+# Copy dependency files
+COPY backend/pyproject.toml backend/poetry.lock ./
+
+# Configure poetry to not create virtual env (we're in a container)
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-dev --no-root --no-interaction --no-ansi
+
+# Stage 2: Runtime
+FROM python:3.11.10-slim-bookworm
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpq5 \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r cortex && useradd -r -g cortex -u 1000 -m -s /bin/bash cortex
+
+# Set working directory
+WORKDIR /app
+
+# Copy installed dependencies from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY --chown=cortex:cortex backend/ /app/backend/
+
+# Create directories for data and storage
+RUN mkdir -p /app/data /app/storage_uploads /app/logs && \
+    chown -R cortex:cortex /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    RUNNING_IN_DOCKER=1 \
+    PATH="/usr/local/bin:$PATH" \
+    ARGOS_ATLAS_DB_PATH=/app/data/atlas.db \
+    ARGOS_ATLAS_CHECKPOINTS_DB_PATH=/app/data/atlas_checkpoints.db
+
+# Switch to non-root user
+USER cortex
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command
+WORKDIR /app/backend
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

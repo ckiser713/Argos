@@ -39,7 +39,7 @@ from app.observability import (
 from app.services.auth_service import get_current_user
 from app.services.model_warmup_service import build_lane_health_endpoints, model_warmup_service
 from app.services.qdrant_service import qdrant_service
-from app.services.vllm_lane_manager import initialize_lane_manager
+from app.services.vllm_lane_manager import initialize_lane_manager, warmup_lanes_at_startup
 
 # ... (rest of the imports)
 
@@ -185,8 +185,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def initialize_lane_switching() -> None:
-        """Warm up the vLLM lane manager and preload the default lane."""
-        await initialize_lane_manager(ModelLane.ORCHESTRATOR)
+        """Warm up the vLLM lane manager and preload the default lane with timeout and graceful degradation."""
+        await warmup_lanes_at_startup()
 
     @app.on_event("startup")
     async def initialize_warmup_monitor() -> None:

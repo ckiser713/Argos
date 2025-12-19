@@ -505,3 +505,49 @@ async def initialize_lane_manager(default_lane: ModelLane = ModelLane.ORCHESTRAT
     manager = get_lane_manager()
     await manager.initialize(default_lane)
     return manager
+
+
+async def warmup_lanes_at_startup() -> None:
+    """Warm up the vLLM lane manager and preload the default lane with timeout and graceful degradation."""
+    timeout = settings.lane_warmup_timeout
+    strict = settings.strict_lane_startup
+
+    logger.info(
+        f"Initializing lane switching (timeout={timeout}s, strict={strict})",
+        extra={"event": "lane.warmup.start"},
+    )
+
+    try:
+        # Wrap with timeout
+        await asyncio.wait_for(
+            initialize_lane_manager(ModelLane.ORCHESTRATOR),
+            timeout=timeout,
+        )
+        logger.info(
+            "Lane warmup completed successfully",
+            extra={"event": "lane.warmup.success"},
+        )
+    except asyncio.TimeoutError:
+        msg = f"Lane warmup timed out after {timeout}s"
+        logger.error(msg, extra={"event": "lane.warmup.timeout"})
+        if strict:
+            raise RuntimeError(
+                f"{msg}. Set ARGOS_STRICT_LANE_STARTUP=false to continue with degraded lanes."
+            )
+        else:
+            logger.warning(
+                "Continuing with degraded lane availability (strict_lane_startup=false)",
+                extra={"event": "lane.warmup.degraded"},
+            )
+    except Exception as exc:
+        msg = f"Lane warmup failed: {exc}"
+        logger.error(msg, extra={"event": "lane.warmup.error", "error": str(exc)})
+        if strict:
+            raise RuntimeError(
+                f"{msg}. Set ARGOS_STRICT_LANE_STARTUP=false to continue without lanes."
+            )
+        else:
+            logger.warning(
+                "Continuing without lane initialization (strict_lane_startup=false)",
+                extra={"event": "lane.warmup.degraded", "error": str(exc)},
+            )

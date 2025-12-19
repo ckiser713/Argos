@@ -80,6 +80,3 @@ todos: []
 - [QA] Add smoke covering frontend page load, backend `/system/health`/`ready`, MinIO bucket existence (via API helper) and qdrant reachability; fast-fail before heavier suites.
 
 7) File: `E2E_TESTING_SETUP.md` (and, if necessary, `.github/workflows/e2e.yml` reference)
-
-- [INFRA][QA] Document canonical compose flow (`docker-compose -f docker-compose.e2e.yml up --build --abort-on-container-exit`), env knobs (`PLAYWRIGHT_BASE_URL`, mock lanes), and report viewing; update CI notes if command changes.
-- **Phase 4: Plan only, no edits performed.**

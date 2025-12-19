@@ -1,0 +1,182 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (optional for local, can use SQLite)
+  postgres:
+    image: postgres:16.2
+    container_name: argos-postgres-dev
+    environment:
+      POSTGRES_USER: cortex
+      POSTGRES_PASSWORD: cortex_dev_password
+      POSTGRES_DB: cortex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cortex"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - argos-network
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: argos-qdrant-dev
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - argos-network
+
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: argos-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - argos-network
+
+  # MinIO S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: argos-minio-dev
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - argos-network
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.backend
+    container_name: argos-backend-dev
+    environment:
+      # Core
+      RUNNING_IN_DOCKER: "1"
+      ARGOS_ENV: local
+      ARGOS_SKIP_AUTH: "true"
+      ARGOS_DEBUG: "true"
+      ARGOS_LOG_LEVEL: DEBUG
+      ARGOS_LOG_JSON: "false"
+
+      # Database (SQLite for local dev)
+      ARGOS_DATABASE_URL: sqlite:////app/data/atlas.db
+      ARGOS_ATLAS_DB_PATH: /app/data/atlas.db
+      ARGOS_ATLAS_CHECKPOINTS_DB_PATH: /app/data/atlas_checkpoints.db
+
+      # Services
+      ARGOS_QDRANT_URL: http://qdrant:6333
+      ARGOS_REDIS_URL: redis://redis:6379/0
+      ARGOS_CELERY_BROKER_URL: redis://redis:6379/0
+      ARGOS_CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ARGOS_N8N_BASE_URL: http://n8n:5678
+
+      # Storage (local for dev)
+      ARGOS_STORAGE_BACKEND: local
+      ARGOS_STORAGE_LOCAL_DIR: /app/storage_uploads
+      ARGOS_ALLOW_LOCAL_STORAGE: "1"
+
+      # Tasks (eager for dev - no separate worker needed)
+      ARGOS_TASKS_EAGER: "true"
+
+      # Lane URLs (mock/local for dev)
+      ARGOS_LANE_SUPER_READER_URL: http://localhost:8080/v1
+      ARGOS_LANE_GOVERNANCE_URL: http://localhost:8081/v1
+      ARGOS_LANE_ORCHESTRATOR_URL: http://localhost:8000/v1
+      ARGOS_LANE_CODER_URL: http://localhost:8000/v1
+      ARGOS_LANE_FAST_RAG_URL: http://localhost:8000/v1
+
+      # Graceful startup for dev
+      ARGOS_STRICT_LANE_STARTUP: "false"
+      ARGOS_LANE_WARMUP_TIMEOUT: "5"
+      ARGOS_REQUIRE_EMBEDDINGS: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      - backend-data:/app/data
+      - backend-storage:/app/storage_uploads
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - argos-network
+    restart: unless-stopped
+
+  # Frontend Dev Server (Vite)
+  frontend-dev:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.frontend
+      target: development
+    container_name: argos-frontend-dev
+    environment:
+      VITE_CORTEX_API_BASE_URL: http://localhost:8000
+      NODE_ENV: development
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - argos-network
+    command: pnpm dev --host 0.0.0.0
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  redis-data:
+  minio-data:
+  backend-data:
+  backend-storage:
+
+networks:
+  argos-network:
+    driver: bridge

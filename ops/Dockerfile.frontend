@@ -1,0 +1,79 @@
+# Stage 1: Dependencies
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Copy package files
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile --prefer-offline
+
+# Stage 2: Builder
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ ./
+
+# Accept build argument for API base URL
+ARG VITE_CORTEX_API_BASE_URL=/api
+ENV VITE_CORTEX_API_BASE_URL=$VITE_CORTEX_API_BASE_URL
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Build the application
+RUN pnpm build
+
+# Verify build output
+RUN ls -la dist/
+
+# Stage 3: Development (optional target)
+FROM node:20-alpine AS development
+
+WORKDIR /app
+
+# Copy dependencies and source
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ ./
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+EXPOSE 5173
+
+CMD ["pnpm", "dev", "--host", "0.0.0.0"]
+
+# Stage 4: Production (default)
+FROM nginx:1.25-alpine AS production
+
+# Copy custom nginx config
+COPY ops/nginx.conf /etc/nginx/nginx.conf
+COPY ops/nginx-default.conf /etc/nginx/conf.d/default.conf
+
+# Copy built assets from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Add non-root user for nginx
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx:nginx /var/run/nginx.pid
+
+# Switch to non-root user
+USER nginx
+
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

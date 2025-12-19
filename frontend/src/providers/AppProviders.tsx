@@ -8,6 +8,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ToastContainer } from "../components/ToastContainer";
 import { useToast } from "../hooks/useToast";
 import { logError, getErrorMessage } from "../lib/errorHandling";
+import { getApiBaseUrl } from "../lib/http";
 
 // Create QueryClient with error handling
 const queryClient = new QueryClient({
@@ -51,16 +52,72 @@ function ToastProvider({ children }: PropsWithChildren) {
 }
 
 export function AppProviders({ children }: PropsWithChildren) {
-  // Auto-authenticate on app startup if no token exists
+  const [isCheckingBackend, setIsCheckingBackend] = React.useState(true);
+  const [backendReady, setBackendReady] = React.useState(false);
+
+  // Poll backend readiness before attempting auth
   React.useEffect(() => {
+    const checkBackendReadiness = async () => {
+      if (typeof window === "undefined") return;
+
+      const apiBaseUrl =
+        import.meta.env.VITE_CORTEX_API_BASE_URL ||
+        import.meta.env.VITE_API_BASE_URL ||
+        getApiBaseUrl();
+
+      const maxAttempts = 15; // 30 seconds total (15 * 2s)
+      let attempts = 0;
+
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch(`${apiBaseUrl}/api/system/startup-progress`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+
+            // Check if critical components are ready
+            if (data.database) {
+              setBackendReady(true);
+              setIsCheckingBackend(false);
+              return;
+            }
+
+            // Backend responding but not fully ready, keep polling
+            console.log(`Backend starting... (attempt ${attempts + 1}/${maxAttempts})`);
+          }
+        } catch (error) {
+          // Backend not responding yet, keep trying
+          console.log(`Waiting for backend... (attempt ${attempts + 1}/${maxAttempts})`);
+        }
+
+        attempts++;
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s between attempts
+      }
+
+      // Max attempts reached, backend may be down
+      console.warn("Backend readiness check timeout - proceeding anyway");
+      setBackendReady(true);
+      setIsCheckingBackend(false);
+    };
+
+    checkBackendReadiness();
+  }, []);
+
+  // Auto-authenticate after backend is ready
+  React.useEffect(() => {
+    if (!backendReady) return;
+
     const ensureAuthToken = async () => {
       if (typeof window === "undefined") return;
-      
+
       const existingToken = window.localStorage.getItem("argos_auth_token");
       if (existingToken) {
         // Token exists, verify it's still valid by checking expiry
         try {
-          const payload = JSON.parse(atob(existingToken.split('.')[1]));
+          const payload = JSON.parse(atob(existingToken.split(".")[1]));
           const expiresAt = payload.exp * 1000; // Convert to milliseconds
           if (Date.now() < expiresAt) {
             // Token is still valid
@@ -73,12 +130,15 @@ export function AppProviders({ children }: PropsWithChildren) {
 
       // No valid token, fetch a new one
       try {
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+        const apiBaseUrl =
+          import.meta.env.VITE_CORTEX_API_BASE_URL ||
+          import.meta.env.VITE_API_BASE_URL ||
+          getApiBaseUrl();
         const formData = new URLSearchParams();
         formData.append("username", "admin");
         formData.append("password", "password");
 
-        const response = await fetch(`${apiBaseUrl}/api/token`, {
+        const response = await fetch(`${apiBaseUrl}/api/auth/token`, {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -99,7 +159,49 @@ export function AppProviders({ children }: PropsWithChildren) {
     };
 
     ensureAuthToken();
-  }, []);
+  }, [backendReady]);
+
+  // Show loading overlay while checking backend
+  if (isCheckingBackend) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          backgroundColor: "#0f172a",
+          color: "#e2e8f0",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "48px",
+            height: "48px",
+            border: "4px solid #1e293b",
+            borderTop: "4px solid #3b82f6",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+            marginBottom: "16px",
+          }}
+        />
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+        <p style={{ fontSize: "18px", fontWeight: "500" }}>
+          Connecting to Argos backend...
+        </p>
+        <p style={{ fontSize: "14px", color: "#64748b", marginTop: "8px" }}>
+          Please wait while services initialize
+        </p>
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary
@@ -116,4 +218,3 @@ export function AppProviders({ children }: PropsWithChildren) {
     </ErrorBoundary>
   );
 }
-
