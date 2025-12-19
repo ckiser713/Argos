@@ -108,8 +108,6 @@ const AppContent: React.FC = () => {
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
   // #region agent log
   console.log('[DEBUG] Projects state:', { projectsLoading, hasProjects: !!projects, projectsCount: projects?.length, error: projectsError?.message });
-  const errorDetails = projectsError instanceof Error ? { name: projectsError.name, message: projectsError.message, stack: projectsError.stack } : projectsError;
-  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:109',message:'Projects state with full error',data:{projectsLoading, hasProjects: !!projects, error: errorDetails, apiBaseUrl: (window as any).__ARGOS_API_BASE_URL},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
   // #endregion
   const setCurrentProjectId = useArgosStore((s) => s.setCurrentProjectId);
 

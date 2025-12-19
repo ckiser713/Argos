@@ -7,21 +7,8 @@ import { useArgosStore } from "../state/cortexStore";
 export const projectsQueryKey = ["projects"] as const;
 
 export async function fetchProjects(): Promise<ArgosProject[]> {
-  // #region agent log
-  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useProjects.ts:12',message:'fetchProjects called',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
-  try {
-    const response = await getProjects();
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useProjects.ts:18',message:'fetchProjects response received',data:{itemsCount: response.items?.length, total: response.total},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    return response.items;
-  } catch (err) {
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useProjects.ts:25',message:'fetchProjects error',data:{error: String(err), message: err instanceof Error ? err.message : 'unknown'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    throw err;
-  }
+  const response = await getProjects();
+  return response.items;
 }
 
 /**

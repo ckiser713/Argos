@@ -168,23 +168,7 @@ export async function http<TResponse = unknown>(
     init.body = body instanceof FormData ? body : JSON.stringify(body);
   }
 
-  // #region agent log
-  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'http.ts:171',message:'HTTP request built',data:{url,apiBaseUrl,envValue:(import.meta as any).env?.VITE_CORTEX_API_BASE_URL,runtimeValue:resolveRuntimeApiBaseUrl()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-  
-  let response: Response;
-  try {
-    response = await fetch(url, init);
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'http.ts:180',message:'HTTP response received',data:{path, status: response.status, url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    console.log(`[DEBUG] HTTP ${method} ${path} -> ${response.status} from ${url}`);
-    // #endregion
-  } catch (fetchErr) {
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'http.ts:188',message:'Fetch error',data:{path,url,error:String(fetchErr),message:fetchErr instanceof Error ? fetchErr.message : 'unknown'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    throw fetchErr;
-  }
+  const response = await fetch(url, init);
 
   if (!response.ok) {
     const payload = (await parseJsonSafe(response)) as ApiErrorPayload | undefined;
