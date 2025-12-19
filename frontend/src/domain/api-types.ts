@@ -1,11 +1,11 @@
 // src/domain/api-types.ts
-// Typed API contract for Cortex, aligned with src/domain/types.ts.
+// Typed API contract for Argos, aligned with src/domain/types.ts.
 // Pure TypeScript types/interfaces only — no runtime logic.
 
 import type {
   ID,
-  CortexProject,
-  CortexProjectStatus,
+  ArgosProject,
+  ArgosProjectStatus,
   IngestSource,
   IngestSourceKind,
   IngestJob,
@@ -65,10 +65,10 @@ export interface SuccessResponse {
 export interface ListProjectsQuery {
   cursor?: string;
   limit?: number;
-  status?: CortexProjectStatus;
+  status?: ArgosProjectStatus;
 }
 
-export type ListProjectsResponse = PaginatedResponse<CortexProject>;
+export type ListProjectsResponse = PaginatedResponse<ArgosProject>;
 
 export interface CreateProjectRequest {
   name: string;
@@ -76,20 +76,20 @@ export interface CreateProjectRequest {
   description?: string;
 }
 
-export type CreateProjectResponse = CortexProject;
+export type CreateProjectResponse = ArgosProject;
 
-export type GetProjectResponse = CortexProject;
+export type GetProjectResponse = ArgosProject;
 
 export interface UpdateProjectRequest {
   name?: string;
   description?: string;
-  status?: CortexProjectStatus;
+  status?: ArgosProjectStatus;
   rootIdeaClusterId?: ID | null;
   roadmapId?: ID | null;
   defaultModelRoleId?: ID | null;
 }
 
-export type UpdateProjectResponse = CortexProject;
+export type UpdateProjectResponse = ArgosProject;
 
 export type DeleteProjectResponse = SuccessResponse;
 

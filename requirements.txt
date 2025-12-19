@@ -15,6 +15,10 @@ langchain==1.1.0
 langgraph==1.0.4
 langgraph-sdk==0.2.10
 langgraph-prebuilt==1.0.5
+celery[redis]==5.4.0
+redis==5.0.8
+boto3==1.35.0
+python-multipart==0.0.9
 
 # PyTorch dependencies (ROCm-enabled, no CUDA/NVIDIA)
 # sentence-transformers requires PyTorch. Install ROCm wheels from:

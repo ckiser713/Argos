@@ -1,5 +1,5 @@
 /**
- * Typed API client for the Cortex backend.
+ * Typed API client for the Argos backend.
  *
  * This module is the ONLY place that knows concrete URL paths and payload shapes.
  * React hooks / stores should depend on these functions instead of `fetch` directly.
@@ -8,7 +8,7 @@
 import { http } from "./http";
 
 import type {
-  CortexProject,
+  ArgosProject,
   IngestJob,
   IngestJobStatus,
   RoadmapNode,
@@ -46,16 +46,16 @@ export interface PaginationParams {
  * ==========================================================================*/
 
 /** Fetch all projects visible to the current user. */
-export async function getProjects(params?: PaginationParams): Promise<PaginatedResponse<CortexProject>> {
-  return http<PaginatedResponse<CortexProject>>("/api/projects", {
+export async function getProjects(params?: PaginationParams): Promise<PaginatedResponse<ArgosProject>> {
+  return http<PaginatedResponse<ArgosProject>>("/api/projects", {
     method: "GET",
     query: params,
   });
 }
 
 /** Fetch a single project by id. */
-export async function getProject(projectId: string): Promise<CortexProject> {
-  return http<CortexProject>(`/api/projects/${encodeURIComponent(projectId)}`, {
+export async function getProject(projectId: string): Promise<ArgosProject> {
+  return http<ArgosProject>(`/api/projects/${encodeURIComponent(projectId)}`, {
     method: "GET",
   });
 }
@@ -63,8 +63,8 @@ export async function getProject(projectId: string): Promise<CortexProject> {
 /** Create a new project. */
 export async function createProject(
   payload: CreateProjectRequest
-): Promise<CortexProject> {
-  return http<CortexProject>("/api/projects", {
+): Promise<ArgosProject> {
+  return http<ArgosProject>("/api/projects", {
     method: "POST",
     body: payload,
   });

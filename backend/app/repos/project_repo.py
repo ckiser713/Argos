@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from app.db import db_session
 from app.domain.common import PaginatedResponse
-from app.domain.project import CortexProject
+from app.domain.project import ArgosProject
 
 
 class ProjectRepository:
@@ -27,21 +27,21 @@ class ProjectRepository:
             total = int(total_row["count"]) if total_row else None
         return PaginatedResponse(items=items, next_cursor=next_cursor, total=total)
 
-    def get_project(self, project_id: str) -> Optional[CortexProject]:
+    def get_project(self, project_id: str) -> Optional[ArgosProject]:
         with db_session() as conn:
             row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
             if not row:
                 return None
             return self._row_to_model(row)
 
-    def get_by_slug(self, slug: str) -> Optional[CortexProject]:
+    def get_by_slug(self, slug: str) -> Optional[ArgosProject]:
         with db_session() as conn:
             row = conn.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
             if not row:
                 return None
             return self._row_to_model(row)
 
-    def save(self, project: CortexProject) -> CortexProject:
+    def save(self, project: ArgosProject) -> ArgosProject:
         with db_session() as conn:
             conn.execute(
                 """
@@ -66,7 +66,7 @@ class ProjectRepository:
             conn.commit()
         return project
 
-    def update(self, project_id: str, *, fields: dict) -> Optional[CortexProject]:
+    def update(self, project_id: str, *, fields: dict) -> Optional[ArgosProject]:
         if not fields:
             return self.get_project(project_id)
         allowed = {
@@ -100,8 +100,8 @@ class ProjectRepository:
             conn.commit()
             return res.rowcount > 0
 
-    def _row_to_model(self, row: sqlite3.Row) -> CortexProject:
-        return CortexProject(
+    def _row_to_model(self, row: sqlite3.Row) -> ArgosProject:
+        return ArgosProject(
             id=row["id"],
             slug=row["slug"],
             name=row["name"],

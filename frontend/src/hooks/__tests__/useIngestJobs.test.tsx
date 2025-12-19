@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useIngestJobs } from "../useIngestJobs";
-import * as cortexApi from "../../lib/cortexApi";
+import * as argosApi from "../../lib/argosApi";
 
 const sampleIngestResponse: any = {
   items: [
@@ -72,9 +72,9 @@ describe("useIngestJobs", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns data from cortexApi.listIngestJobs", async () => {
+  it("returns data from argosApi.listIngestJobs", async () => {
     const spy = vi
-      .spyOn(cortexApi, "listIngestJobs")
+      .spyOn(argosApi, "listIngestJobs")
       .mockResolvedValue(sampleIngestResponse);
 
     const client = createClient();
@@ -96,8 +96,8 @@ describe("useIngestJobs", () => {
     expect(spy).toHaveBeenCalledWith({ projectId: "project-1" });
   });
 
-  it("surface errors when cortexApi.listIngestJobs rejects", async () => {
-    vi.spyOn(cortexApi, "listIngestJobs").mockRejectedValue(
+  it("surface errors when argosApi.listIngestJobs rejects", async () => {
+    vi.spyOn(argosApi, "listIngestJobs").mockRejectedValue(
       new Error("Network failure")
     );
 

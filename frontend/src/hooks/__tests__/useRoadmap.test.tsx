@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useRoadmap } from "../useRoadmap";
-import * as cortexApi from "../../lib/cortexApi";
+import * as argosApi from "../../lib/argosApi";
 
 const sampleRoadmap: any = {
   nodes: [
@@ -47,7 +47,7 @@ describe("useRoadmap", () => {
 
   it("fetches roadmap graph for a project", async () => {
     const spy = vi
-      .spyOn(cortexApi, "fetchRoadmap")
+      .spyOn(argosApi, "fetchRoadmap")
       .mockResolvedValue(sampleRoadmap);
 
     const client = createClient();

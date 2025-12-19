@@ -9,7 +9,7 @@ import {
   deleteRoadmapNode,
   createRoadmapEdge,
   deleteRoadmapEdge,
-} from "../lib/cortexApi";
+} from "../lib/argosApi";
 import type { RoadmapNode, RoadmapEdge, RoadmapGraph } from "../domain/types";
 import type { PaginatedResponse } from "../domain/api-types";
 

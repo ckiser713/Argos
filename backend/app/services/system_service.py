@@ -14,7 +14,7 @@ class SystemService:
         # A deterministic, static stub. You can wire in real metrics later.
         return SystemStatus(
             status=SystemStatusLevel.NOMINAL,
-            message="Cortex backend stub is running.",
+            message="Argos backend stub is running.",
             timestamp=datetime.utcnow(),
         )
 

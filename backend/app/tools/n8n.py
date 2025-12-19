@@ -1,5 +1,5 @@
 """
-n8n workflow integration tool for Cortex agents.
+n8n workflow integration tool for Argos agents.
 
 Provides enhanced workflow triggering with retry logic, error handling,
 and response parsing for better integration with LangGraph agents.
@@ -25,7 +25,7 @@ except Exception:
             return decorator(fn)
         return decorator
 
-logger = logging.getLogger("cortex.n8n")
+logger = logging.getLogger("argos.n8n")
 
 
 class N8nWorkflowError(Exception):

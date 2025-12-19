@@ -1,0 +1,26 @@
+# Prometheus scrape targets for Cortex
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: cortex-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+
+  - job_name: cortex-inference-vllm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["inference-vllm:8000"]
+
+  - job_name: cortex-llama-cpp
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["llama-cpp:8080"]
+
+  - job_name: cortex-caddy
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["caddy:2019"]
+

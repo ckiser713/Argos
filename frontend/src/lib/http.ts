@@ -1,5 +1,5 @@
 /**
- * Lightweight HTTP helper for the Cortex frontend.
+ * Lightweight HTTP helper for the Argos frontend.
  *
  * - Injects base URL from Vite env.
  * - Automatically attaches Authorization header if a token provider is configured.
@@ -21,7 +21,7 @@ export interface RequestOptions {
 }
 
 /**
- * Shape of an error payload returned by the Cortex backend.
+ * Shape of an error payload returned by the Argos backend.
  * Kept deliberately generic; backends can include arbitrary `details`.
  */
 export interface ApiErrorPayload {
@@ -56,7 +56,7 @@ type AuthTokenProvider = () => string | null | undefined;
 
 let authTokenProvider: AuthTokenProvider | null = () =>
   typeof window !== "undefined"
-    ? window.localStorage.getItem("cortex_auth_token")
+    ? window.localStorage.getItem("argos_auth_token")
     : null;
 
 /**
@@ -105,7 +105,7 @@ async function parseJsonSafe(response: Response): Promise<any | undefined> {
  * Core HTTP function.
  *
  * Components should NEVER call this directly.
- * Instead, use the typed functions in `cortexApi.ts` or feature-specific hooks.
+ * Instead, use the typed functions in `argosApi.ts` or feature-specific hooks.
  */
 export async function http<TResponse = unknown>(
   path: string,

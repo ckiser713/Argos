@@ -4,8 +4,9 @@ import { ClipboardList, ArrowRight, GitBranch, AlertCircle, Sparkles, X, Message
 import { GlassCard } from './GlassCard';
 import { NeonButton } from './NeonButton';
 import { ScrambleText } from './ScrambleText';
-import { useIdeaCandidates } from '@src/hooks/useIdeas';
+import { useIdeaCandidates, useUpdateIdeaCandidate } from '@src/hooks/useIdeas';
 import { useCurrentProject } from '@src/hooks/useProjects';
+import { ErrorDisplay } from '@src/components/ErrorDisplay';
 
 // --- Types ---
 interface RawIdea {
@@ -141,10 +142,11 @@ const SplitViewModal = ({ ticket, onClose }: { ticket: StructuredTicket; onClose
 // --- Main Component ---
 export const PmDissection: React.FC = () => {
   const { project: currentProject } = useCurrentProject();
-  const { data: ideaCandidatesData, isLoading: candidatesLoading } = useIdeaCandidates(
+  const { data: ideaCandidatesData, isLoading: candidatesLoading, error, refetch } = useIdeaCandidates(
     currentProject?.id,
     { status: 'pending' }
   );
+  const updateCandidate = currentProject?.id ? useUpdateIdeaCandidate(currentProject.id) : null;
 
   // Convert idea candidates to RawIdea format for inbox
   const [inbox, setInbox] = useState<RawIdea[]>([]);
@@ -166,15 +168,35 @@ export const PmDissection: React.FC = () => {
     }
   }, [ideaCandidatesData, candidatesLoading, currentProject]);
 
-  const handleProcess = (rawId: string) => {
-    if (processingId) return;
+  const handleProcess = async (rawId: string) => {
+    if (processingId || !updateCandidate) return;
     setProcessingId(rawId);
-    // TODO: Replace with real API call to process idea candidate
-    // For now, just remove from inbox (actual processing should happen via API)
-    setTimeout(() => {
+    try {
+      await updateCandidate.mutateAsync({
+        candidateId: rawId,
+        payload: { status: 'active' },
+      });
+
+      const raw = inbox.find(i => i.id === rawId);
+      if (raw) {
+        const newTicket: StructuredTicket = {
+          idea_id: raw.id,
+          title: raw.text.slice(0, 60) || 'Untitled Idea',
+          origin_story: raw.source,
+          category: 'Feature for Existing Repo',
+          implied_tasks: [`Break down ${raw.text.slice(0, 40)}...`],
+          potential_repo_links: [],
+          source_quotes: raw.text.slice(0, 120),
+        };
+        setProcessed(prev => [...prev, newTicket]);
+      }
       setInbox(prev => prev.filter(i => i.id !== rawId));
+    } catch (err) {
+      console.error('Failed to process idea candidate', err);
+      await refetch?.();
+    } finally {
       setProcessingId(null);
-    }, 2000);
+    }
   };
 
   const getCategoryColor = (cat: string) => {
@@ -189,6 +211,14 @@ export const PmDissection: React.FC = () => {
   return (
     <>
       <div className="h-[calc(100vh-140px)] w-full flex gap-6 animate-fade-in pb-4">
+        {!currentProject && (
+          <div className="text-gray-500 font-mono text-sm">Select a project to load idea candidates.</div>
+        )}
+        {error && (
+          <div className="w-full">
+            <ErrorDisplay error={error} onRetry={refetch} title="Failed to load idea candidates" />
+          </div>
+        )}
         {/* Left Column: Inbox */}
         <div className="w-1/3 flex flex-col gap-4">
           <h2 className="text-xl font-mono text-white tracking-wide flex items-center gap-2">

@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
@@ -13,6 +14,7 @@ from app.api.routes import (
     auth,
     context,
     gap_analysis,
+    health,
     ideas,
     ingest,
     knowledge,
@@ -27,22 +29,92 @@ from app.api.routes import (
 )
 from app.config import get_settings
 from app.db import init_db
-from app.services.auth_service import verify_token
+from app.observability import (
+    ObservabilityMiddleware,
+    configure_logging,
+    setup_metrics_endpoint,
+    setup_tracing,
+)
+from app.services.auth_service import get_current_user
 from app.services.model_warmup_service import build_lane_health_endpoints, model_warmup_service
+from app.services.qdrant_service import qdrant_service
 
 # ... (rest of the imports)
 
+
+def _env_flag(name: str) -> bool:
+    """Return True when an environment variable is set to a truthy value."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _is_uvicorn_pid1() -> bool:
+    """Detect if uvicorn is running as PID 1 (common in containers/systemd)."""
+    if os.getpid() == 1:
+        return True
+    try:
+        comm_path = Path("/proc/1/comm")
+        if comm_path.exists() and "uvicorn" in comm_path.read_text():
+            return True
+        cmdline_path = Path("/proc/1/cmdline")
+        if cmdline_path.exists() and "uvicorn" in cmdline_path.read_text():
+            return True
+    except Exception:
+        # Fall back silently if /proc is unavailable
+        pass
+    return False
+
+
+def validate_runtime_prereqs(settings, logger) -> None:
+    """
+    Enforce startup rules for non-local environments.
+    
+    Allows container/systemd runs via RUNNING_IN_DOCKER=1 or uvicorn PID 1.
+    Bare-metal non-local runs must be inside nix (IN_NIX_SHELL), unless explicitly
+    overridden via CORTEX_ALLOW_NON_NIX=1.
+    """
+    logger.info(f"Checking runtime guard for {settings.argos_env}")
+
+    if settings.argos_env == "local":
+        logger.info("Local environment, skipping nix check.")
+        return
+
+    normalized_db = (settings.database_url or "").lower()
+    if not normalized_db.startswith("postgresql"):
+        raise RuntimeError(
+            "CORTEX_DATABASE_URL must point to Postgres (postgresql://...) when CORTEX_ENV "
+            "is not local. SQLite is only supported for local development."
+        )
+
+    if os.environ.get("IN_NIX_SHELL"):
+        logger.info("Nix environment check passed.")
+        return
+
+    if _env_flag("CORTEX_ALLOW_NON_NIX"):
+        logger.warning("CORTEX_ALLOW_NON_NIX=1 set; bypassing Nix shell enforcement.")
+        return
+
+    if _env_flag("RUNNING_IN_DOCKER") or _is_uvicorn_pid1():
+        logger.info("Container/systemd environment detected; nix shell enforcement relaxed.")
+        return
+
+    raise RuntimeError(
+        "Non-local environments must run within a Nix shell. Set IN_NIX_SHELL=1 when running "
+        "on bare metal, or set RUNNING_IN_DOCKER=1 (container) or CORTEX_ALLOW_NON_NIX=1 "
+        "to bypass this guard for container/systemd deployments."
+    )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
-    init_db()
 
-    # --- Startup Logging ---
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(settings)
     logger = logging.getLogger(__name__)
+    validate_runtime_prereqs(settings, logger)
+    init_db()
     logger.info("==================================================")
-    logger.info("    Cortex Backend Service Booting Up")
+    logger.info("    Argos Backend Service Booting Up")
     logger.info("==================================================")
-    logger.info(f"CORTEX_ENV: {settings.cortex_env}")
+    logger.info(f"CORTEX_ENV: {settings.argos_env}")
     logger.info(f"LLM Backend: {settings.llm_backend}")
     logger.info("--- Lane URLs ---")
     logger.info(f"  Orchestrator: {settings.lane_orchestrator_url}")
@@ -51,6 +123,10 @@ def create_app() -> FastAPI:
     logger.info(f"  Fast RAG: {settings.lane_fast_rag_url}")
     logger.info(f"  Governance: {settings.lane_governance_url}")
     logger.info("-------------------")
+    if settings.argos_env != "local" and any("localhost" in origin for origin in settings.allowed_origins):
+        logger.warning(
+            "CORTEX_ALLOWED_ORIGINS includes localhost while running in non-local environment; set it to your frontend domain."
+        )
     # --- End Startup Logging ---
 
     app = FastAPI(
@@ -60,8 +136,10 @@ def create_app() -> FastAPI:
         redoc_url="/api/redoc",
     )
     
-    # ... (rest of the create_app function)
+    setup_metrics_endpoint(app)
+    app.add_middleware(ObservabilityMiddleware)
 
+    # ... (rest of the create_app function)
 
     # CORS for local frontend dev
     app.add_middleware(
@@ -72,33 +150,41 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    setup_tracing(app, settings)
+
     @app.on_event("startup")
-    def check_nix_environment():
-        """Verify that non-local environments run inside Nix shell."""
-        settings = get_settings()
-        logger.info(f"Checking nix environment for {settings.cortex_env}")
-        if settings.cortex_env != "local":
-            if not os.environ.get("IN_NIX_SHELL"):
-                logger.critical("CRITICAL: Non-local environment started outside of Nix shell.")
-                raise RuntimeError(
-                    "FATAL: Non-local environments must be run within the Nix shell. "
-                    "Set IN_NIX_SHELL environment variable or run via 'nix develop'."
+    def check_runtime_environment() -> None:
+        """Verify runtime guard when the application starts."""
+        validate_runtime_prereqs(get_settings(), logger)
+
+    @app.on_event("startup")
+    def verify_embedding_stack() -> None:
+        """Fail fast when embeddings are required but unavailable."""
+        try:
+            health = qdrant_service.ensure_ready(require_embeddings=settings.require_embeddings)
+            if not health.get("can_generate_embeddings"):
+                logger.warning(
+                    "Embedding models unavailable; falling back to text-only search and degraded RAG.",
+                    extra={"event": "embeddings.health.warning"},
                 )
-            else:
-                logger.info("Nix environment check passed.")
-        else:
-            logger.info("Local environment, skipping nix check.")
+        except Exception as exc:
+            logger.critical(
+                "Embedding/Qdrant startup check failed: %s",
+                exc,
+                extra={"event": "embeddings.health.failed"},
+            )
+            raise
 
     # Skip auth in test environment
     if settings.debug or getattr(settings, 'skip_auth', False):
         auth_deps = []
     else:
-        auth_deps = [Depends(verify_token)]
+        auth_deps = [Depends(get_current_user)]
 
     @app.on_event("startup")
     async def initialize_warmup_monitor() -> None:
         """Initialize model warmup monitoring for production environments."""
-        if settings.cortex_env in ["strix", "production"]:
+        if settings.argos_env in ["strix", "production"]:
             logger.info("Initializing model warmup monitoring...")
             endpoints = build_lane_health_endpoints(settings)
             model_warmup_service.start_monitoring(endpoints)
@@ -114,6 +200,7 @@ def create_app() -> FastAPI:
 
     # Routers grouped by resource
     app.include_router(auth.router, prefix="/api", tags=["auth"])
+    app.include_router(health.router, tags=["health"])
     app.include_router(system.router, prefix="/api", tags=["system"], dependencies=auth_deps)
     app.include_router(projects.router, prefix="/api", tags=["projects"], dependencies=auth_deps)
     app.include_router(context.router, prefix="/api", tags=["context"], dependencies=auth_deps)

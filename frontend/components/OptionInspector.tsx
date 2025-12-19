@@ -35,6 +35,7 @@ interface OptionInspectorProps {
   onClose: () => void;
   onContextSelect?: (fileName: string) => void;
   onCommit?: (option: DecisionOption) => void;
+  onRunAnalysis?: (optionId: string) => Promise<void> | void;
 }
 
 export const OptionInspector: React.FC<OptionInspectorProps> = ({ 
@@ -42,14 +43,23 @@ export const OptionInspector: React.FC<OptionInspectorProps> = ({
   isOpen, 
   onClose,
   onContextSelect,
-  onCommit
+  onCommit,
+  onRunAnalysis,
 }) => {
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
-  const handleRunAnalysis = (optionId: string) => {
+  const handleRunAnalysis = async (optionId: string) => {
     setAnalyzingId(optionId);
-    // Real API call would happen here
-    setTimeout(() => setAnalyzingId(null), 2500); // TODO: Replace with real API call duration
+    try {
+      if (onRunAnalysis) {
+        await onRunAnalysis(optionId);
+      } else {
+        // Fallback small delay to show progress when no handler provided
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      }
+    } finally {
+      setAnalyzingId(null);
+    }
   };
 
   const getIcon = (type: string) => {

@@ -1,25 +1,33 @@
 from __future__ import annotations
 
 import asyncio
+import asyncio
+import hashlib
 import logging
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from app.db import db_session
+from app.database import get_db_session
 from app.domain.common import PaginatedResponse
-from app.domain.models import IngestJob, IngestRequest, IngestStatus
+from app.domain.models import IngestJob as IngestJobDTO, IngestRequest, IngestStatus
+from app.models import IngestJob as ORMIngestJob, IngestSource
+from app.observability import record_ingest_transition, set_ingest_gauge
 from app.services.rag_service import rag_service
 from app.services.streaming_service import emit_ingest_event
-from app.services.idea_service import idea_service
 from app.services.repo_service import repo_service
+from app.services.storage_service import storage_service
+from app.tasks.ingest_tasks import process_ingest_job_task
 
 from langchain_classic.chains import create_extraction_chain_pydantic
 from app.services.local_llm_client import LocalChatLLM
 from app.config import get_settings
+from sqlalchemy import func
 
 
 logger = logging.getLogger(__name__)
@@ -61,15 +69,15 @@ class IngestService:
     def __init__(self):
         # Initialize the LLM lazily. If local LLM is not available,
         # keep the LLM and extraction chains as None and skip LLM-based features.
+        self.settings = get_settings()
         self.llm = None
         self.metadata_extraction_chain = None
         self.chat_extraction_chain = None
         try:
-            settings = get_settings()
             self.llm = LocalChatLLM(
-                base_url=settings.llm_base_url,
-                api_key=settings.llm_api_key,
-                model_name=settings.llm_model_name,
+                base_url=self.settings.llm_base_url,
+                api_key=self.settings.llm_api_key,
+                model_name=self.settings.llm_model_name,
                 temperature=0
             )
             # Create the extraction chains only if an LLM is available
@@ -127,240 +135,272 @@ class IngestService:
         stage: Optional[str] = None,
         source_id: Optional[str] = None,
     ) -> PaginatedResponse:
-        with db_session() as conn:
-            query = "SELECT * FROM ingest_jobs WHERE project_id = ? AND deleted_at IS NULL"
-            params = [project_id]
-
+        with get_db_session() as session:
+            query = (
+                session.query(ORMIngestJob)
+                .filter(ORMIngestJob.project_id == project_id)
+                .filter(ORMIngestJob.deleted_at.is_(None))
+            )
             if status:
-                query += " AND status = ?"
-                params.append(status)
+                query = query.filter(ORMIngestJob.status == status)
             if stage:
-                query += " AND stage = ?"
-                params.append(stage)
+                query = query.filter(ORMIngestJob.stage == stage)
             if source_id:
-                query += " AND source_id = ?"
-                params.append(source_id)
+                query = query.filter(ORMIngestJob.source_id == source_id)
 
-            query += " ORDER BY created_at DESC LIMIT ?"
-            params.append(limit + 1)
-
-            rows = conn.execute(query, params).fetchall()
-
-            items = []
-            for row in rows[:limit]:
-                items.append(self._row_to_job(row))
-
-            next_cursor = None
-            if len(rows) > limit:
-                next_cursor = rows[limit]["id"]
-
-            # Get total count
-            count_query = "SELECT COUNT(*) as total FROM ingest_jobs WHERE project_id = ? AND deleted_at IS NULL"
-            count_params = [project_id]
-            if status:
-                count_query += " AND status = ?"
-                count_params.append(status)
-            if stage:
-                count_query += " AND stage = ?"
-                count_params.append(stage)
-            if source_id:
-                count_query += " AND source_id = ?"
-                count_params.append(source_id)
-
-            total_row = conn.execute(count_query, count_params).fetchone()
-            total = total_row["total"] if total_row else len(items)
-
+            rows = query.order_by(ORMIngestJob.created_at.desc()).limit(limit + 1).all()
+            items = [self._row_to_job(row) for row in rows[:limit]]
+            next_cursor = rows[limit].id if len(rows) > limit else None
+            total = query.order_by(None).count()
             return PaginatedResponse(items=items, next_cursor=next_cursor, total=total)
 
-    def get_job(self, job_id: str) -> Optional[IngestJob]:
-        with db_session() as conn:
-            row = conn.execute("SELECT * FROM ingest_jobs WHERE id = ? AND deleted_at IS NULL", (job_id,)).fetchone()
-            if row:
-                return self._row_to_job(row)
+    def get_job(self, job_id: str) -> Optional[IngestJobDTO]:
+        with get_db_session() as session:
+            job = session.get(ORMIngestJob, job_id)
+            if job and not job.deleted_at:
+                return self._row_to_job(job)
         return None
 
-    def create_job(self, project_id: str, request: IngestRequest) -> IngestJob:
-        now = datetime.now(timezone.utc)
-        job_id = str(uuid.uuid4())
-
-        # Create a default source if needed
-        source_id = "default_source"
-        with db_session() as conn:
-            # Check if source exists, create if not
-            source_row = conn.execute(
-                "SELECT id FROM ingest_sources WHERE project_id = ? LIMIT 1", (project_id,)
-            ).fetchone()
-            if not source_row:
-                source_id = str(uuid.uuid4())
-                conn.execute(
-                    """
-                    INSERT INTO ingest_sources
-                    (id, project_id, kind, name, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (source_id, project_id, "file", "Default Source", now.isoformat(), now.isoformat()),
-                )
-            else:
-                source_id = source_row["id"]
-
-        original_filename = request.source_path.split("/")[-1]
-        job = IngestJob(
-            id=job_id,
+    def _get_or_create_source(self, session, project_id: str) -> str:
+        existing = session.query(IngestSource).filter(IngestSource.project_id == project_id).first()
+        if existing:
+            return existing.id
+        now_iso = datetime.now(timezone.utc).isoformat()
+        source = IngestSource(
+            id=str(uuid.uuid4()),
             project_id=project_id,
-            source_path=request.source_path,
-            original_filename=original_filename,
-            created_at=now,
-            updated_at=now,
-            status=IngestStatus.QUEUED,
-            progress=0.0,
-            message="Job queued.",
-            stage="initial",
+            kind="file",
+            name="Default Source",
+            created_at=now_iso,
+            updated_at=now_iso,
         )
+        session.add(source)
+        session.flush()
+        return source.id
 
-        with db_session() as conn:
-            conn.execute(
-                """
-                INSERT INTO ingest_jobs
-                (id, project_id, source_id, source_path, original_filename, status, created_at, updated_at, stage, progress, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job.id,
-                    project_id,
-                    source_id,
-                    request.source_path,
-                    original_filename,
-                    job.status.value,
-                    job.created_at.isoformat(),
-                    job.updated_at.isoformat(),
-                    job.stage,
-                    job.progress,
-                    job.message,
-                ),
+    def create_job(self, project_id: str, request: IngestRequest) -> IngestJobDTO:
+        now = datetime.now(timezone.utc).isoformat()
+        source_uri = request.source_uri or request.source_path
+        if not source_uri:
+            raise ValueError("source_uri is required to create an ingest job")
+        parsed = urlparse(source_uri)
+        guessed_name = Path(parsed.path or request.source_path or "").name or Path(str(source_uri)).name
+        original_filename = request.original_filename or guessed_name or "upload"
+
+        with get_db_session() as session:
+            source_id = self._get_or_create_source(session, project_id)
+            job = ORMIngestJob(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                source_id=source_id,
+                source_path=request.source_path or source_uri,
+                source_uri=source_uri,
+                original_filename=original_filename,
+                byte_size=request.byte_size or 0,
+                mime_type=request.mime_type,
+                checksum=request.checksum,
+                stage="initial",
+                progress=0.0,
+                status=IngestStatus.QUEUED.value,
+                created_at=now,
+                updated_at=now,
+                message="Job queued.",
             )
-            conn.commit()
-        
-        # Emit job created event
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+
+        created_job = self._row_to_job(job)
         try:
-            pass  # asyncio.create_task(emit_ingest_event(project_id, "ingest.job.created", job.model_dump()))
+            pass  # asyncio.create_task(emit_ingest_event(project_id, "ingest.job.created", created_job.model_dump()))
         except RuntimeError:
-            pass  # Ignore event emission errors if no event loop is running
-        
-        return job
+            pass
+        return created_job
 
-    def cancel_job(self, job_id: str) -> IngestJob:
-        now = datetime.now(timezone.utc)
-        with db_session() as conn:
-            conn.execute(
-                """
-                UPDATE ingest_jobs
-                SET status = ?, updated_at = ?, completed_at = ?
-                WHERE id = ?
-                """,
-                (IngestStatus.CANCELLED.value, now.isoformat(), now.isoformat(), job_id),
-            )
-            conn.commit()
-        
-        job = self.get_job(job_id)
-        
-        # Emit job cancelled event
-        if job:
+    def enqueue_job(self, job_id: str) -> str:
+        if self.settings.tasks_eager:
+            return self._run_inline_with_retries(job_id)
+        result = process_ingest_job_task.apply_async(args=[job_id], queue="ingest")
+        task_id = result.id
+        with get_db_session() as session:
+            job = session.get(ORMIngestJob, job_id)
+            if job:
+                job.task_id = task_id
+                job.updated_at = datetime.now(timezone.utc).isoformat()
+                session.commit()
+        return task_id
+
+    def _run_inline_with_retries(self, job_id: str) -> str:
+        attempts = 0
+        max_attempts = max(1, self.settings.task_max_retries)
+        last_exc: Optional[Exception] = None
+        inline_task_id = f"inline-{job_id}"
+        asyncio.run(self.update_job(job_id, task_id=inline_task_id))
+        while attempts < max_attempts:
             try:
-                pass  # asyncio.create_task(emit_ingest_event(job.project_id, "ingest.job.cancelled", job.model_dump()))
-            except RuntimeError:
-                pass  # Ignore event emission errors if no event loop is running
-        
-        return job
+                asyncio.run(self.process_job(job_id, mark_failed=False))
+                return f"inline-{job_id}"
+            except Exception as exc:  # noqa: BLE001
+                attempts += 1
+                last_exc = exc
+                if attempts >= max_attempts:
+                    asyncio.run(
+                        self.update_job(
+                            job_id,
+                            status=IngestStatus.FAILED,
+                            message="Ingest failed after retries",
+                            error_message=str(exc),
+                            completed_at=datetime.now(timezone.utc),
+                        )
+                    )
+                    break
+                asyncio.run(
+                    self.update_job(
+                        job_id,
+                        status=IngestStatus.RUNNING,
+                        message=f"Retrying ingest (attempt {attempts + 1}/{max_attempts})",
+                        error_message=str(exc),
+                    )
+                )
+        if last_exc:
+            raise last_exc
+        return f"inline-{job_id}"
+
+    def cancel_job(self, job_id: str) -> Optional[IngestJobDTO]:
+        now = datetime.now(timezone.utc).isoformat()
+        with get_db_session() as session:
+            job = session.get(ORMIngestJob, job_id)
+            if not job:
+                return None
+            job.status = IngestStatus.CANCELLED.value
+            job.updated_at = now
+            job.completed_at = now
+            session.commit()
+            session.refresh(job)
+            cancelled = self._row_to_job(job)
+        try:
+            pass  # asyncio.create_task(emit_ingest_event(job.project_id, "ingest.job.cancelled", cancelled.model_dump()))
+        except RuntimeError:
+            pass
+        return cancelled
 
     def delete_job(self, job_id: str) -> None:
-        now = datetime.now(timezone.utc)
-        with db_session() as conn:
-            conn.execute(
-                """
-                UPDATE ingest_jobs
-                SET deleted_at = ?, status = ?
-                WHERE id = ?
-                """,
-                (now.isoformat(), IngestStatus.CANCELLED.value, job_id),
-            )
-            conn.commit()
+        now = datetime.now(timezone.utc).isoformat()
+        with get_db_session() as session:
+            job = session.get(ORMIngestJob, job_id)
+            if not job:
+                return
+            job.deleted_at = now
+            job.status = IngestStatus.CANCELLED.value
+            job.updated_at = now
+            session.commit()
 
     # duplicate imports removed; methods continue
     
-    async def process_job(self, job_id: str):
+    async def process_job(self, job_id: str, *, mark_failed: bool = True):
         job = self.get_job(job_id)
         if not job:
             return
 
         loop = asyncio.get_running_loop()
-        await self.update_job(job_id, status=IngestStatus.RUNNING, progress=0.1, message="Analyzing file type...")
+        started_at = datetime.now(timezone.utc)
+        await self.update_job(
+            job_id,
+            status=IngestStatus.RUNNING,
+            progress=0.1,
+            message="Analyzing source...",
+            started_at=started_at,
+        )
 
+        temp_dir: Optional[Path] = None
         try:
-            file_path = job.source_path
-            file_exists = await loop.run_in_executor(None, Path(file_path).exists)
+            source_uri = job.source_uri or job.source_path
+            if not source_uri:
+                raise FileNotFoundError("No source_uri or source_path available for ingest job")
 
+            parsed = urlparse(source_uri)
+            if parsed.scheme == "s3":
+                local_path = await loop.run_in_executor(None, storage_service.download_to_path, source_uri)
+                temp_dir = local_path.parent
+            elif parsed.scheme == "file":
+                local_path = Path(parsed.path)
+            else:
+                local_path = Path(source_uri)
+
+            file_exists = await loop.run_in_executor(None, local_path.exists)
             if not file_exists:
-                await self.update_job(job_id, status=IngestStatus.FAILED, message=f"File not found: {file_path}")
-                return
+                raise FileNotFoundError(f"File not found: {local_path}")
+
+            if local_path.is_file() and job.checksum:
+                actual_checksum = await loop.run_in_executor(None, self._checksum_file, local_path)
+                if actual_checksum != job.checksum:
+                    raise ValueError("Checksum mismatch for stored ingest object")
 
             text_to_process = ""
-            is_repo = self._is_repository(file_path)
+            is_repo = self._is_repository(str(local_path))
 
             if is_repo:
-                # Handle repositories separately as they are directories
                 await self.update_job(job_id, progress=0.2, message="Indexing repository...")
                 try:
-                    stats = await loop.run_in_executor(None, repo_service.index_repository, job.project_id, file_path)
+                    stats = await loop.run_in_executor(
+                        None, repo_service.index_repository, job.project_id, str(local_path)
+                    )
                     await self.update_job(job_id, progress=0.7, message=f"Indexed {stats['files_indexed']} files.")
-                    text_to_process = await loop.run_in_executor(None, self._extract_repo_documentation, file_path)
-                except Exception as e:
+                    text_to_process = await loop.run_in_executor(
+                        None, self._extract_repo_documentation, str(local_path)
+                    )
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Repo indexing failed: {e}")
                     await self.update_job(job_id, progress=0.5, message=f"Repo indexing error: {str(e)}")
 
             else:
-                # For files, use AI to determine type and extract content
-                content_preview = await self._read_file_content(file_path, limit=2000)
+                content_preview = await self._read_file_content(str(local_path), limit=2000)
                 if content_preview is None:
-                    await self.update_job(job_id, status=IngestStatus.FAILED, message=f"Could not read file: {file_path}")
-                    return
+                    raise FileNotFoundError(f"Could not read file: {local_path}")
 
                 doc_metadata = await self._get_document_metadata(content_preview)
 
                 if doc_metadata and doc_metadata.document_type == DocumentType.CHAT_EXPORT:
                     await self.update_job(job_id, progress=0.3, message="Parsing chat export...")
-                    full_content = await self._read_file_content(file_path)
+                    full_content = await self._read_file_content(str(local_path))
                     if not full_content:
-                        await self.update_job(job_id, status=IngestStatus.FAILED, message="Failed to read full chat export.")
-                        return
+                        raise ValueError("Failed to read full chat export.")
 
                     parsed_chat = await self._parse_chat_export_with_ai(full_content)
                     if parsed_chat:
-                        text_to_process = "\n\n".join([f"{msg.sender} ({msg.timestamp}): {msg.content}" for msg in parsed_chat.messages])
-                        await self.update_job(job_id, progress=0.5, message=f"Successfully parsed chat with {len(parsed_chat.messages)} messages.")
+                        text_to_process = "\n\n".join(
+                            [f"{msg.sender} ({msg.timestamp}): {msg.content}" for msg in parsed_chat.messages]
+                        )
+                        await self.update_job(
+                            job_id,
+                            progress=0.5,
+                            message=f"Successfully parsed chat with {len(parsed_chat.messages)} messages.",
+                        )
                     else:
-                        await self.update_job(job_id, progress=0.4, message="AI parsing failed, falling back to basic text extraction.")
+                        await self.update_job(
+                            job_id, progress=0.4, message="AI parsing failed, falling back to basic text extraction."
+                        )
                         text_to_process = full_content
                 else:
                     doc_type_msg = f"Detected document type: {doc_metadata.document_type.value if doc_metadata else 'other'}."
                     await self.update_job(job_id, progress=0.3, message=doc_type_msg)
-                    text_to_process = await self._read_file_content(file_path)
+                    text_to_process = await self._read_file_content(str(local_path))
 
             if not text_to_process:
-                await self.update_job(job_id, status=IngestStatus.FAILED, message="No text could be extracted from the source.")
-                return
+                raise ValueError("No text could be extracted from the source.")
 
             await self.update_job(job_id, progress=0.7, message="Indexing document content...")
-            metadata = {"source": job.source_path, "job_id": job_id}
-            
+            metadata = {"source": job.source_uri or job.source_path, "job_id": job_id, "filename": job.original_filename}
+
             chunks_created = await loop.run_in_executor(
                 None,
                 rag_service.ingest_document,
                 job.project_id,
                 f"ingest_{job_id}",
                 text_to_process,
-                metadata
+                metadata,
             )
-            
+
             if chunks_created > 0:
                 await self.update_job(job_id, progress=0.9, message=f"Indexed {chunks_created} chunks.")
 
@@ -372,9 +412,20 @@ class IngestService:
                 completed_at=datetime.now(timezone.utc),
             )
 
-        except Exception as e:
-            logger.exception(f"Error processing job {job_id}")
-            await self.update_job(job_id, status=IngestStatus.FAILED, message=str(e), error_message=str(e))
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Error processing job %s", job_id)
+            if mark_failed:
+                await self.update_job(
+                    job_id,
+                    status=IngestStatus.FAILED,
+                    message=str(e),
+                    error_message=str(e),
+                    completed_at=datetime.now(timezone.utc),
+                )
+            raise
+        finally:
+            if temp_dir and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     async def _read_file_content(self, file_path: str, limit: Optional[int] = None) -> Optional[str]:
         loop = asyncio.get_running_loop()
@@ -415,66 +466,101 @@ class IngestService:
         message: Optional[str] = None,
         error_message: Optional[str] = None,
         completed_at: Optional[datetime] = None,
-    ) -> Optional[IngestJob]:
+        started_at: Optional[datetime] = None,
+        task_id: Optional[str] = None,
+    ) -> Optional[IngestJobDTO]:
         def db_update():
-            with db_session() as conn:
-                updates = []
-                params = []
+            with get_db_session() as session:
+                job = session.get(ORMIngestJob, job_id)
+                if not job:
+                    return None
+
+                previous_status = job.status
 
                 if status:
-                    updates.append("status = ?")
-                    params.append(status.value)
+                    job.status = status.value
                 if progress is not None:
-                    updates.append("progress = ?")
-                    params.append(progress)
-                if message:
-                    updates.append("message = ?")
-                    params.append(message)
-                if error_message:
-                    updates.append("error_message = ?")
-                    params.append(error_message)
+                    job.progress = progress
+                if message is not None:
+                    job.message = message
+                if error_message is not None:
+                    job.error_message = error_message
                 if completed_at:
-                    updates.append("completed_at = ?")
-                    params.append(completed_at.isoformat())
-                
-                if not updates:
-                    return self.get_job(job_id)
+                    job.completed_at = completed_at.isoformat()
+                if started_at:
+                    job.started_at = started_at.isoformat()
+                if task_id:
+                    job.task_id = task_id
 
-                updates.append("updated_at = ?")
-                params.append(datetime.now(timezone.utc).isoformat())
-                params.append(job_id)
+                job.updated_at = datetime.now(timezone.utc).isoformat()
+                session.commit()
+                session.refresh(job)
 
-                query = f"UPDATE ingest_jobs SET {', '.join(updates)} WHERE id = ?"
-                conn.execute(query, params)
-                conn.commit()
-            return self.get_job(job_id)
+                if status and previous_status != job.status:
+                    try:
+                        record_ingest_transition(str(job.status))
+                    except Exception:  # pragma: no cover - metrics best-effort
+                        logger.debug("Failed to record ingest metrics", exc_info=True)
+                    try:
+                        counts = dict(
+                            session.query(ORMIngestJob.status, func.count(ORMIngestJob.id))
+                            .group_by(ORMIngestJob.status)
+                            .all()
+                        )
+                        set_ingest_gauge({str(k): int(v) for k, v in counts.items()})
+                    except Exception:  # pragma: no cover - metrics best-effort
+                        logger.debug("Failed to refresh ingest gauges", exc_info=True)
+                return self._row_to_job(job)
 
         updated_job = await asyncio.get_running_loop().run_in_executor(None, db_update)
 
         if updated_job:
-             asyncio.create_task(emit_ingest_event(updated_job.project_id, "ingest.job.updated", updated_job.model_dump()))
-        
+            try:
+                asyncio.create_task(
+                    emit_ingest_event(
+                        updated_job.project_id, "ingest.job.updated", updated_job.model_dump()
+                    )
+                )
+            except RuntimeError:
+                pass
+
         return updated_job
 
-    def _row_to_job(self, row) -> IngestJob:
-        return IngestJob(
-            id=row["id"],
-            project_id=row["project_id"],
-            source_path=row.get("source_path") or row["original_filename"] or "",
-            original_filename=row["original_filename"],
-            byte_size=row["byte_size"] if "byte_size" in row.keys() else None,
-            mime_type=row["mime_type"] if "mime_type" in row.keys() else None,
-            stage=row["stage"] if "stage" in row.keys() else None,
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row.keys() and row["updated_at"] else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if "completed_at" in row.keys() and row["completed_at"] else None,
-            deleted_at=datetime.fromisoformat(row["deleted_at"]) if "deleted_at" in row.keys() and row["deleted_at"] else None,
-            status=IngestStatus(row["status"]),
-            progress=row["progress"] if "progress" in row.keys() else 0.0,
-            message=row["message"] if "message" in row.keys() else None,
-            error_message=row["error_message"] if "error_message" in row.keys() else None,
-            canonical_document_id=row["canonical_document_id"] if "canonical_document_id" in row.keys() else None,
+    def _row_to_job(self, row) -> IngestJobDTO:
+        def _get(key: str):
+            if isinstance(row, dict):
+                return row.get(key)
+            return getattr(row, key, None)
+
+        return IngestJobDTO(
+            id=_get("id"),
+            project_id=_get("project_id"),
+            source_path=_get("source_path") or _get("original_filename") or "",
+            source_uri=_get("source_uri") or _get("source_path"),
+            original_filename=_get("original_filename"),
+            byte_size=_get("byte_size"),
+            mime_type=_get("mime_type"),
+            checksum=_get("checksum"),
+            stage=_get("stage"),
+            created_at=datetime.fromisoformat(_get("created_at")) if _get("created_at") else datetime.now(timezone.utc),
+            updated_at=datetime.fromisoformat(_get("updated_at")) if _get("updated_at") else None,
+            started_at=datetime.fromisoformat(_get("started_at")) if _get("started_at") else None,
+            completed_at=datetime.fromisoformat(_get("completed_at")) if _get("completed_at") else None,
+            deleted_at=datetime.fromisoformat(_get("deleted_at")) if _get("deleted_at") else None,
+            status=IngestStatus(_get("status")),
+            progress=_get("progress") or 0.0,
+            message=_get("message"),
+            error_message=_get("error_message"),
+            canonical_document_id=_get("canonical_document_id"),
+            task_id=_get("task_id"),
         )
+
+    def _checksum_file(self, path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(8192), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def _is_repository(self, file_path: str) -> bool:
         """Check if path is a git repository."""

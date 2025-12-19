@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to requeue failed ingest jobs for a project by creating new ingest jobs
-with the same source_path or a fallback to temp_uploads/<original_filename>.
+with the same durable source_uri.
 
 Usage: python scripts/requeue_failed_ingests.py --api-url http://localhost:8000 --project-id <project-id>
 """
@@ -28,8 +28,8 @@ def list_failed_jobs(api_url: str, project_id: str, page_limit: int = 100) -> Li
     return items
 
 
-def requeue_job(api_url: str, project_id: str, source_path: str) -> dict:
-    payload = {"source_path": source_path}
+def requeue_job(api_url: str, project_id: str, source_uri: str) -> dict:
+    payload = {"source_uri": source_uri}
     resp = requests.post(f"{api_url}/api/projects/{project_id}/ingest/jobs", json=payload)
     if resp.status_code not in (200, 201):
         raise Exception(f"Failed to create job: {resp.status_code} {resp.text}")
@@ -50,18 +50,13 @@ def main():
     print(f"Found {len(failed_jobs)} failed jobs. Requeueing...")
     requeued = 0
     for job in failed_jobs:
-        source_path = job.get("source_path") or job.get("original_filename")
-        if not source_path:
-            print(f"Skipping job {job.get('id')} - no source path found")
+        source_uri = job.get("source_uri") or job.get("source_path") or job.get("original_filename")
+        if not source_uri:
+            print(f"Skipping job {job.get('id')} - no source uri found")
             continue
-        # If source_path is just a bare filename, prefer to prepend temp_uploads/
-        if "/" not in source_path and "temp_uploads" not in source_path:
-            candidate = f"temp_uploads/{source_path}"
-        else:
-            candidate = source_path
         try:
-            created = requeue_job(args.api_url, args.project_id, candidate)
-            print(f"Requeued job {job.get('id')} -> new job {created.get('id')} source_path={candidate}")
+            created = requeue_job(args.api_url, args.project_id, source_uri)
+            print(f"Requeued job {job.get('id')} -> new job {created.get('id')} source_uri={source_uri}")
             requeued += 1
         except Exception as e:
             print(f"Failed to requeue job {job.get('id')}: {e}")

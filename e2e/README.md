@@ -133,8 +133,8 @@ Tests run against:
 
 The test environment uses:
 - Test database: `test_atlas.db` (separate from dev)
-- Environment: `CORTEX_ENV=test`
-- Auth: Disabled (`CORTEX_SKIP_AUTH=true`)
+- Environment: `ARGOS_ENV=test`
+- Auth: Disabled (`ARGOS_SKIP_AUTH=true`)
 
 ## Writing New Tests
 

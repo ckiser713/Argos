@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from app.domain.common import to_camel
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # -------- Core / System --------
 
@@ -161,13 +161,16 @@ class IngestStatus(str, Enum):
 class IngestJob(BaseModel):
     id: str
     project_id: Optional[str] = None
-    source_path: str
+    source_path: Optional[str] = None
+    source_uri: Optional[str] = None
     original_filename: Optional[str] = None
     byte_size: Optional[int] = None
     mime_type: Optional[str] = None
+    checksum: Optional[str] = None
     stage: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
     status: IngestStatus
@@ -175,10 +178,30 @@ class IngestJob(BaseModel):
     message: Optional[str] = None
     error_message: Optional[str] = None
     canonical_document_id: Optional[str] = None
+    task_id: Optional[str] = None
 
 
 class IngestRequest(BaseModel):
-    source_path: str = Field(description="Path or URI to ingest (local file, directory, etc.)")
+    source_path: Optional[str] = Field(
+        default=None, description="Path or URI to ingest (local file, directory, etc.)"
+    )
+    source_uri: Optional[str] = Field(
+        default=None, description="Durable object URI (s3://bucket/key or file://...)", alias="sourceUri"
+    )
+    original_filename: Optional[str] = None
+    mime_type: Optional[str] = None
+    byte_size: Optional[int] = None
+    checksum: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def require_source(self) -> "IngestRequest":
+        if not self.source_uri and not self.source_path:
+            raise ValueError("Either source_uri or source_path is required for ingest.")
+        if not self.source_uri:
+            self.source_uri = self.source_path
+        return self
 
 
 # -------- Agents --------

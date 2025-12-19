@@ -4,13 +4,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useKnowledgeGraph } from "../useKnowledgeGraph";
-import * as cortexApi from "../../lib/cortexApi";
+import * as argosApi from "../../lib/argosApi";
 
 const sampleKnowledgeGraph: any = {
   nodes: [
     {
       id: "k1",
-      label: "Cortex PRD",
+      label: "Argos PRD",
       type: "document",
       weight: 0.9,
       clusterId: "c1",
@@ -59,7 +59,7 @@ describe("useKnowledgeGraph", () => {
 
   it("fetches knowledge graph for a project", async () => {
     const spy = vi
-      .spyOn(cortexApi, "fetchKnowledgeGraph")
+      .spyOn(argosApi, "fetchKnowledgeGraph")
       .mockResolvedValue(sampleKnowledgeGraph);
 
     const client = createClient();
@@ -77,7 +77,7 @@ describe("useKnowledgeGraph", () => {
     expect(screen.getByTestId("node-count").textContent).toBe("2");
     expect(screen.getByTestId("edge-count").textContent).toBe("1");
     expect(screen.getByTestId("first-node-label").textContent).toBe(
-      "Cortex PRD"
+      "Argos PRD"
     );
     expect(spy).toHaveBeenCalledWith("project-1", undefined);
   });

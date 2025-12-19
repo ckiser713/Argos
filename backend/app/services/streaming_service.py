@@ -6,7 +6,7 @@ from typing import Dict, Set
 
 from fastapi import WebSocket
 
-logger = logging.getLogger("cortex.streaming")
+logger = logging.getLogger("argos.streaming")
 
 
 class ConnectionManager:

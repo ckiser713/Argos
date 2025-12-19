@@ -1,5 +1,5 @@
 """
-SQLAlchemy Database Configuration for Cortex Backend.
+SQLAlchemy Database Configuration for Argos Backend.
 
 This module provides the database engine, session management, and base model
 for SQLAlchemy ORM. It supports both SQLite (local development) and PostgreSQL
@@ -37,7 +37,9 @@ def _get_sync_database_url() -> str:
     
     # For PostgreSQL, ensure we use psycopg2 driver for sync operations
     if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+psycopg2://")
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql+"):
+        return url
     
     return url
 
@@ -49,7 +51,9 @@ def _get_async_database_url() -> str:
     
     # For PostgreSQL, use asyncpg driver for async operations
     if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://")
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql+"):
+        return url
     
     # SQLite async requires aiosqlite
     if url.startswith("sqlite:///"):
@@ -106,7 +110,7 @@ def get_async_engine():
         settings = get_settings()
         
         # SQLite-specific configuration
-        if "sqlite" in url:
+        if url.startswith("sqlite"):
             _async_engine = create_async_engine(
                 url,
                 connect_args={"check_same_thread": False},

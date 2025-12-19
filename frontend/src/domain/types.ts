@@ -1,21 +1,21 @@
 // src/domain/types.ts
-// Central domain model definitions for the Cortex frontend.
+// Central domain model definitions for the Argos frontend.
 // Pure TypeScript types/interfaces only — no runtime logic.
 
 export type ID = string;
 
 /**
  * High-level project container.
- * A CortexProject groups ingestion, canonical docs, ideas, tickets, and roadmaps.
+ * A ArgosProject groups ingestion, canonical docs, ideas, tickets, and roadmaps.
  */
-export type CortexProjectStatus = 'active' | 'archived' | 'draft';
+export type ArgosProjectStatus = 'active' | 'archived' | 'draft';
 
-export interface CortexProject {
+export interface ArgosProject {
   id: ID;
   slug: string;
   name: string;
   description?: string;
-  status: CortexProjectStatus;
+  status: ArgosProjectStatus;
   createdAt: string;
   updatedAt: string;
   /**

@@ -20,7 +20,7 @@ from app.domain.models import (
 from app.services.streaming_service import emit_workflow_event
 from app.services.workflow_compiler import WorkflowGraphCompiler
 
-logger = logging.getLogger("cortex.workflow")
+logger = logging.getLogger("argos.workflow")
 
 
 class WorkflowService:

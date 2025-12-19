@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
 import { UIHelpers } from './utils/ui-helpers';
-import { ApiHelpers } from './utils/api-helpers';
+import { ApiHelpers, API_BASE_URL } from './utils/api-helpers';
 
 /**
  * Custom fixtures for e2e tests
@@ -18,11 +18,19 @@ export interface TestFixtures {
 /**
  * API client fixture for making direct API calls
  */
-const API_BASE = (process.env.PLAYWRIGHT_API_BASE || process.env.PLAYWRIGHT_BACKEND_URL || 'http://127.0.0.1:8000')
-  .replace(/\/(?:api|api\/docs)?$/i, '') + '/api';
+const API_BASE = API_BASE_URL;
 
 export const test = base.extend<TestFixtures>({
   api: async ({ request }, use) => {
+    // Preflight health and readiness before running any tests
+    const healthRes = await request.get(`${API_BASE}/system/health`);
+    expect(healthRes.ok()).toBeTruthy();
+    const readyRes = await request.get(`${API_BASE}/system/ready`);
+    expect(readyRes.ok()).toBeTruthy();
+
+    if (process.env.ARGOS_E2E_MOCK_LANES === '0') {
+      throw new Error('ARGOS_E2E_MOCK_LANES=0; mock lanes required for E2E tests.');
+    }
     // Use the same request context for API calls
     await use(request);
   },

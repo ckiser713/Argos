@@ -9,7 +9,7 @@ import {
   listIdeaTickets,
   createIdeaTicket,
   updateIdeaTicket,
-} from "../lib/cortexApi";
+} from "../lib/argosApi";
 import type { IdeaTicket, IdeaCandidate, IdeaCluster } from "../domain/types";
 import type { PaginatedResponse } from "../domain/api-types";
 

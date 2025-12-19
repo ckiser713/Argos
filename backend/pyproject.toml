@@ -1,15 +1,23 @@
 [tool.poetry]
-name = "cortex-backend"
+name = "argos-backend"
 version = "0.1.0"
-description = "FastAPI backend for Project Cortex"
+description = "FastAPI backend for Argos"
 authors = ["Your Name <you@example.com>"]
 readme = "README-backend.md"
 packages = [ { include = "app" } ]
 
 [tool.poetry.dependencies]
 python = "^3.11"
+boto3 = "^1.35.0"
+celery = {extras = ["redis"], version = "^5.4.0"}
 fastapi = "^0.111.0"
 uvicorn = {extras = ["standard"], version = "^0.30.1"}
+python-json-logger = "^2.0.7"
+prometheus-client = "^0.20.0"
+opentelemetry-sdk = "^1.28.2"
+opentelemetry-exporter-otlp = "^1.28.2"
+opentelemetry-instrumentation-fastapi = "^0.49b2"
+opentelemetry-instrumentation-requests = "^0.49b2"
 pydantic = "^2.7.4"
 pydantic-settings = "^2.3.4"
 python-jose = "^3.3.0"
@@ -22,12 +30,15 @@ tree-sitter-languages = "^1.10.2"
 httpx = "^0.25.2"
 openai = "^1.0.0"
 psutil = "^5.9.5"
+python-multipart = "^0.0.9"
 requests = "^2.31.0"
 docker = "^7.0.0"  # For vLLM lane switching via Docker API
 langchain-community = "^0.4.1"
 langchain = "^1.1.0"
 langchain-openai = "^1.1.0"
 sentence-transformers = "^2.2.0"  # Requires PyTorch - install ROCm wheels from ~/rocm/py311-tor290/wheels/
+torch = "^2.3.1"  # CPU wheels baked into backend image; override index for ROCm if needed
+tokenizers = "^0.19.1"
 # PostgreSQL / Database
 sqlalchemy = {extras = ["asyncio"], version = "^2.0.0"}
 asyncpg = "^0.29.0"
@@ -35,6 +46,7 @@ psycopg2-binary = "^2.9.9"
 alembic = "^1.13.0"
 greenlet = "^3.0.0"
 aiosqlite = "^0.19.0"
+redis = "^5.0.0"
 
 # PyTorch dependencies (ROCm-enabled, no CUDA/NVIDIA)
 # sentence-transformers requires PyTorch. Install ROCm wheels manually:
@@ -60,6 +72,8 @@ aiosqlite = "^0.19.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = "^0.23.0"
+ruff = "^0.6.9"
+mypy = "^1.11.2"
 
 [build-system]
 requires = ["poetry-core"]

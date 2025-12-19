@@ -19,6 +19,7 @@ import { GitFork, CheckSquare, Database, Server, Code, Shield, HelpCircle, Plus,
 import { OptionInspector, DecisionData } from './OptionInspector';
 import { useRoadmap } from '@src/hooks/useRoadmap';
 import { useCurrentProject } from '@src/hooks/useProjects';
+import { useStartAgentRun } from '@src/hooks/useAgentRuns';
 
 // Mock data removed - using real API via useRoadmap hook
 
@@ -68,6 +69,7 @@ const DecisionFlowMapComponent: React.FC = () => {
   const { project } = useCurrentProject();
   const projectId = project?.id;
   const { data: roadmapData, isLoading: roadmapLoading } = useRoadmap(projectId);
+  const startAgentRun = projectId ? useStartAgentRun(projectId) : null;
   
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -201,6 +203,25 @@ const DecisionFlowMapComponent: React.FC = () => {
     setMenu(null);
   };
 
+  const handleRunAnalysis = async (optionId: string) => {
+    if (!startAgentRun || !activeDecision) return;
+    const inputQuery =
+      activeDecision.options.find((o) => o.id === optionId)?.summary ||
+      activeDecision.question ||
+      'Analyze decision option';
+    const workflowId =
+      roadmapData?.nodes?.find((n) => n.type === 'decision')?.id ||
+      nodes[0]?.id ||
+      optionId;
+    try {
+      await startAgentRun.mutateAsync({ workflowId, inputQuery });
+      setLastEvent(`AGENT_RUN_STARTED:${optionId}`);
+    } catch (err) {
+      console.error('Failed to start agent run', err);
+      setLastEvent(`AGENT_RUN_FAILED:${optionId}`);
+    }
+  };
+
 
   return (
     <div className="h-[calc(100vh-140px)] w-full flex flex-col gap-4 animate-fade-in relative" ref={ref}>
@@ -286,6 +307,7 @@ const DecisionFlowMapComponent: React.FC = () => {
               }, 2000);
               setInspectorOpen(false);
             }}
+            onRunAnalysis={handleRunAnalysis}
          />
       </div>
     </div>

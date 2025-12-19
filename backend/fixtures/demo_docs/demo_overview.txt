@@ -1,0 +1,9 @@
+Cortex Demo Workspace
+
+This workspace is preloaded with a concise description of Cortex so that end-to-end smoke tests have something to ingest, embed, and search.
+
+Key goals:
+- Keep ingest fast (tiny text files only).
+- Cover both documentation-style and list-style content.
+- Provide predictable search terms like "ingest pipeline", "vector search", and "roadmap".
+

@@ -304,7 +304,7 @@ class VLLMLaneManager:
                 import docker
                 client = docker.from_env()
                 
-                container_name = "cortex-vllm-service"
+                container_name = "argos-vllm-service"
                 
                 try:
                     container = client.containers.get(container_name)
@@ -338,7 +338,7 @@ class VLLMLaneManager:
                         volumes=container.attrs.get("HostConfig", {}).get("Binds", []),
                         device_requests=container.attrs.get("HostConfig", {}).get("DeviceRequests", []),
                         ports={"8000/tcp": 8000},
-                        network="cortex-network",
+                        network="argos-network",
                         shm_size="16g",
                     )
                     

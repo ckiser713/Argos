@@ -1,0 +1,10 @@
+Cortex Demo Playbook
+
+1) Ingest: drop small docs, repos, or chat exports into the workspace.
+2) Embed: run the embedding pipeline so Qdrant can serve semantic search.
+3) Query: ask for "demo playbook" or "ingest pipeline" to exercise the RAG flow.
+
+Notes:
+- Designed for minimal-model runs; no GPU is required.
+- Works with the TinyLlama minimal model served via an OpenAI-compatible endpoint.
+

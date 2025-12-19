@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.domain.common import PaginatedResponse
 from app.domain.project import (
-    CortexProject,
+    ArgosProject,
     CreateProjectRequest,
     DeleteProjectResponse,
     UpdateProjectRequest,
@@ -24,28 +24,28 @@ async def list_projects(
     return service.list_projects(cursor=cursor, limit=limit)
 
 
-@router.post("", response_model=CortexProject, status_code=201)
+@router.post("", response_model=ArgosProject, status_code=201)
 async def create_project(
     body: CreateProjectRequest,
     service: ProjectService = Depends(get_project_service),
-) -> CortexProject:
+) -> ArgosProject:
     return service.create_project(body)
 
 
-@router.get("/{project_id}", response_model=CortexProject)
+@router.get("/{project_id}", response_model=ArgosProject)
 async def get_project(
     project_id: str,
     service: ProjectService = Depends(get_project_service),
-) -> CortexProject:
+) -> ArgosProject:
     return service.get_project(project_id)
 
 
-@router.patch("/{project_id}", response_model=CortexProject)
+@router.patch("/{project_id}", response_model=ArgosProject)
 async def update_project(
     project_id: str,
     body: UpdateProjectRequest,
     service: ProjectService = Depends(get_project_service),
-) -> CortexProject:
+) -> ArgosProject:
     return service.update_project(project_id, body)
 
 

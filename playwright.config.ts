@@ -3,6 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
+const API_BASE = process.env.PLAYWRIGHT_API_BASE || 'http://localhost:8000/api';
+const startDevServer = process.env.PLAYWRIGHT_START_DEV_SERVER === '1';
+
 export default defineConfig({
   testDir: './e2e',
   /* Run tests in files in parallel */
@@ -18,19 +22,22 @@ export default defineConfig({
     ? [['html'], ['json', { outputFile: 'test-results/results.json' }]]
     : [['list'], ['html']],
   /* Test timeout */
-  timeout: 30000,
+  timeout: 45000,
   /* Global test timeout */
   globalTimeout: 600000,
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+    baseURL: BASE_URL,
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
     /* Increase timeout for slow environments */
     actionTimeout: 30000,
+    metadata: {
+      apiBase: API_BASE,
+    },
     /* Ensure consistent device scaling for screenshots */
     deviceScaleFactor: 1,
     /* Default viewport to help visual regression tests remain stable */
@@ -90,11 +97,11 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   // If PLAYWRIGHT_START_DEV_SERVER=1 is set, Playwright will start Vite dev server.
   // Otherwise, assume the frontend is already served and reuse existing server.
-  webServer: process.env.PLAYWRIGHT_START_DEV_SERVER === '1'
+  webServer: startDevServer
     ? [
         {
           command: 'cd frontend && pnpm dev --port 5173',
-          url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+          url: BASE_URL,
           reuseExistingServer: false,
           timeout: 120 * 1000,
           stdout: 'pipe',

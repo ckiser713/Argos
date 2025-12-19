@@ -2,14 +2,23 @@ name: E2E (Nix)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  schedule:
+    - cron: "0 6 * * *" # nightly
 
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    env:
+      CI: true
+      GITHUB_ACTIONS: true
+      CORTEX_ENV: local
+      CORTEX_DATABASE_URL: sqlite:////tmp/e2e_atlas.db
+      CORTEX_ATLAS_DB_PATH: /tmp/e2e_atlas.db
+      CORTEX_ATLAS_CHECKPOINTS_DB_PATH: /tmp/e2e_atlas_checkpoints.db
+      CORTEX_AUTH_SECRET: e2e-secret
+      CORTEX_SKIP_AUTH: 1
+      CORTEX_E2E_MOCK_LANES: 1
+      CORTEX_QDRANT_URL: http://127.0.0.1:6333
 
     steps:
       - name: Checkout
@@ -38,11 +47,6 @@ jobs:
           # Install playwright and host deps via pnpm
           nix develop --command bash -lc "fc-cache -f -v || true; pnpm install --silent; poetry install --no-root || true; ./tools/run_e2e_local.sh"
         shell: bash
-        env:
-          CI: true
-          GITHUB_ACTIONS: true
-          CORTEX_SKIP_AUTH: 1
-          CORTEX_E2E_MOCK_LANES: 1
 
       - name: Upload Playwright Results
         if: always()

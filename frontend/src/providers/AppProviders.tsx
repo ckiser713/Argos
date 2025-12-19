@@ -39,7 +39,7 @@ function ToastProvider({ children }: PropsWithChildren) {
 
   // Make toast available globally via context if needed
   React.useEffect(() => {
-    (window as any).__cortexToast = toast;
+    (window as any).__argosToast = toast;
   }, [toast]);
 
   return (
@@ -56,7 +56,7 @@ export function AppProviders({ children }: PropsWithChildren) {
     const ensureAuthToken = async () => {
       if (typeof window === "undefined") return;
       
-      const existingToken = window.localStorage.getItem("cortex_auth_token");
+      const existingToken = window.localStorage.getItem("argos_auth_token");
       if (existingToken) {
         // Token exists, verify it's still valid by checking expiry
         try {
@@ -88,7 +88,7 @@ export function AppProviders({ children }: PropsWithChildren) {
 
         if (response.ok) {
           const data = await response.json();
-          window.localStorage.setItem("cortex_auth_token", data.access_token);
+          window.localStorage.setItem("argos_auth_token", data.access_token);
           console.log("✅ Auto-authenticated successfully");
         } else {
           console.warn("⚠️ Auto-authentication failed:", response.status);

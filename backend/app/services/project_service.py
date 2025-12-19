@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 
 from app.domain.common import PaginatedResponse
 from app.domain.project import (
-    CortexProject,
+    ArgosProject,
     CreateProjectRequest,
     DeleteProjectResponse,
     ProjectFactory,
@@ -22,13 +22,13 @@ class ProjectService:
     def list_projects(self, *, cursor: Optional[str], limit: int) -> PaginatedResponse:
         return self.repo.list_projects(cursor=cursor, limit=limit)
 
-    def get_project(self, project_id: str) -> CortexProject:
+    def get_project(self, project_id: str) -> ArgosProject:
         project = self.repo.get_project(project_id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         return project
 
-    def create_project(self, request: CreateProjectRequest) -> CortexProject:
+    def create_project(self, request: CreateProjectRequest) -> ArgosProject:
         if request.slug:
             normalized_slug = request.slug
             if self.repo.get_by_slug(normalized_slug):
@@ -48,7 +48,7 @@ class ProjectService:
             counter += 1
         return slug
 
-    def update_project(self, project_id: str, request: UpdateProjectRequest) -> CortexProject:
+    def update_project(self, project_id: str, request: UpdateProjectRequest) -> ArgosProject:
         current = self.repo.get_project(project_id)
         if not current:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")

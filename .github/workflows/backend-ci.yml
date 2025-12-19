@@ -1,0 +1,88 @@
+name: Backend CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+    env:
+      POETRY_VIRTUALENVS_IN_PROJECT: "true"
+      PIP_CACHE_DIR: ~/.cache/pip
+      CORTEX_DATABASE_URL: sqlite:////tmp/atlas.db
+      CORTEX_ATLAS_DB_PATH: /tmp/atlas.db
+      CORTEX_ATLAS_CHECKPOINTS_DB_PATH: /tmp/atlas_checkpoints.db
+      CORTEX_ENV: local
+      CORTEX_AUTH_SECRET: test-secret
+      CORTEX_SKIP_AUTH: "1"
+      CORTEX_E2E_MOCK_LANES: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v18
+        with:
+          extra_nix_config: "experimental-features = nix-command flakes"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: python -m pip install --upgrade pip poetry
+
+      - name: Cache Poetry and virtualenv
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/.venv
+            ~/.cache/pip
+            ~/.cache/pypoetry
+          key: ${{ runner.os }}-backend-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-backend-
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --with dev
+
+      - name: Wait for Qdrant
+        run: |
+          for i in {1..40}; do
+            if curl -sf http://localhost:6333/health >/dev/null; then
+              echo "Qdrant is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Qdrant did not become healthy in time" >&2
+          exit 1
+
+      - name: Ruff
+        working-directory: backend
+        run: poetry run ruff check .
+
+      - name: Mypy
+        working-directory: backend
+        run: poetry run mypy --config-file ../mypy.ini app tests
+
+      - name: Pytest
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: poetry run pytest
+

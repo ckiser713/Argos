@@ -82,3 +82,6 @@ $HOME/
 *.gguf
 *.pth
 *.pack
+
+# Archive folder
+archive/

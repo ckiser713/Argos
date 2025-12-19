@@ -10,7 +10,7 @@ import {
   createKnowledgeEdge,
   deleteKnowledgeEdge,
   searchKnowledge,
-} from "../lib/cortexApi";
+} from "../lib/argosApi";
 import type { KnowledgeNode, KnowledgeEdge, KnowledgeGraph } from "../domain/types";
 
 export interface UseKnowledgeGraphResult {

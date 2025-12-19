@@ -1,5 +1,5 @@
 /**
- * Error handling utilities for the Cortex frontend.
+ * Error handling utilities for the Argos frontend.
  */
 
 import { ApiError } from "./http";

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from app.config import get_settings
 
-logger = logging.getLogger("cortex.n8n")
+logger = logging.getLogger("argos.n8n")
 
 
 class N8nService:

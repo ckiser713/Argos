@@ -1,16 +1,16 @@
-// src/state/cortexStore.ts
+// src/state/argosStore.ts
 import { create } from "zustand";
-import type { CortexProject } from "../domain/types";
+import type { ArgosProject } from "../domain/types";
 
-export interface CortexStoreState {
+export interface ArgosStoreState {
   currentProjectId: string | null;
-  projects: CortexProject[]; // optional cache/override; React Query is source of truth
+  projects: ArgosProject[]; // optional cache/override; React Query is source of truth
   setCurrentProjectId: (projectId: string | null) => void;
-  setProjects: (projects: CortexProject[]) => void;
-  upsertProject: (project: CortexProject) => void;
+  setProjects: (projects: ArgosProject[]) => void;
+  upsertProject: (project: ArgosProject) => void;
 }
 
-export const useCortexStore = create<CortexStoreState>((set) => ({
+export const useArgosStore = create<ArgosStoreState>((set) => ({
   currentProjectId: null,
   projects: [],
   setCurrentProjectId: (projectId) => set({ currentProjectId: projectId }),

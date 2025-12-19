@@ -1,5 +1,5 @@
 {
-  description = "A comprehensive development environment for Argos_Chatgpt (Project Cortex)";
+  description = "A comprehensive development environment for Argos_Chatgpt (Project Argos)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,42 +23,42 @@
       
       # Backend package - wrapper script that uses poetry
       backend = pkgs.symlinkJoin {
-        name = "cortex-backend";
+        name = "argos-backend";
         paths = [ backend-runner ];
         buildInputs = [ pkgs.python311 pkgs.poetry ];
       };
       
       # Frontend package - wrapper script that uses pnpm
       frontend = pkgs.symlinkJoin {
-        name = "cortex-frontend";
+        name = "argos-frontend";
         paths = [ frontend-runner ];
         buildInputs = [ pkgs.nodejs_20 pkgs.nodePackages.pnpm ];
       };
       
       # Service runner scripts
-      backend-runner = pkgs.writeShellScriptBin "cortex-backend-run" ''
+      backend-runner = pkgs.writeShellScriptBin "argos-backend-run" ''
         set -e
         cd ${projectRoot}/backend
-        export CORTEX_ENV=production
-        export CORTEX_QDRANT_URL=http://localhost:6333
-        export CORTEX_ATLAS_DB_PATH=${projectRoot}/backend/atlas.db
+        export ARGOS_ENV=production
+        export ARGOS_QDRANT_URL=http://localhost:6333
+        export ARGOS_ATLAS_DB_PATH=${projectRoot}/backend/atlas.db
         ${pkgs.poetry}/bin/poetry run ${pkgs.python311}/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
       '';
       
-      frontend-runner = pkgs.writeShellScriptBin "cortex-frontend-run" ''
+      frontend-runner = pkgs.writeShellScriptBin "argos-frontend-run" ''
         set -e
         cd ${projectRoot}/frontend
         export NODE_ENV=development
         ${pkgs.nodePackages.pnpm}/bin/pnpm dev
       '';
       
-      docker-services-runner = pkgs.writeShellScriptBin "cortex-docker-run" ''
+      docker-services-runner = pkgs.writeShellScriptBin "argos-docker-run" ''
         set -e
         cd ${projectRoot}
         ${pkgs.docker-compose}/bin/docker-compose -f ${projectRoot}/ops/docker-compose.yml up -d
       '';
       
-      docker-services-stopper = pkgs.writeShellScriptBin "cortex-docker-stop" ''
+      docker-services-stopper = pkgs.writeShellScriptBin "argos-docker-stop" ''
         set -e
         cd ${projectRoot}
         ${pkgs.docker-compose}/bin/docker-compose -f ${projectRoot}/ops/docker-compose.yml down
@@ -260,7 +260,7 @@
           export POETRY_VIRTUALENVS_IN_PROJECT=true
           
           echo "=========================================="
-          echo "Cortex Development Environment"
+          echo "Argos Development Environment"
           echo "=========================================="
           echo ""
           # Prefer Python 3.11 where available
@@ -275,8 +275,8 @@
           echo "  - PIP_FIND_LINKS configured for offline PyTorch installation"
           echo ""
           echo "Environment variables set:"
-          echo "  - CORTEX_ENV=local (can be overridden by setting CORTEX_ENV before 'nix develop')"
-          echo "  - CORTEX_QDRANT_URL=http://localhost:6333"
+          echo "  - ARGOS_ENV=local (can be overridden by setting ARGOS_ENV before 'nix develop')"
+          echo "  - ARGOS_QDRANT_URL=http://localhost:6333"
           echo "  - PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright"
           echo "  - PIP_FIND_LINKS=$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common"
           echo "  - PIP_NO_INDEX not set (allows Poetry/pip to access PyPI)"
@@ -301,12 +301,12 @@
         '';
 
         # Set environment variables for the development environment
-        # Note: CORTEX_ENV is NOT set here to allow external override
+        # Note: ARGOS_ENV is NOT set here to allow external override
         # Defaults to "local" via Settings class if not set externally
-        # For staging: CORTEX_ENV=strix nix develop --command ...
-        # For production: CORTEX_ENV=production nix develop --command ...
-        CORTEX_QDRANT_URL = "http://localhost:6333";
-        CORTEX_DB_URL = "postgresql+psycopg://cortex:cortex@localhost:5432/cortex";
+        # For staging: ARGOS_ENV=strix nix develop --command ...
+        # For production: ARGOS_ENV=production nix develop --command ...
+        ARGOS_QDRANT_URL = "http://localhost:6333";
+        ARGOS_DATABASE_URL = "postgresql://argos:argos@localhost:5432/argos";
         PLAYWRIGHT_BROWSERS_PATH = "$HOME/.cache/ms-playwright";
         
         # ROCm Integration - Python 3.11 PyTorch 2.9 wheels
@@ -396,23 +396,23 @@
       apps.x86_64-linux = {
         backend = {
           type = "app";
-          program = "${backend-runner}/bin/cortex-backend-run";
+          program = "${backend-runner}/bin/argos-backend-run";
         };
         frontend = {
           type = "app";
-          program = "${frontend-runner}/bin/cortex-frontend-run";
+          program = "${frontend-runner}/bin/argos-frontend-run";
         };
         docker-up = {
           type = "app";
-          program = "${docker-services-runner}/bin/cortex-docker-run";
+          program = "${docker-services-runner}/bin/argos-docker-run";
         };
         docker-down = {
           type = "app";
-          program = "${docker-services-stopper}/bin/cortex-docker-stop";
+          program = "${docker-services-stopper}/bin/argos-docker-stop";
         };
         default = {
           type = "app";
-          program = "${backend-runner}/bin/cortex-backend-run";
+          program = "${backend-runner}/bin/argos-backend-run";
         };
       };
       

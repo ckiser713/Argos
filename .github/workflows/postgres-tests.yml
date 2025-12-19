@@ -1,0 +1,60 @@
+name: backend-postgres
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  postgres-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: cortex
+          POSTGRES_USER: cortex
+          POSTGRES_PASSWORD: cortex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U cortex -d cortex"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      CORTEX_ENV: strix
+      CORTEX_AUTH_SECRET: postgres-smoke-secret-please-change
+      CORTEX_SKIP_AUTH: "false"
+      CORTEX_ALLOW_LOCAL_STORAGE: "1"
+      CORTEX_DATABASE_URL: postgresql://cortex:cortex@localhost:5432/cortex
+      HF_TOKEN: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry and dependencies
+        run: |
+          pip install poetry psycopg2-binary
+          cd backend
+          poetry config virtualenvs.create false
+          poetry install --only main --with dev
+
+      - name: Run Alembic migrations
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Run PostgreSQL smoke tests
+        run: |
+          cd backend
+          pytest tests/test_postgres_smoke.py -q
+

@@ -14,7 +14,7 @@ from app.services.streaming_service import connection_manager
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-logger = logging.getLogger("cortex.streaming")
+logger = logging.getLogger("argos.streaming")
 
 router = APIRouter()
 

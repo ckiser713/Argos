@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+import argparse
+import subprocess
+import sys
+import os
+
+def run_cmd(cmd, cwd=None):
+    try:
+        subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing: {cmd}")
+        sys.exit(e.returncode)
+
+def main():
+    parser = argparse.ArgumentParser(description="Argos Unified CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # dev command
+    dev_parser = subparsers.add_parser("dev", help="Start development environment")
+    
+    # test command
+    test_parser = subparsers.add_parser("test", help="Run tests")
+    test_parser.add_argument("--e2e", action="store_true", help="Run E2E tests")
+
+    # ingest command
+    ingest_parser = subparsers.add_parser("ingest", help="Ingest a source")
+    ingest_parser.add_argument("path", help="Path to file or directory")
+
+    args = parser.parse_args()
+
+    if args.command == "dev":
+        print("🚀 Starting Argos in dev mode...")
+        run_cmd("pnpm concurrently -n backend,frontend -c blue,green \"cd backend && poetry run uvicorn app.main:app --reload\" \"cd frontend && pnpm dev\"")
+
+    elif args.command == "test":
+        if args.e2e:
+            print("🧪 Running E2E tests...")
+            run_cmd("bash scripts/run_e2e_nix.sh")
+        else:
+            print("🧪 Running backend tests...")
+            run_cmd("cd backend && poetry run pytest")
+
+    elif args.command == "ingest":
+        print(f"📥 Ingesting: {args.path}")
+        run_cmd(f"cd backend && poetry run python scripts/manual_reingest.py {args.path}")
+
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()

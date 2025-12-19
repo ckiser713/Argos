@@ -6,7 +6,7 @@ import {
   createIngestJob,
   cancelIngestJob,
   deleteIngestJob,
-} from "../lib/cortexApi";
+} from "../lib/argosApi";
 import type { IngestJob, CreateIngestJobRequest } from "../domain/types";
 import type { PaginatedResponse } from "../domain/api-types";
 

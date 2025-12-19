@@ -1,9 +1,12 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { addDays, format, differenceInDays, startOfToday, isBefore, isAfter } from 'date-fns';
 import { AlertTriangle, Lock, GitMerge, Layers, Clock } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { NeonButton } from './NeonButton';
+import { useCurrentProject } from '@src/hooks/useProjects';
+import { useRoadmap } from '@src/hooks/useRoadmap';
+import { ErrorDisplay } from '@src/components/ErrorDisplay';
 
 // --- Types ---
 
@@ -23,11 +26,6 @@ interface Cluster {
   color: string;
 }
 
-// Mock data removed - should fetch from roadmap API or task management API
-// TODO: Replace with real API calls when task/dependency tracking is implemented
-const CLUSTERS: Cluster[] = [];
-const TASKS: Task[] = [];
-
 // --- Helpers ---
 
 const CELL_WIDTH = 60; // px per day
@@ -37,6 +35,45 @@ const HEADER_HEIGHT = 50;
 export const DependencyTimeline: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hoveredTask, setHoveredTask] = useState<string | null>(null);
+  const today = startOfToday();
+  const { project } = useCurrentProject();
+  const { data: roadmapData, isLoading, error, refetch } = useRoadmap(project?.id);
+
+  const palette = ['#00E0FF', '#9b59b6', '#f39c12', '#e74c3c', '#2ecc71', '#1abc9c', '#e67e22'];
+
+  const tasks: Task[] = useMemo(() => {
+    if (!roadmapData?.nodes) return [];
+    return roadmapData.nodes.map((node, idx) => {
+      const clusterId = node.lane_id || node.status || 'unassigned';
+      const deps = (roadmapData.edges || []).filter(e => e.to === node.id).map(e => e.from);
+      const start = node.start_date ? new Date(node.start_date) : today;
+      const end = node.target_date ? new Date(node.target_date) : addDays(start, 7);
+      const status = (node.status as Task['status']) || 'pending';
+      return {
+        id: node.id,
+        label: node.label || `Node ${idx + 1}`,
+        start,
+        end,
+        clusterId,
+        dependencies: deps,
+        status,
+      };
+    });
+  }, [roadmapData, today]);
+
+  const clusters: Cluster[] = useMemo(() => {
+    const unique = new Map<string, Cluster>();
+    tasks.forEach((task, idx) => {
+      if (!unique.has(task.clusterId)) {
+        unique.set(task.clusterId, {
+          id: task.clusterId,
+          label: task.clusterId.toUpperCase(),
+          color: palette[idx % palette.length],
+        });
+      }
+    });
+    return Array.from(unique.values());
+  }, [tasks]);
   
   // Timeline Range: -7 days to +14 days
   const startDate = addDays(today, -7);
@@ -56,10 +93,22 @@ export const DependencyTimeline: React.FC = () => {
   const getWidth = (start: Date, end: Date) => (differenceInDays(end, start) + 1) * CELL_WIDTH;
   
   // Group tasks by cluster for rendering rows
-  const tasksByCluster = CLUSTERS.map(cluster => ({
+  const tasksByCluster = clusters.map(cluster => ({
     ...cluster,
-    tasks: TASKS.filter(t => t.clusterId === cluster.id)
+    tasks: tasks.filter(t => t.clusterId === cluster.id)
   }));
+
+  if (isLoading) {
+    return <div className="text-gray-400 font-mono p-6">Loading dependency timeline...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <ErrorDisplay error={error} title="Failed to load roadmap" onRetry={refetch} />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-140px)] w-full flex flex-col gap-4 animate-fade-in pb-4">

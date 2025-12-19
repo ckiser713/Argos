@@ -8,6 +8,7 @@ import { useIdeas } from '../src/hooks/useIdeas';
 import { useCurrentProject } from '@src/hooks/useProjects';
 import { ErrorDisplay } from '../src/components/ErrorDisplay';
 import { NeonButton } from './NeonButton';
+import { useAgentRuns } from '@src/hooks/useAgentRuns';
 
 // --- Types ---
 type OriginType = 'repo' | 'chat' | 'pdf';
@@ -28,6 +29,7 @@ interface Task {
 const useMissionControlTasks = () => {
    const { project } = useCurrentProject();
    const { data: ideasData, isLoading, error, refetch } = useIdeas({ projectId: project?.id, status: 'active' });
+   const { data: agentRuns } = useAgentRuns(project?.id || '');
 
    const tasks: Task[] = (ideasData?.items || []).map(ticket => ({
       id: ticket.id,
@@ -36,8 +38,10 @@ const useMissionControlTasks = () => {
       column: ticket.status === 'done' ? 'done' : 'backlog',
       priority: ticket.priority || 'medium',
       status: ticket.status === 'done' ? 'complete' : 'idle',
-      // TODO: Fetch real agent logs from agent runs API when available
-      agentLogs: undefined,
+      agentLogs: agentRuns?.items
+        ?.filter(run => run.project_id === project?.id)
+        ?.slice(0, 3)
+        ?.map(run => `[${run.status?.toUpperCase?.() ?? 'RUN'}] ${run.output_summary || run.input_prompt || 'Agent run'}`),
    }));
 
    return { tasks, isLoading, error, refetch };

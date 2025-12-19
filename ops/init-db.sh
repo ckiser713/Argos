@@ -13,7 +13,7 @@
 #   --migrate-only Only run migrations, skip other initialization
 #
 # Environment Variables:
-#   CORTEX_DATABASE_URL  - PostgreSQL connection URL
+#   ARGOS_DATABASE_URL  - PostgreSQL connection URL
 #   POSTGRES_HOST        - PostgreSQL host (default: localhost)
 #   POSTGRES_PORT        - PostgreSQL port (default: 5432)
 #   POSTGRES_USER        - PostgreSQL user (default: cortex)

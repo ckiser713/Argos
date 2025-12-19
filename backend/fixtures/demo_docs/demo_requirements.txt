@@ -1,0 +1,7 @@
+Demo Requirements & Acceptance Criteria
+
+- Seeded project name: "Cortex Demo".
+- At least three ingest jobs should complete without external dependencies.
+- Minimal LLM endpoint should respond to a single prompt like "summarize the demo workspace".
+- Smoke query should return citations that mention "ingest pipeline" or "roadmap".
+

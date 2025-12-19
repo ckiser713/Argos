@@ -7,7 +7,7 @@ from app.domain.models import WorkflowGraph, WorkflowNode, WorkflowNodeStatus
 # Import `tool_executor` lazily inside _execute_node_logic to avoid circular import at module import time
 from app.services.llm_service import generate_text
 
-logger = logging.getLogger("cortex.workflow")
+logger = logging.getLogger("argos.workflow")
 
 
 class WorkflowState(TypedDict):

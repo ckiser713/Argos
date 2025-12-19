@@ -32,7 +32,7 @@ class QdrantCodeSearchBackend(CodeSearchBackend):
     Qdrant-backed code search using semantic embeddings and AST-aware chunking.
     """
 
-    COLLECTION_NAME = "cortex_codebase"
+    COLLECTION_NAME = "argos_codebase"
 
     def __init__(
         self,

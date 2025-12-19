@@ -9,18 +9,18 @@ from app.domain.common import to_camel
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CortexProjectStatus(str, Enum):
+class ArgosProjectStatus(str, Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"
     DRAFT = "draft"
 
 
-class CortexProject(BaseModel):
+class ArgosProject(BaseModel):
     id: str
     slug: str
     name: str
     description: Optional[str] = None
-    status: CortexProjectStatus = Field(default=CortexProjectStatus.ACTIVE)
+    status: ArgosProjectStatus = Field(default=ArgosProjectStatus.ACTIVE)
     created_at: datetime
     updated_at: datetime
     default_model_role_id: Optional[str] = None
@@ -41,7 +41,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[CortexProjectStatus] = Field(default=None)
+    status: Optional[ArgosProjectStatus] = Field(default=None)
     default_model_role_id: Optional[str] = None
     root_idea_cluster_id: Optional[str] = None
     roadmap_id: Optional[str] = None
@@ -57,16 +57,16 @@ class DeleteProjectResponse(BaseModel):
 
 class ProjectFactory:
     @staticmethod
-    def new(name: str, slug: Optional[str], description: Optional[str]) -> CortexProject:
+    def new(name: str, slug: Optional[str], description: Optional[str]) -> ArgosProject:
         project_id = uuid4().hex
         normalized_slug = slug or ProjectFactory._slugify(name)
         now = datetime.now(timezone.utc)
-        return CortexProject(
+        return ArgosProject(
             id=project_id,
             slug=normalized_slug,
             name=name,
             description=description,
-            status=CortexProjectStatus.ACTIVE,
+            status=ArgosProjectStatus.ACTIVE,
             created_at=now,
             updated_at=now,
         )

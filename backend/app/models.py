@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM Models for Cortex Backend.
+SQLAlchemy ORM Models for Argos Backend.
 
 These models mirror the existing SQLite schema from db.py,
 providing full ORM support for both SQLite and PostgreSQL.
@@ -107,21 +107,25 @@ class IngestJob(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
     source_path = Column(Text, nullable=True)
+    source_uri = Column(Text, nullable=True)
     source_id = Column(String(36), ForeignKey("ingest_sources.id"), nullable=False)
     original_filename = Column(String(255), nullable=False)
     byte_size = Column(Integer, nullable=False, default=0)
     mime_type = Column(String(100), nullable=True)
+    checksum = Column(String(128), nullable=True)
     is_deep_scan = Column(Integer, nullable=False, default=0)
     stage = Column(String(50), nullable=False)
     progress = Column(Float, nullable=False, default=0.0)
     status = Column(String(50), nullable=False)
     created_at = Column(String(50), nullable=False, default=lambda: utcnow().isoformat())
     updated_at = Column(String(50), nullable=False, default=lambda: utcnow().isoformat())
+    started_at = Column(String(50), nullable=True)
     completed_at = Column(String(50), nullable=True)
     deleted_at = Column(String(50), nullable=True)
     message = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     canonical_document_id = Column(String(36), nullable=True)
+    task_id = Column(String(255), nullable=True)
     
     # Relationships
     project = relationship("Project", back_populates="ingest_jobs")
@@ -571,3 +575,73 @@ class SchemaMigration(Base):
     
     version = Column(String(50), primary_key=True)
     applied_at = Column(String(50), nullable=False, default=lambda: utcnow().isoformat())
+
+
+class AuthUser(Base):
+    """Auth user - application identities stored in Postgres."""
+    __tablename__ = "auth_users"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    username = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    roles = Column(String(255), nullable=False, default="user")
+    scopes = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    token_version = Column(Integer, nullable=False, default=1)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    refresh_tokens = relationship(
+        "AuthRefreshToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    blacklisted_tokens = relationship(
+        "AuthTokenBlacklist",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class AuthRefreshToken(Base):
+    """Refresh tokens stored server-side so they can be revoked."""
+    __tablename__ = "auth_refresh_tokens"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(128), nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+
+    user = relationship("AuthUser", back_populates="refresh_tokens")
+
+    __table_args__ = (
+        Index("idx_auth_refresh_tokens_user", "user_id"),
+        Index("idx_auth_refresh_tokens_expires", "expires_at"),
+    )
+
+
+class AuthTokenBlacklist(Base):
+    """Blacklist for JWT jti values to support server-side revocation."""
+    __tablename__ = "auth_token_blacklist"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    jti = Column(String(64), nullable=False, unique=True)
+    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="SET NULL"), nullable=True)
+    token_type = Column(String(20), nullable=False, default="access")
+    reason = Column(String(255), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    user = relationship("AuthUser", back_populates="blacklisted_tokens")
+
+    __table_args__ = (
+        Index("idx_auth_blacklist_jti", "jti"),
+        Index("idx_auth_blacklist_user", "user_id"),
+        Index("idx_auth_blacklist_expires", "expires_at"),
+    )

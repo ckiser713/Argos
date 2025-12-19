@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
-from typing import Optional
 import uuid
-from fastapi import BackgroundTasks
+from typing import Optional
+
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 
 from app.domain.common import PaginatedResponse
 from app.domain.models import IngestJob, IngestRequest, IngestStatus
 from app.services.ingest_service import ingest_service
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Response, UploadFile
 from app.services.knowledge_service import knowledge_service
+from app.services.storage_service import storage_service
 
 router = APIRouter()
 
@@ -45,11 +44,14 @@ def get_ingest_job(project_id: str, job_id: str) -> IngestJob:
 @router.post(
     "/projects/{project_id}/ingest/jobs", response_model=IngestJob, status_code=201, summary="Create a new ingest job"
 )
-def create_ingest_job(project_id: str, request: IngestRequest, background_tasks: BackgroundTasks) -> IngestJob:
-    if not request.source_path:
-        raise HTTPException(status_code=400, detail="source_path is required")
-    job = ingest_service.create_job(project_id=project_id, request=request)
-    background_tasks.add_task(ingest_service.process_job, job.id)
+def create_ingest_job(project_id: str, request: IngestRequest) -> IngestJob:
+    if not request.source_uri and not request.source_path:
+        raise HTTPException(status_code=400, detail="source_uri or source_path is required")
+    try:
+        job = ingest_service.create_job(project_id=project_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ingest_service.enqueue_job(job.id)
     return job
 
 
@@ -83,23 +85,36 @@ def delete_ingest_job(project_id: str, job_id: str):
 
 
 @router.post("/projects/{project_id}/ingest/upload")
-async def upload_file(project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    temp_dir = Path("temp_uploads")
-    temp_dir.mkdir(exist_ok=True)
-    file_path = temp_dir / file.filename
+async def upload_file(project_id: str, file: UploadFile = File(...)):
+    try:
+        data = await file.read()
+        stored = storage_service.save_bytes(
+            project_id=project_id,
+            filename=file.filename,
+            content_type=file.content_type,
+            data=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Store absolute path for robustness across working directory changes
-    job = ingest_service.create_job(project_id=project_id, request=IngestRequest(source_path=str(file_path.resolve())))
-    background_tasks.add_task(ingest_service.process_job, job.id)
+    job = ingest_service.create_job(
+        project_id=project_id,
+        request=IngestRequest(
+            source_uri=stored.uri,
+            source_path=stored.uri,
+            original_filename=file.filename,
+            mime_type=stored.content_type,
+            byte_size=stored.byte_size,
+            checksum=stored.checksum,
+        ),
+    )
+    ingest_service.enqueue_job(job.id)
 
     return {"filename": file.filename, "job_id": job.id}
 
 
 @router.post("/projects/{project_id}/ingest")
-def ingest_simple(project_id: str, request_body: dict, background_tasks: BackgroundTasks) -> dict:
+def ingest_simple(project_id: str, request_body: dict) -> dict:
     """Simple compatibility endpoint used by tests to ingest text or repo content.
     Supports JSON payload with 'source_type' and associated fields.
     """
@@ -110,14 +125,25 @@ def ingest_simple(project_id: str, request_body: dict, background_tasks: Backgro
         if not content:
             raise HTTPException(status_code=400, detail="content required for text source_type")
         source_id = request_body.get("source_id", str(uuid.uuid4()))
-        temp_dir = Path("temp_uploads")
-        temp_dir.mkdir(exist_ok=True)
         filename = f"{project_id}-{source_id}.txt"
-        file_path = temp_dir / filename
-        with file_path.open("w", encoding="utf-8") as f:
-            f.write(content)
-        job = ingest_service.create_job(project_id=project_id, request=IngestRequest(source_path=str(file_path.resolve())))
-        background_tasks.add_task(ingest_service.process_job, job.id)
+        stored = storage_service.save_bytes(
+            project_id=project_id,
+            filename=filename,
+            content_type="text/plain",
+            data=content.encode("utf-8"),
+        )
+        job = ingest_service.create_job(
+            project_id=project_id,
+            request=IngestRequest(
+                source_uri=stored.uri,
+                source_path=stored.uri,
+                original_filename=filename,
+                mime_type=stored.content_type,
+                byte_size=stored.byte_size,
+                checksum=stored.checksum,
+            ),
+        )
+        ingest_service.enqueue_job(job.id)
         # For simple text ingestion, create a knowledge node synchronously so
         # that tests and clients can immediately search using text fallback
         try:
@@ -137,7 +163,7 @@ def ingest_simple(project_id: str, request_body: dict, background_tasks: Backgro
         if not repo_path:
             raise HTTPException(status_code=400, detail="repo_path or repo_url required for repository ingestion")
         job = ingest_service.create_job(project_id=project_id, request=IngestRequest(source_path=str(repo_path)))
-        background_tasks.add_task(ingest_service.process_job, job.id)
+        ingest_service.enqueue_job(job.id)
         return {"job_id": job.id}
 
     raise HTTPException(status_code=400, detail=f"Unsupported source_type: {source_type}")

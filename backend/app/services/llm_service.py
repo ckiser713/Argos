@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.domain.mode import ProjectExecutionSettings
 from app.repos.mode_repo import get_project_settings
+from app.observability import record_model_call
 from app.services.local_llm_client import get_local_llm_client, LocalChatLLM
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ def _call_underlying_llm(
     Call the underlying LLM backend (OpenAI API or llama.cpp).
     """
     effective_backend = backend or settings.llm_backend.lower()
+    backend_label = effective_backend
     
     if effective_backend == "llama_cpp":
         try:
@@ -122,16 +124,22 @@ def _call_underlying_llm(
             
             if json_mode:
                 json_match = re.search(r'\{.*\}', response, re.DOTALL)
-                return json_match.group(0) if json_match else f'{{"response": {json.dumps(response)}}}'
-            return response
+                result = json_match.group(0) if json_match else f'{{"response": {json.dumps(response)}}}'
+            else:
+                result = response
+            record_model_call("llama_cpp", model or settings.llm_model_name, True)
+            return result
             
         except ImportError:
             logger.warning("llama_cpp_service not available, falling back to OpenAI API")
+            record_model_call("llama_cpp", model or settings.llm_model_name, False)
         except Exception as e:
             logger.error(f"llama_cpp_service error, falling back to OpenAI API: {e}")
+            record_model_call("llama_cpp", model or settings.llm_model_name, False)
 
     # Default: Use OpenAI-compatible API (vLLM/Ollama)
     target_model = model or settings.llm_model_name
+    backend_label = effective_backend if effective_backend != "llama_cpp" else "openai_compatible"
     target_client = get_llm_client(base_url)
 
     messages = []
@@ -156,9 +164,11 @@ def _call_underlying_llm(
             max_tokens=max_tokens,
             response_format=response_format,
         )
+        record_model_call(backend_label, target_model, True)
         return response["choices"][0]["message"]["content"]
     except Exception as e:
         logger.error(f"Local LLM API error: {e}")
+        record_model_call(backend_label, target_model, False)
         return f"LLM Error: {str(e)}"
 
 
@@ -174,7 +184,7 @@ def generate_text(
     """
     Generates text using the underlying LLM, with mode-aware adjustments and semantic routing.
     """
-    if settings.cortex_mode == "INGEST":
+    if settings.argos_mode == "INGEST":
         logger.info("Request received in INGEST mode, queuing for later processing.")
         return LLMResponse(response="Request has been queued and will be processed when ingest is complete.", status="queued")
 

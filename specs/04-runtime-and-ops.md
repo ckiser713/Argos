@@ -1,13 +1,13 @@
 ## Run Modes & Processes
 - Backend: FastAPI app (`app.main:app`) run via uvicorn; initializes SQLite schema on startup (`init_db`, stamps `schema_migrations`).
 - Frontend: Vite dev server for React app; production build not detailed.
-- Background tasks: FastAPI BackgroundTasks/asyncio tasks for ingest processing, workflow execution, agent execution.
+- Background tasks: ingest now offloaded to Celery worker queue (Redis broker, eager inline mode in local/tests); other long-running flows still rely on asyncio tasks.
 - Streaming: WebSocket endpoints under `/api/stream/...` and SSE endpoints; WebSockets rely on event broadcasts (no DB polling) and enforce per-project connection caps and send timeouts.
 - Guardrail: All local development should occur inside the Nix dev shells (`nix develop` or `nix-shell nix/rocm-shell.nix`); scripts should invoke `tools/require-nix.sh` to prevent running outside Nix or ad-hoc virtualenvs.
 
 ## Configuration & Environment
-- Settings via env (prefix `CORTEX_`): auth secret, debug/skip_auth, allowed_origins, DB paths (`atlas.db`, `atlas_checkpoints.db`), LLM backend/config (`llm_base_url`, `llm_api_key`, `llm_model_name`, `llm_backend`, llama.cpp paths/threads/context), mode parameters (normal/paranoid temps, validation passes, max_parallel_tools), qdrant_url.
-- Hardcoded defaults: context token budget 100k; ingest temp upload dir `temp_uploads`; Qdrant URL in `rag_service` fixed to `http://localhost:6333`; RAG model all-MiniLM-L6-v2.
+- Settings via env (prefix `CORTEX_`): auth secret, debug/skip_auth, allowed_origins, DB paths (`atlas.db`, `atlas_checkpoints.db`), LLM backend/config (`llm_base_url`, `llm_api_key`, `llm_model_name`, `llm_backend`, llama.cpp paths/threads/context), mode parameters (normal/paranoid temps, validation passes, max_parallel_tools), qdrant_url, queue (`CORTEX_CELERY_BROKER_URL`, `CORTEX_CELERY_RESULT_BACKEND`, `CORTEX_TASKS_EAGER`), storage (`CORTEX_STORAGE_*` for S3/MinIO/local).
+- Hardcoded defaults: context token budget 100k; local ingest storage path `storage_uploads` when `CORTEX_STORAGE_BACKEND=local`; Qdrant URL in `rag_service` fixed to `http://localhost:6333`; RAG model all-MiniLM-L6-v2.
 - No env/config for streaming, timeouts, rate limits beyond hardcoded caps/timeouts in `ConnectionManager`.
 
 ## Dependencies
@@ -21,7 +21,7 @@
 - Liveness/readiness: `/api/system/health` returns ok; `/api/system/ready` verifies DB connectivity.
 - Logging minimal; no metrics/tracing.
 - Auth: `/api/token` issues JWT for any credentials; `skip_auth` toggles dependency; streaming routes inherit global auth deps.
-- File handling: ingest may create dummy files; uploads stored under temp_uploads without cleanup policy.
+- File handling: uploads validated and stored via storage_service; retention/cleanup policy for objects/embeddings not defined.
 - Streaming: WebSockets are event-driven; SSE remains polling-based. Backpressure limited to connection caps/timeouts.
 - Mode settings for projects stored in-memory; lost on restart.
 

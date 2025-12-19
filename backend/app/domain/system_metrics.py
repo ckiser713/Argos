@@ -32,7 +32,7 @@ class MemoryMetrics(BaseModel):
 
 
 class ContextMetrics(BaseModel):
-    """Logical token-budget view for the Cortex runtime."""
+    """Logical token-budget view for the Argos runtime."""
 
     total_tokens: int = Field(..., ge=0, description="Total token budget.")
     used_tokens: int = Field(..., ge=0, description="Tokens currently consumed.")

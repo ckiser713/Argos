@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Union
+from typing import Any, Iterator, Mapping, Sequence, Union
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -30,13 +30,13 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "2024-06-01"
+SCHEMA_VERSION = "2024-12-09"
 
 
 def _is_using_postgresql() -> bool:
     """Check if we're using PostgreSQL based on environment."""
     settings = get_settings()
-    return settings.database_url.startswith("postgresql://")
+    return settings.database_url.lower().startswith("postgresql")
 
 
 def _db_path() -> Path:
@@ -52,6 +52,78 @@ def _dict_row_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, obj
     return {column[0]: row[idx] for idx, column in enumerate(cursor.description)}
 
 
+class _ResultWrapper:
+    """Adapter so both sqlite3 and SQLAlchemy results expose fetchone/fetchall returning mappings."""
+
+    def __init__(self, result: Any):
+        self._result = result
+
+    def fetchall(self):
+        if hasattr(self._result, "mappings"):
+            return self._result.mappings().all()
+        if hasattr(self._result, "fetchall"):
+            return self._result.fetchall()
+        return list(self._result)
+
+    def fetchone(self):
+        if hasattr(self._result, "mappings"):
+            return self._result.mappings().first()
+        if hasattr(self._result, "fetchone"):
+            return self._result.fetchone()
+        rows = list(self._result)
+        return rows[0] if rows else None
+
+    def __iter__(self):
+        if hasattr(self._result, "mappings"):
+            return iter(self._result.mappings())
+        return iter(self._result)
+
+
+class _SessionWrapper:
+    """Wrap SQLAlchemy Session so legacy sqlite-style '?' SQL keeps working under PostgreSQL."""
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    @staticmethod
+    def _normalize_query(query: object, params: object) -> tuple[object, Mapping[str, object]]:
+        if not isinstance(query, str):
+            return query, params or {}
+        if params is None:
+            return query, {}
+        if isinstance(params, (list, tuple)):
+            bound_params: dict[str, object] = {}
+            normalized_query = query
+            for idx, value in enumerate(params):
+                key = f"p{idx}"
+                normalized_query = normalized_query.replace("?", f":{key}", 1)
+                bound_params[key] = value
+            return normalized_query, bound_params
+        if isinstance(params, Mapping):
+            if "?" in query:
+                raise ValueError("Use positional params (list/tuple) for '?' placeholders or switch to named binds.")
+            return query, params
+        return query, {}
+
+    def execute(self, query: object, params: object = None):
+        normalized_query, bound_params = self._normalize_query(query, params)
+        statement = text(normalized_query) if isinstance(normalized_query, str) else normalized_query
+        result = self._session.execute(statement, bound_params or {})
+        return _ResultWrapper(result)
+
+    def commit(self):
+        self._session.commit()
+
+    def rollback(self):
+        self._session.rollback()
+
+    def close(self):
+        self._session.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
+
+
 def get_connection() -> Union[sqlite3.Connection, Session]:
     """
     Get a database connection.
@@ -62,7 +134,7 @@ def get_connection() -> Union[sqlite3.Connection, Session]:
     if _is_using_postgresql():
         # Return SQLAlchemy session for PostgreSQL
         session_factory = get_sync_session_factory()
-        return session_factory()
+        return _SessionWrapper(session_factory())
     else:
         # Legacy SQLite connection
         conn = sqlite3.connect(_db_path(), check_same_thread=False)
@@ -81,7 +153,7 @@ def db_session() -> Iterator[Union[sqlite3.Connection, Session]]:
     if _is_using_postgresql():
         # Use SQLAlchemy for PostgreSQL
         with sqlalchemy_db_session() as session:
-            yield session
+            yield _SessionWrapper(session)
     else:
         # Legacy SQLite mode
         conn = sqlite3.connect(_db_path(), check_same_thread=False)
@@ -96,9 +168,13 @@ def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
     """Add any ingest_jobs columns that existed in newer schema versions."""
     required_columns = {
         "source_path": "source_path TEXT",
+        "source_uri": "source_uri TEXT",
         "deleted_at": "deleted_at TEXT",
         "message": "message TEXT",
         "error_message": "error_message TEXT",
+        "checksum": "checksum TEXT",
+        "started_at": "started_at TEXT",
+        "task_id": "task_id TEXT",
     }
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ingest_jobs)")}
     for column_name, definition in required_columns.items():
@@ -110,6 +186,12 @@ def _ensure_ingest_job_columns(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE ingest_jobs SET source_path = 'temp_uploads/' || original_filename WHERE source_path IS NULL OR source_path = ''")
         except Exception:
             # Ignore errors if data cannot be updated (e.g., missing columns)
+            pass
+    # Mirror source_path into source_uri for older records
+    if "source_uri" in required_columns and "source_uri" not in existing_columns:
+        try:
+            conn.execute("UPDATE ingest_jobs SET source_uri = source_path WHERE source_uri IS NULL OR source_uri = ''")
+        except Exception:
             pass
 
 

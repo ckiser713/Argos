@@ -24,6 +24,7 @@ from app.models import (
     AgentStep, AgentMessage, AgentNodeState, WorkflowGraph, WorkflowRun,
     WorkflowNodeState, RoadmapNode, RoadmapEdge, KnowledgeEdge,
     GapReport, GapSuggestion, ChatSegment, SchemaMigration,
+    AuthUser, AuthRefreshToken, AuthTokenBlacklist,
 )
 
 # Alembic Config object

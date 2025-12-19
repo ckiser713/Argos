@@ -1,20 +1,20 @@
 {
-  "name": "cortex-monorepo",
+  "name": "argos-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Monorepo for Project Cortex",
+  "description": "Monorepo for Argos",
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"cd backend && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload\" \"cd frontend && pnpm dev\"",
     "dev:backend": "cd backend && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
     "dev:frontend": "cd frontend && pnpm dev",
-    "e2e": "sh run_e2e_nix.sh",
-    "e2e:nix": "bash run_e2e_nix.sh",
+    "e2e": "sh scripts/run_e2e_nix.sh",
+    "e2e:nix": "bash scripts/run_e2e_nix.sh",
     "e2e:playwright": "pnpm exec playwright test",
-    "e2e:quick": "bash run_e2e_nix.sh",
+    "e2e:quick": "bash scripts/run_e2e_nix.sh",
     "e2e:ui": "playwright test --ui",
     "e2e:debug": "playwright test --debug",
     "e2e:report": "playwright show-report",
-    "e2e:docker": "docker build -f Dockerfile.playwright -t cortex-e2e . && docker run --rm -e CORTEX_SKIP_AUTH=1 -p 8000:8000 -p 5173:5173 cortex-e2e",
+    "e2e:docker": "docker build -f Dockerfile.playwright -t argos-e2e . && docker run --rm -e ARGOS_SKIP_AUTH=1 -p 8000:8000 -p 5173:5173 argos-e2e",
     "e2e:local": "sh tools/run_e2e_local.sh"
   },
   "devDependencies": {

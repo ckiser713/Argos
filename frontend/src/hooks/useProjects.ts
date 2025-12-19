@@ -1,20 +1,20 @@
 // src/hooks/useProjects.ts
 import { useQuery } from "@tanstack/react-query";
-import { getProjects } from "../lib/cortexApi";
-import type { CortexProject } from "../domain/types";
-import { useCortexStore } from "../state/cortexStore";
+import { getProjects } from "../lib/argosApi";
+import type { ArgosProject } from "../domain/types";
+import { useArgosStore } from "../state/argosStore";
 
 export const projectsQueryKey = ["projects"] as const;
 
-export async function fetchProjects(): Promise<CortexProject[]> {
+export async function fetchProjects(): Promise<ArgosProject[]> {
   return getProjects();
 }
 
 /**
- * Fetches all projects; syncs basic project list into the Cortex store.
+ * Fetches all projects; syncs basic project list into the Argos store.
  */
 export function useProjects() {
-  const setProjects = useCortexStore((s) => s.setProjects);
+  const setProjects = useArgosStore((s) => s.setProjects);
 
   const query = useQuery({
     queryKey: projectsQueryKey,
@@ -38,8 +38,8 @@ export function useProjects() {
  * using React Query’s project data if available.
  */
 export function useCurrentProject() {
-  const currentProjectId = useCortexStore((s) => s.currentProjectId);
-  const projectsFromStore = useCortexStore((s) => s.projects);
+  const currentProjectId = useArgosStore((s) => s.currentProjectId);
+  const projectsFromStore = useArgosStore((s) => s.projects);
   const { data: projectsQueryData } = useQuery({
     queryKey: projectsQueryKey,
     queryFn: fetchProjects,

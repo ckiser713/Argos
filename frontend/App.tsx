@@ -28,6 +28,7 @@ import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
 const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState('mission_control'); 
+  const [systemStatusOverride, setSystemStatusOverride] = useState<string | null>(null);
 
   const { project: currentProject } = useCurrentProject();
   const projectId = currentProject?.id;
@@ -40,7 +41,7 @@ const AppContent: React.FC = () => {
   const removeContextItem = useRemoveContextItem(projectId ?? '');
 
   // Derive status values from live API data
-  const systemStatus = systemStatusData?.status ?? 'nominal';
+  const systemStatus = systemStatusOverride ?? systemStatusData?.status ?? 'nominal';
   const vram = systemStatusData?.gpu?.used_vram_gb 
     ? Math.round((systemStatusData.gpu.used_vram_gb / (systemStatusData.gpu.total_vram_gb ?? 1)) * 100) 
     : 0;
@@ -336,10 +337,10 @@ const AppContent: React.FC = () => {
                  <p className="text-gray-500 font-mono text-xs mt-1">REAL-TIME MONITORING NODE #8821</p>
                </div>
                <div className="flex gap-4">
-                 <NeonButton variant="cyan" onClick={() => setSystemStatus('nominal')}>
+                 <NeonButton variant="cyan" onClick={() => setSystemStatusOverride('nominal')}>
                    SYS_NOMINAL
                  </NeonButton>
-                 <NeonButton variant="amber" onClick={() => setSystemStatus('warning')}>
+                 <NeonButton variant="amber" onClick={() => setSystemStatusOverride('warning')}>
                    SIM_WARNING
                  </NeonButton>
                  <NeonButton variant="purple" onClick={() => setActiveTab('nexus')}>

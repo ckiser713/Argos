@@ -1,0 +1,19 @@
+[Unit]
+Description=Cortex backup (Postgres dump + Qdrant snapshot)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/cortex/backup.env
+ExecStart=/home/nexus/Argos_Chatgpt/ops/backup/run_backups.sh
+WorkingDirectory=/home/nexus/Argos_Chatgpt
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=append:/var/log/cortex/backup.log
+StandardError=append:/var/log/cortex/backup.log
+
+[Install]
+WantedBy=multi-user.target
+
