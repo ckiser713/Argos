@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.domain.gap_analysis import GapReport, GapStatus, GapSuggestion
 
 # --- Imports for Real Implementations ---
+from app.domain.model_lanes import ModelLane
 from app.repos import project_intel_repo
 from app.services import llm_service
 
@@ -214,12 +215,14 @@ class LLMCoderClient(CoderLLMClient):
             f"If implemented, explain how. If missing, explain what needs to be added."
         )
 
-        return llm_service.generate_text(
+        response = await llm_service.generate_text_async(
             prompt=prompt,
             project_id=ticket.project_id,
+            lane=ModelLane.CODER,
             temperature=0.0,
             max_tokens=1000,
-        ).response
+        )
+        return response.response
 
 
 class NullTicketProvider(IdeaTicketProvider):

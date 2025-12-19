@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$BACKEND_DIR")"
-ROCM_WHEELS_DIR="${ROCM_WHEELS_DIR:-$HOME/rocm/py311-tor290/wheels}"
+ROCM_WHEELS_DIR="${ROCM_WHEELS_DIR:-/home/nexus/amd-ai/artifacts/vllm_docker_rocm}"
 
 echo "=========================================="
 echo "ROCm PyTorch Wheels Installer"
@@ -26,15 +26,15 @@ fi
 echo "Wheels directory: $ROCM_WHEELS_DIR"
 echo ""
 
-# Check for required subdirectories
-if [ ! -d "$ROCM_WHEELS_DIR/torch2.9" ]; then
-    echo "Error: PyTorch wheels directory not found: $ROCM_WHEELS_DIR/torch2.9"
+# Check for required wheel files
+if [ ! -f "$ROCM_WHEELS_DIR/torch-2.9.1-cp311-cp311-linux_x86_64.whl" ]; then
+    echo "Error: PyTorch wheel not found: $ROCM_WHEELS_DIR/torch-2.9.1-cp311-cp311-linux_x86_64.whl"
     exit 1
 fi
 
-if [ ! -d "$ROCM_WHEELS_DIR/common" ]; then
-    echo "Error: Common wheels directory not found: $ROCM_WHEELS_DIR/common"
-    exit 1
+if [ ! -f "$ROCM_WHEELS_DIR/vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl" ]; then
+    echo "Warning: vLLM wheel not found: $ROCM_WHEELS_DIR/vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl"
+    echo "  vLLM installation will be skipped"
 fi
 
 # Check Python version
@@ -77,23 +77,25 @@ echo ""
 export PIP_NO_INDEX=1
 export PIP_FIND_LINKS="$ROCM_WHEELS_DIR"
 
-# Install PyTorch stack
-echo "Installing PyTorch, TorchVision, TorchAudio..."
-$PY_BIN -m pip install --find-links "$ROCM_WHEELS_DIR/torch2.9" \
-    torch torchvision torchaudio \
+# Install PyTorch wheel
+echo "Installing PyTorch from wheel..."
+$PY_BIN -m pip install --no-deps --find-links "$ROCM_WHEELS_DIR" \
+    "$ROCM_WHEELS_DIR/torch-2.9.1-cp311-cp311-linux_x86_64.whl" \
     || {
-        echo "Error: Failed to install PyTorch stack"
+        echo "Error: Failed to install PyTorch"
         exit 1
     }
 
-echo ""
-echo "Installing common dependencies (Triton, Tokenizers)..."
-$PY_BIN -m pip install --find-links "$ROCM_WHEELS_DIR/common" \
-    triton tokenizers \
-    || {
-        echo "Error: Failed to install common dependencies"
-        exit 1
-    }
+# Install vLLM wheel if available
+if [ -f "$ROCM_WHEELS_DIR/vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl" ]; then
+    echo ""
+    echo "Installing vLLM from wheel..."
+    $PY_BIN -m pip install --no-deps --find-links "$ROCM_WHEELS_DIR" \
+        "$ROCM_WHEELS_DIR/vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl" \
+        || {
+            echo "Warning: Failed to install vLLM (may not be critical for backend)"
+        }
+fi
 
 echo ""
 echo "=========================================="
@@ -123,12 +125,12 @@ try:
     else:
         print("✓ CUDA not available (expected for ROCm build)")
     
-    # Try to import other packages
-    import torchvision
-    print(f"✓ TorchVision version: {torchvision.__version__}")
-    
-    import torchaudio
-    print(f"✓ TorchAudio version: {torchaudio.__version__}")
+    # Try to import vLLM if installed
+    try:
+        import vllm
+        print(f"✓ vLLM version: {vllm.__version__}")
+    except ImportError:
+        print("⚠ vLLM not installed (may not be needed for backend)")
     
     print("")
     print("All packages installed successfully!")

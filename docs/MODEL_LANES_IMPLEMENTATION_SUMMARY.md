@@ -169,7 +169,7 @@
 ```bash
 # .env file or environment variables
 ARGOS_LLM_BASE_URL=http://localhost:8000/v1
-ARGOS_LLM_MODEL=Qwen3-30B-Thinking
+ARGOS_LLM_MODEL=DeepSeek-R1-Distill-Qwen-32B
 ARGOS_LLM_DEFAULT_LANE=orchestrator
 
 # Super-Reader (llama.cpp)
@@ -180,16 +180,16 @@ ARGOS_LANE_SUPER_READER_BACKEND=llama_cpp
 
 # Coder (vLLM)
 ARGOS_LANE_CODER_URL=http://localhost:8000/v1
-ARGOS_LANE_CODER_MODEL=Qwen3-Coder-30B-1M
+ARGOS_LANE_CODER_MODEL=Qwen2.5-Coder-32B-Instruct
 
 # Fast-RAG (vLLM)
 ARGOS_LANE_FAST_RAG_URL=http://localhost:8000/v1
-ARGOS_LANE_FAST_RAG_MODEL=MegaBeam-Mistral-7B-512k
+ARGOS_LANE_FAST_RAG_MODEL=Llama-3.2-11B-Vision-Instruct
 
 # Governance (llama.cpp)
 ARGOS_LANE_GOVERNANCE_URL=http://localhost:8080/v1
-ARGOS_LANE_GOVERNANCE_MODEL=Granite-4.x-Long-Context
-ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/granite-4m.gguf
+ARGOS_LANE_GOVERNANCE_MODEL=granite-3.0-8b-instruct
+ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf
 ARGOS_LANE_GOVERNANCE_BACKEND=llama_cpp
 ```
 

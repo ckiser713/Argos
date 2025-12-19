@@ -12,24 +12,20 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Callable, Optional
 
 import httpx
 
 from app.config import get_settings
+from app.domain.model_lanes import ModelLane, is_llama_lane, is_vllm_lane
+from app.services.model_registry import (
+    get_lane_backend,
+    get_lane_default_path,
+    get_lane_model_name,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-
-class ModelLane(str, Enum):
-    """Model lanes for specialized AI tasks."""
-    ORCHESTRATOR = "orchestrator"
-    CODER = "coder"
-    FAST_RAG = "fast_rag"
-    SUPER_READER = "super_reader"  # Uses llama-server on port 8080
-    GOVERNANCE = "governance"      # Uses llama-server on port 8081
 
 
 @dataclass
@@ -74,53 +70,64 @@ class VLLMLaneManager:
         self._is_switching: bool = False
         self._switch_lock = asyncio.Lock()
         self._request_queue: list[QueuedRequest] = []
+        self._queue_event: Optional[asyncio.Event] = None
+        self._queue_worker_task: Optional[asyncio.Task] = None
         self._lane_configs = self._build_lane_configs()
-        self._vllm_base_url = "http://localhost:8000"
+        self._vllm_base_url = self._normalize_base_url(settings.lane_orchestrator_url)
         self._http_client: Optional[httpx.AsyncClient] = None
-        
+
+    @staticmethod
+    def _normalize_base_url(url: str) -> str:
+        if not url:
+            return ""
+        normalized = url.rstrip("/")
+        if normalized.endswith("/v1"):
+            return normalized[:-3]
+        return normalized
+
     def _build_lane_configs(self) -> dict[ModelLane, LaneConfig]:
         """Build lane configurations from settings."""
         return {
             ModelLane.ORCHESTRATOR: LaneConfig(
                 lane=ModelLane.ORCHESTRATOR,
-                model_path=settings.lane_orchestrator_model_path or "/models/vllm/orchestrator/bf16",
+                model_path=settings.lane_orchestrator_model_path or get_lane_default_path(ModelLane.ORCHESTRATOR),
                 url=settings.lane_orchestrator_url,
-                backend="vllm",
-                model_name=settings.lane_orchestrator_model,
+                backend=settings.lane_orchestrator_backend or get_lane_backend(ModelLane.ORCHESTRATOR),
+                model_name=settings.lane_orchestrator_model or get_lane_model_name(ModelLane.ORCHESTRATOR),
                 max_model_len=32768,
                 gpu_memory_utilization=0.45,
             ),
             ModelLane.CODER: LaneConfig(
                 lane=ModelLane.CODER,
-                model_path=settings.lane_coder_model_path or "/models/vllm/coder/bf16",
+                model_path=settings.lane_coder_model_path or get_lane_default_path(ModelLane.CODER),
                 url=settings.lane_coder_url,
-                backend="vllm",
-                model_name=settings.lane_coder_model,
+                backend=settings.lane_coder_backend or get_lane_backend(ModelLane.CODER),
+                model_name=settings.lane_coder_model or get_lane_model_name(ModelLane.CODER),
                 max_model_len=32768,
                 gpu_memory_utilization=0.45,
             ),
             ModelLane.FAST_RAG: LaneConfig(
                 lane=ModelLane.FAST_RAG,
-                model_path=settings.lane_fast_rag_model_path or "/models/vllm/fast_rag/bf16",
+                model_path=settings.lane_fast_rag_model_path or get_lane_default_path(ModelLane.FAST_RAG),
                 url=settings.lane_fast_rag_url,
-                backend="vllm",
-                model_name=settings.lane_fast_rag_model,
+                backend=settings.lane_fast_rag_backend or get_lane_backend(ModelLane.FAST_RAG),
+                model_name=settings.lane_fast_rag_model or get_lane_model_name(ModelLane.FAST_RAG),
                 max_model_len=131072,  # 128k context for RAG
                 gpu_memory_utilization=0.45,
             ),
             ModelLane.SUPER_READER: LaneConfig(
                 lane=ModelLane.SUPER_READER,
-                model_path=settings.lane_super_reader_model_path,
+                model_path=settings.lane_super_reader_model_path or get_lane_default_path(ModelLane.SUPER_READER),
                 url=settings.lane_super_reader_url,
-                backend="llama_cpp",
-                model_name=settings.lane_super_reader_model,
+                backend=settings.lane_super_reader_backend or get_lane_backend(ModelLane.SUPER_READER),
+                model_name=settings.lane_super_reader_model or get_lane_model_name(ModelLane.SUPER_READER),
             ),
             ModelLane.GOVERNANCE: LaneConfig(
                 lane=ModelLane.GOVERNANCE,
-                model_path=settings.lane_governance_model_path,
+                model_path=settings.lane_governance_model_path or get_lane_default_path(ModelLane.GOVERNANCE),
                 url=settings.lane_governance_url,
-                backend="llama_cpp",
-                model_name=settings.lane_governance_model,
+                backend=settings.lane_governance_backend or get_lane_backend(ModelLane.GOVERNANCE),
+                model_name=settings.lane_governance_model or get_lane_model_name(ModelLane.GOVERNANCE),
             ),
         }
     
@@ -141,6 +148,14 @@ class VLLMLaneManager:
     def get_lane_url(self, lane: ModelLane) -> str:
         """Get the API URL for a lane."""
         return self._lane_configs[lane].url
+
+    async def ensure_lane(self, lane: ModelLane) -> bool:
+        """Ensure the requested lane is loaded and ready for vLLM."""
+        if is_llama_lane(lane):
+            return True
+        if self._current_lane == lane and not self._is_switching:
+            return True
+        return await self.switch_model(lane)
     
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -156,6 +171,10 @@ class VLLMLaneManager:
             return response.status_code == 200
         except Exception:
             return False
+
+    async def is_vllm_healthy(self) -> bool:
+        """Expose vLLM health check for callers."""
+        return await self._check_vllm_health()
     
     async def _get_current_vllm_model(self) -> Optional[str]:
         """Get the currently loaded model from vLLM."""
@@ -191,6 +210,18 @@ class VLLMLaneManager:
         
         # Load default lane
         await self.switch_model(default_lane)
+        self._ensure_queue_worker()
+
+    def _ensure_queue_worker(self) -> None:
+        if self._queue_worker_task is not None and not self._queue_worker_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("Cannot start vLLM queue worker without a running event loop.")
+            return
+        self._queue_event = asyncio.Event()
+        self._queue_worker_task = loop.create_task(self._queue_worker())
     
     async def switch_model(self, target_lane: ModelLane) -> bool:
         """
@@ -238,8 +269,13 @@ class VLLMLaneManager:
                 
                 # Simulate model switch time (remove in production)
                 # In reality, this would be an actual model reload
-                await self._reload_vllm_model(config)
+                did_reload = await self._reload_vllm_model(config)
                 
+                if not did_reload and settings.argos_env == "local":
+                    logger.info("Skipping model load wait in local dev mode")
+                    self._current_lane = target_lane
+                    return True
+
                 # Wait for health check
                 max_wait = 120  # 2 minutes max
                 wait_interval = 5
@@ -266,9 +302,6 @@ class VLLMLaneManager:
                     extra={"elapsed_seconds": elapsed}
                 )
                 
-                # Process queued requests for this lane
-                await self._process_queue(target_lane)
-                
                 return True
                 
             except Exception as e:
@@ -278,7 +311,7 @@ class VLLMLaneManager:
             finally:
                 self._is_switching = False
     
-    async def _reload_vllm_model(self, config: LaneConfig):
+    async def _reload_vllm_model(self, config: LaneConfig) -> bool:
         """
         Trigger vLLM to reload with a new model via Docker API.
         
@@ -299,7 +332,13 @@ class VLLMLaneManager:
         # Check if we're in Docker environment or local
         in_docker = os.path.exists("/.dockerenv") or os.environ.get("DOCKER_HOST")
         
-        if in_docker or os.environ.get("CORTEX_USE_DOCKER_SWITCHING", "false").lower() == "true":
+        use_docker_switching = os.environ.get("ARGOS_USE_DOCKER_SWITCHING", "").lower() == "true"
+        cortex_switching = os.environ.get("CORTEX_USE_DOCKER_SWITCHING", "").lower() == "true"
+        if cortex_switching and not os.environ.get("ARGOS_USE_DOCKER_SWITCHING"):
+            logger.warning(
+                "CORTEX_USE_DOCKER_SWITCHING is deprecated; use ARGOS_USE_DOCKER_SWITCHING instead."
+            )
+        if in_docker or use_docker_switching or cortex_switching:
             try:
                 import docker
                 client = docker.from_env()
@@ -311,6 +350,7 @@ class VLLMLaneManager:
                     
                     # Update environment with new model path
                     new_env = {
+                        "ARGOS_VLLM_MODEL": config.model_path,
                         "CORTEX_VLLM_MODEL": config.model_path,
                         "VLLM_MAX_MODEL_LEN": str(config.max_model_len),
                         "VLLM_GPU_MEMORY_UTILIZATION": str(config.gpu_memory_utilization),
@@ -343,34 +383,47 @@ class VLLMLaneManager:
                     )
                     
                     logger.info(f"vLLM container restarted with new model")
+                    return True
                     
                 except docker.errors.NotFound:
                     logger.warning(f"Container {container_name} not found, skipping Docker switch")
+                    return False
                     
             except ImportError:
                 logger.warning("Docker package not installed, skipping Docker-based switching")
+                return False
             except Exception as e:
                 logger.error(f"Docker switching failed: {e}")
+                return False
         else:
             # Local development mode - just log the intended action
             logger.info(
                 f"[DEV MODE] Would reload vLLM with model: {config.model_path}",
                 extra={
-                    "note": "Set CORTEX_USE_DOCKER_SWITCHING=true to enable Docker switching",
+                    "note": "Set ARGOS_USE_DOCKER_SWITCHING=true to enable Docker switching",
                 }
             )
-    
-    async def _process_queue(self, lane: ModelLane):
-        """Process queued requests for a specific lane."""
-        to_process = [r for r in self._request_queue if r.lane == lane]
-        self._request_queue = [r for r in self._request_queue if r.lane != lane]
-        
-        for request in to_process:
-            try:
-                result = await request.callback()
-                request.future.set_result(result)
-            except Exception as e:
-                request.future.set_exception(e)
+            return False
+
+    async def _queue_worker(self) -> None:
+        if not self._queue_event:
+            return
+        while True:
+            await self._queue_event.wait()
+            self._queue_event.clear()
+            while self._request_queue:
+                request = self._request_queue.pop(0)
+                try:
+                    if is_vllm_lane(request.lane):
+                        if not await self.ensure_lane(request.lane):
+                            raise RuntimeError(f"Failed to load lane {request.lane}")
+                    result = request.callback()
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                    request.future.set_result(result)
+                except Exception as exc:
+                    if not request.future.done():
+                        request.future.set_exception(exc)
     
     async def queue_request(
         self,
@@ -384,20 +437,12 @@ class VLLMLaneManager:
         If a switch is needed, queues the request and triggers switch.
         """
         # llama.cpp lanes are always available
-        if lane in self.LLAMA_CPP_LANES:
+        if is_llama_lane(lane) or (self._current_lane == lane and not self._is_switching):
             future = asyncio.Future()
             try:
-                result = await callback()
-                future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
-            return future
-        
-        # If current lane matches, execute immediately
-        if self._current_lane == lane and not self._is_switching:
-            future = asyncio.Future()
-            try:
-                result = await callback()
+                result = callback()
+                if asyncio.iscoroutine(result):
+                    result = await result
                 future.set_result(result)
             except Exception as e:
                 future.set_exception(e)
@@ -406,11 +451,11 @@ class VLLMLaneManager:
         # Queue the request
         request = QueuedRequest(lane=lane, callback=callback)
         self._request_queue.append(request)
-        
-        # Trigger switch if not already switching
-        if not self._is_switching:
-            asyncio.create_task(self.switch_model(lane))
-        
+
+        self._ensure_queue_worker()
+        if self._queue_event:
+            self._queue_event.set()
+
         return request.future
     
     def get_status(self) -> dict:
@@ -435,6 +480,12 @@ class VLLMLaneManager:
         """Cleanup resources."""
         if self._http_client:
             await self._http_client.aclose()
+        if self._queue_worker_task:
+            self._queue_worker_task.cancel()
+            try:
+                await self._queue_worker_task
+            except asyncio.CancelledError:
+                pass
 
 
 # Global singleton instance

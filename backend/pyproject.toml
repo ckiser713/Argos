@@ -50,20 +50,11 @@ redis = "^5.0.0"
 
 # PyTorch dependencies (ROCm-enabled, no CUDA/NVIDIA)
 # sentence-transformers requires PyTorch. Install ROCm wheels manually:
-#   poetry run pip install --no-index --find-links ~/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio
-#   poetry run pip install --no-index --find-links ~/rocm/py311-tor290/wheels/common triton tokenizers
+#   poetry run pip install --no-index --find-links /home/nexus/amd-ai/artifacts/vllm_docker_rocm/ torch
 #
-# Available ROCm wheels (see ~/rocm/py311-tor290/README.md):
-#   - torch-2.9.1a0+gitd38164a (ROCm 7.1.1, HIP-enabled, gfx1151)
-#   - torchvision-0.25.0a0+617079d (ROCm-enabled)
-#   - torchaudio-2.9.1+a224ab2 (ROCm-enabled)
-#   - triton-3.5.0+gitc3c476f3 (ROCm backend)
-#   - tokenizers-0.22.3.dev0 (universal)
-#
-# Optional ROCm wheels:
-#   - onnxruntime_rocm-1.24.0 (ROCm variant)
-#   - ctranslate2-4.6.1 (ROCm-enabled inference)
-#   - bitsandbytes-0.48.0.dev0 (ROCm quantization, gfx1151 support)
+# Available ROCm wheels (see /home/nexus/amd-ai/artifacts/vllm_docker_rocm/):
+#   - torch-2.9.1-cp311-cp311-linux_x86_64.whl (ROCm 7.1.1, HIP-enabled, gfx1151)
+#   - vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl (vLLM with ROCm support)
 #
 # NOTE: Do NOT install PyTorch from PyPI or CUDA indexes - use ROCm wheels only
 # All wheels are GPU-enabled with zero CPU-only builds, optimized for AMD Ryzen AI Max+ 395

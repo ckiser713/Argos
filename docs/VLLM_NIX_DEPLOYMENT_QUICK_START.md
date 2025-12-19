@@ -48,7 +48,7 @@ MODEL_PATH=/path/to/model GPU_MEM_UTIL=0.60 ./deploy-vllm.sh shell
 
 ```bash
 # Requires root and MODEL_PATH
-sudo MODEL_PATH=/models/orchestrator/bf16 ./deploy-vllm.sh systemd
+sudo MODEL_PATH=/models/vllm/orchestrator/bf16 ./deploy-vllm.sh systemd
 ```
 
 **Then manage with:**
@@ -77,7 +77,7 @@ docker run -it --rm \
   --device /dev/kfd \
   --device /dev/dri \
   -p 8000:8000 \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   -v /path/to/models:/models:ro \
   vllm-rocm-nix:latest
 ```
@@ -96,7 +96,7 @@ Edit `vllm-config.sh` or set before running:
 
 ```bash
 # Required
-export MODEL_PATH="/models/orchestrator/bf16"
+export MODEL_PATH="/models/vllm/orchestrator/bf16"
 
 # Optional - customize as needed
 export GPU_MEM_UTIL="0.48"        # GPU allocation (0.0-1.0)
@@ -323,13 +323,13 @@ Run multiple vLLM instances for different models:
 
 ```bash
 # Terminal 1: Orchestrator model
-MODEL_PATH=/models/orchestrator/bf16 VLLM_PORT=8000 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 VLLM_PORT=8000 vllm-server
 
 # Terminal 2: Coder model  
-MODEL_PATH=/models/coder/bf16 VLLM_PORT=8001 vllm-server
+MODEL_PATH=/models/vllm/coder/bf16 VLLM_PORT=8001 vllm-server
 
 # Terminal 3: FastRAG model
-MODEL_PATH=/models/fast-rag/bf16 VLLM_PORT=8002 vllm-server
+MODEL_PATH=/models/vllm/fast_rag/bf16 VLLM_PORT=8002 vllm-server
 ```
 
 Configure backend to use different ports per lane.

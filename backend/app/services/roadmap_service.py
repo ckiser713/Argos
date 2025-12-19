@@ -20,6 +20,7 @@ from app.domain.models import (
     RoadmapNode,
     RoadmapNodeType,
 )
+from app.domain.model_lanes import ModelLane
 from app.services.llm_service import generate_text
 from app.services.idea_service import idea_service
 
@@ -70,6 +71,7 @@ def _roadmap_llm_runnable(project_id: str) -> RunnableLambda:
         response = generate_text(
             prompt=prompt_text,
             project_id=project_id,
+            lane=ModelLane.ORCHESTRATOR,
             temperature=0.3,
             max_tokens=2000,
             json_mode=True,
@@ -333,6 +335,7 @@ Example format:
             llm_response = generate_text(
                 prompt=prompt,
                 project_id=project_id,
+                lane=ModelLane.ORCHESTRATOR,
                 temperature=0.4,
                 max_tokens=1500,
                 json_mode=True,

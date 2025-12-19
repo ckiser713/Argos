@@ -14,6 +14,30 @@ ArgosMode = Literal["PARALLEL", "INGEST"]
 ArgosEnv = Literal["local", "strix", "production"]
 
 
+def _apply_cortex_env_aliases() -> None:
+    """
+    Map legacy CORTEX_* environment variables to ARGOS_* when ARGOS_* is unset.
+    """
+    if "CORTEX_DB_URL" in os.environ and "ARGOS_DATABASE_URL" not in os.environ:
+        os.environ["ARGOS_DATABASE_URL"] = os.environ.get("CORTEX_DB_URL", "")
+
+    for key, value in list(os.environ.items()):
+        if not key.startswith("CORTEX_"):
+            continue
+        if key == "CORTEX_DB_URL":
+            continue
+        argos_key = f"ARGOS_{key[len('CORTEX_'):]}"
+        if argos_key not in os.environ:
+            os.environ[argos_key] = value
+
+    for key, value in list(os.environ.items()):
+        if not key.startswith("ARGOS_"):
+            continue
+        unprefixed_key = key[len("ARGOS_"):]
+        if unprefixed_key not in os.environ:
+            os.environ[unprefixed_key] = value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
     
@@ -78,11 +102,11 @@ class Settings(BaseSettings):
     llm_model_name: str = Field(default="llama3", env="ARGOS_LLM_MODEL")
     llm_default_lane: str = Field(default="orchestrator", env="ARGOS_LLM_DEFAULT_LANE")
     llama_cpp_binary_path: str = Field(
-        default="~/rocm/py311-tor290/bin/llama-cpp-tuned",
+        default="/home/nexus/amd-ai/artifacts/bin/llama-cpp-tuned",
         env="ARGOS_LLAMA_CPP_BINARY_PATH",
     )
     llama_quantize_binary_path: str = Field(
-        default="~/rocm/py311-tor290/bin/llama-quantize-tuned",
+        default="/home/nexus/amd-ai/artifacts/bin/llama-quantize-tuned",
         env="ARGOS_LLAMA_QUANTIZE_BINARY_PATH",
     )
     llama_cpp_model_path: str = Field(
@@ -111,19 +135,19 @@ class Settings(BaseSettings):
     lane_super_reader_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_SUPER_READER_BACKEND")
 
     lane_orchestrator_url: str = Field(default="http://localhost:8000/v1", env="ARGOS_LANE_ORCHESTRATOR_URL")
-    lane_orchestrator_model: str = Field(default="Qwen3-30B-Thinking", env="ARGOS_LANE_ORCHESTRATOR_MODEL")
+    lane_orchestrator_model: str = Field(default="DeepSeek-R1-Distill-Qwen-32B", env="ARGOS_LANE_ORCHESTRATOR_MODEL")
     lane_orchestrator_model_path: str = Field(default="", env="ARGOS_LANE_ORCHESTRATOR_MODEL_PATH")
-    lane_orchestrator_backend: str = Field(default="", env="ARGOS_LANE_ORCHESTRATOR_BACKEND")
+    lane_orchestrator_backend: str = Field(default="vllm", env="ARGOS_LANE_ORCHESTRATOR_BACKEND")
 
     lane_coder_url: str = Field(default="http://localhost:8000/v1", env="ARGOS_LANE_CODER_URL")
-    lane_coder_model: str = Field(default="Qwen3-Coder-30B-1M", env="ARGOS_LANE_CODER_MODEL")
+    lane_coder_model: str = Field(default="Qwen2.5-Coder-32B-Instruct", env="ARGOS_LANE_CODER_MODEL")
     lane_coder_model_path: str = Field(default="", env="ARGOS_LANE_CODER_MODEL_PATH")
-    lane_coder_backend: str = Field(default="", env="ARGOS_LANE_CODER_BACKEND")
+    lane_coder_backend: str = Field(default="vllm", env="ARGOS_LANE_CODER_BACKEND")
 
     lane_fast_rag_url: str = Field(default="http://localhost:8000/v1", env="ARGOS_LANE_FAST_RAG_URL")
-    lane_fast_rag_model: str = Field(default="MegaBeam-Mistral-7B-512k", env="ARGOS_LANE_FAST_RAG_MODEL")
+    lane_fast_rag_model: str = Field(default="Llama-3.2-11B-Vision-Instruct", env="ARGOS_LANE_FAST_RAG_MODEL")
     lane_fast_rag_model_path: str = Field(default="", env="ARGOS_LANE_FAST_RAG_MODEL_PATH")
-    lane_fast_rag_backend: str = Field(default="", env="ARGOS_LANE_FAST_RAG_BACKEND")
+    lane_fast_rag_backend: str = Field(default="vllm", env="ARGOS_LANE_FAST_RAG_BACKEND")
 
     # --- Storage Settings ---
     storage_backend: Literal["s3", "local"] = Field(default="local", env="ARGOS_STORAGE_BACKEND")
@@ -154,7 +178,7 @@ class Settings(BaseSettings):
     task_retry_backoff_max_seconds: int = Field(default=300, env="ARGOS_TASK_RETRY_BACKOFF_MAX_SECONDS")
 
     lane_governance_url: str = Field(default="http://localhost:8081/v1", env="ARGOS_LANE_GOVERNANCE_URL")
-    lane_governance_model: str = Field(default="Granite-4.x-Long-Context", env="ARGOS_LANE_GOVERNANCE_MODEL")
+    lane_governance_model: str = Field(default="granite-3.0-8b-instruct", env="ARGOS_LANE_GOVERNANCE_MODEL")
     lane_governance_model_path: str = Field(default="", env="ARGOS_LANE_GOVERNANCE_MODEL_PATH")
     lane_governance_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_GOVERNANCE_BACKEND")
     # lane_orchestrator_url already defined above
@@ -265,4 +289,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    _apply_cortex_env_aliases()
     return Settings()

@@ -137,6 +137,26 @@ rec {
       # Model cache
       export HF_HOME=$HOME/.cache/huggingface
       
+      # Install vLLM and PyTorch wheels from artifacts directory
+      if [ -f "${vllmWheelPath}" ] && [ -f "${torchWheelPath}" ]; then
+        # Check if wheels are already installed
+        if ! ${pythonWithVllm}/bin/python -c "import vllm" 2>/dev/null; then
+          echo "Installing vLLM and PyTorch wheels from artifacts..."
+          ${pythonWithVllm}/bin/pip install --no-deps "${torchWheelPath}" || true
+          ${pythonWithVllm}/bin/pip install --no-deps "${vllmWheelPath}" || true
+        fi
+      elif [ -f "${vllmWheelAlt}" ] && [ -f "${torchWheelPath}" ]; then
+        if ! ${pythonWithVllm}/bin/python -c "import vllm" 2>/dev/null; then
+          echo "Installing vLLM and PyTorch wheels from artifacts (alt location)..."
+          ${pythonWithVllm}/bin/pip install --no-deps "${torchWheelPath}" || true
+          ${pythonWithVllm}/bin/pip install --no-deps "${vllmWheelAlt}" || true
+        fi
+      else
+        echo "Warning: vLLM or PyTorch wheels not found in artifacts directory"
+        echo "  Expected: ${vllmWheelPath}"
+        echo "  Expected: ${torchWheelPath}"
+      fi
+      
       echo "╔════════════════════════════════════════════════════════════╗"
       echo "║         vLLM Runtime Environment (ROCm 7.1.1)              ║"
       echo "╠════════════════════════════════════════════════════════════╣"
@@ -188,6 +208,24 @@ rec {
     export VLLM_ROCM_USE_AITER=1
     export VLLM_ROCM_USE_SKINNY_GEMM=1
     export PYTHONUNBUFFERED=1
+    
+    # Install vLLM and PyTorch wheels if not already installed
+    if ! ${pythonWithVllm}/bin/python -c "import vllm" 2>/dev/null; then
+      if [ -f "${torchWheelPath}" ] && [ -f "${vllmWheelPath}" ]; then
+        echo "Installing PyTorch and vLLM wheels..."
+        ${pythonWithVllm}/bin/pip install --no-deps "${torchWheelPath}" || true
+        ${pythonWithVllm}/bin/pip install --no-deps "${vllmWheelPath}" || true
+      elif [ -f "${torchWheelPath}" ] && [ -f "${vllmWheelAlt}" ]; then
+        echo "Installing PyTorch and vLLM wheels (alt location)..."
+        ${pythonWithVllm}/bin/pip install --no-deps "${torchWheelPath}" || true
+        ${pythonWithVllm}/bin/pip install --no-deps "${vllmWheelAlt}" || true
+      else
+        echo "ERROR: vLLM or PyTorch wheels not found"
+        echo "  Expected: ${vllmWheelPath} or ${vllmWheelAlt}"
+        echo "  Expected: ${torchWheelPath}"
+        exit 1
+      fi
+    fi
     
     # Print configuration
     echo "╔════════════════════════════════════════════════════════════╗"

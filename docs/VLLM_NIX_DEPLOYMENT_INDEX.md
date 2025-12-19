@@ -23,7 +23,7 @@
 1. Read: [DEPLOYMENT_READY.md](DEPLOYMENT_READY.md) - Overview (10 min)
 2. Read: [VLLM_NIX_DEPLOYMENT_QUICK_START.md](VLLM_NIX_DEPLOYMENT_QUICK_START.md) - All modes (20 min)
 3. Read: [vllm-config.sh](vllm-config.sh) - Configuration options (10 min)
-4. Run: `MODEL_PATH=/models/orchestrator/bf16 ./deploy-vllm.sh systemd`
+4. Run: `MODEL_PATH=/models/vllm/orchestrator/bf16 ./deploy-vllm.sh systemd`
 5. Test: `curl http://localhost:8000/health`
 6. Integrate: Update `backend/config.py` with vLLM URLs
 
@@ -76,7 +76,7 @@ vllm-server
 ./deploy-vllm.sh shell
 
 # Mode 2: Systemd (Production)
-MODEL_PATH=/models/orchestrator/bf16 ./deploy-vllm.sh systemd
+MODEL_PATH=/models/vllm/orchestrator/bf16 ./deploy-vllm.sh systemd
 
 # Mode 3: Container (Docker)
 ./deploy-vllm.sh container
@@ -130,7 +130,7 @@ vllm-server
 
 ### Mode 2: Systemd (Production)
 ```bash
-MODEL_PATH=/models/orchestrator/bf16 ./deploy-vllm.sh systemd
+MODEL_PATH=/models/vllm/orchestrator/bf16 ./deploy-vllm.sh systemd
 systemctl status vllm
 journalctl -u vllm -f
 ```
@@ -144,7 +144,7 @@ journalctl -u vllm -f
 ./deploy-vllm.sh container
 docker run -p 8000:8000 \
   --device /dev/kfd --device /dev/dri \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   vllm-rocm-nix:latest
 ```
 - **GPU Access:** Via Docker
@@ -158,7 +158,7 @@ docker run -p 8000:8000 \
 
 ### Required
 ```bash
-export MODEL_PATH="/models/orchestrator/bf16"
+export MODEL_PATH="/models/vllm/orchestrator/bf16"
 ```
 
 ### Optional (with defaults)
@@ -304,15 +304,15 @@ lane_fast_rag_url = "http://localhost:8002/v1"
 ### 2. Start vLLM
 ```bash
 # Single instance
-MODEL_PATH=/models/orchestrator/bf16 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 vllm-server
 
 # Or multiple instances for different models
 # Terminal 1
-MODEL_PATH=/models/orchestrator/bf16 VLLM_PORT=8000 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 VLLM_PORT=8000 vllm-server
 # Terminal 2
-MODEL_PATH=/models/coder/bf16 VLLM_PORT=8001 vllm-server
+MODEL_PATH=/models/vllm/coder/bf16 VLLM_PORT=8001 vllm-server
 # Terminal 3
-MODEL_PATH=/models/fast-rag/bf16 VLLM_PORT=8002 vllm-server
+MODEL_PATH=/models/vllm/fast_rag/bf16 VLLM_PORT=8002 vllm-server
 ```
 
 ### 3. Start Backend

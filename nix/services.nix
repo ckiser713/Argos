@@ -55,13 +55,38 @@ in
     };
   };
   
+  # PostgreSQL service with pgvector
+  services.postgresql = {
+    enable = true;
+    package = pkgs.postgresql_16;
+    enableTCPIP = true;
+    authentication = pkgs.lib.mkOverride 10 ''
+      local all all trust
+      host all all 127.0.0.1/32 trust
+      host all all ::1/128 trust
+    '';
+    initialScript = pkgs.writeText "postgresql-init.sql" ''
+      CREATE DATABASE argos;
+      CREATE USER argos WITH PASSWORD 'argos';
+      GRANT ALL PRIVILEGES ON DATABASE argos TO argos;
+      \c argos;
+      CREATE EXTENSION IF NOT EXISTS pgvector;
+      CREATE EXTENSION IF NOT EXISTS uuid_ossp;
+    '';
+    settings = {
+      shared_preload_libraries = "pgvector";
+      listen_addresses = "*";
+      port = 5432;
+    };
+  };
+
   # Docker compose service for Qdrant
   systemd.services.cortex-docker = {
     description = "Cortex Docker Services (Qdrant, etc.)";
     wantedBy = [ "multi-user.target" ];
     requires = [ "docker.service" ];
     after = [ "network.target" "docker.service" ];
-    
+
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;

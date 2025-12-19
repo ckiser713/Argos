@@ -205,7 +205,7 @@ in
     # Configuration from environment or defaults
     HOST="''${VLLM_HOST:-0.0.0.0}"
     PORT="''${VLLM_PORT:-8000}"
-    MODEL_PATH="''${MODEL_PATH:-/models/orchestrator/bf16}"
+    MODEL_PATH="''${MODEL_PATH:-/models/vllm/orchestrator/bf16}"
     GPU_MEM_UTIL="''${GPU_MEM_UTIL:-0.48}"
     MAX_MODEL_LEN="''${MAX_MODEL_LEN:-32768}"
     
@@ -342,7 +342,7 @@ nix develop -f flake.nix '.#vllm'
 # Start vLLM server
 vllm-server
 # OR with custom model path
-MODEL_PATH=/models/orchestrator/bf16 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 vllm-server
 ```
 
 **Advantages:**
@@ -433,7 +433,7 @@ imports = [
 ];
 
 services.vllm.enable = true;
-services.vllm.modelPath = "/home/nexus/Argos_Chatgpt/models/orchestrator/bf16";
+services.vllm.modelPath = "/home/nexus/Argos_Chatgpt/models/vllm/orchestrator/bf16";
 ```
 
 **Usage**:
@@ -474,7 +474,7 @@ podman run -it \
   --group-add render \
   -p 8000:8000 \
   -v /home/nexus/Argos_Chatgpt/models:/models:ro \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   vllm-rocm-nix:latest
 ```
 
@@ -510,7 +510,7 @@ services:
       - "11434:8000"
     
     environment:
-      - MODEL_PATH=/models/orchestrator/bf16
+      - MODEL_PATH=/models/vllm/orchestrator/bf16
       - VLLM_GPU_MEMORY_UTILIZATION=0.48
       - VLLM_MAX_MODEL_LEN=32768
       - HIP_VISIBLE_DEVICES=0
@@ -544,7 +544,7 @@ All vLLM configuration via env vars (no need to rebuild image):
 
 ```bash
 # Model Selection
-MODEL_PATH=/models/orchestrator/bf16          # Full path to model
+MODEL_PATH=/models/vllm/orchestrator/bf16          # Full path to model
 MAX_MODEL_LEN=32768                           # Context window (tokens)
 
 # GPU Configuration
@@ -575,9 +575,9 @@ lane_coder_url = "http://localhost:8000/v1"
 lane_fast_rag_url = "http://localhost:8000/v1"
 
 # Models loaded by vLLMLaneManager
-lane_orchestrator_model = "Qwen/Qwen3-30B-Instruct"
-lane_coder_model = "Qwen/Qwen3-Coder-30B-1M"
-lane_fast_rag_model = "MegaBeam/Mistral-7B-512k"
+lane_orchestrator_model = "DeepSeek-R1-Distill-Qwen-32B"
+lane_coder_model = "Qwen2.5-Coder-32B-Instruct"
+lane_fast_rag_model = "Llama-3.2-11B-Vision-Instruct"
 ```
 
 ---
@@ -641,7 +641,7 @@ docker-compose up inference-engine  # Port 11434→8000
 
 # Test Nix version (separate process)
 nix develop -f flake.nix '.#vllm'
-MODEL_PATH=/models/orchestrator/bf16 vllm-server &  # Port 8000
+MODEL_PATH=/models/vllm/orchestrator/bf16 vllm-server &  # Port 8000
 
 # Both running, test routes to Nix version on 8000
 ```
@@ -730,14 +730,14 @@ HIP_VISIBLE_DEVICES=0 rocm-smi
 
 ```bash
 # Verify model path exists
-ls -la /models/orchestrator/bf16/
+ls -la /models/vllm/orchestrator/bf16/
 
 # Check HF token (if gated model)
 export HF_TOKEN=your_token
-MODEL_PATH=/models/orchestrator/bf16 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 vllm-server
 
 # Pre-download model
-huggingface-cli download Qwen/Qwen3-30B-Instruct --local-dir /models/orchestrator/bf16
+huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Qwen-32B --local-dir /models/vllm/orchestrator/bf16
 ```
 
 ### Container Networking Issues

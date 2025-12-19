@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.domain.model_lanes import ModelLane
 from app.services.llm_service import generate_text
 
 logger = logging.getLogger(__name__)
@@ -231,6 +232,7 @@ Respond with only: PROJECT_IDEA or CHIT_CHAT"""
             response = generate_text(
                 prompt,
                 project_id="system",  # Use system project for classification
+                lane=ModelLane.ORCHESTRATOR,
                 temperature=0.1,
                 max_tokens=10,
             )
@@ -283,4 +285,3 @@ Respond with only: PROJECT_IDEA or CHIT_CHAT"""
 
 
 chat_parser_service = ChatParserService()
-

@@ -6,7 +6,6 @@ from .gap_analysis_service import (
     generate_gap_report,
     get_gap_analysis_service,
 )
-from .ingest_service import ingest_service
 from .knowledge_service import knowledge_service
 from .project_intel_service import (
     cluster_ideas,
@@ -15,6 +14,7 @@ from .project_intel_service import (
 )
 from .system_metrics_service import get_system_status, set_active_agent_runs_stub, set_context_usage_stub
 from .workflow_service import workflow_service
+from typing import TYPE_CHECKING
 
 __all__ = [
     "get_system_status",
@@ -22,6 +22,7 @@ __all__ = [
     "set_active_agent_runs_stub",
     "context_service",
     "workflow_service",
+    "get_ingest_service",
     "ingest_service",
     "agent_service",
     "extract_idea_candidates_from_segments",
@@ -33,3 +34,23 @@ __all__ = [
     "generate_gap_report",
     "knowledge_service",
 ]
+
+if TYPE_CHECKING:
+    from .ingest_service import IngestService as IngestService
+
+
+def get_ingest_service():
+    from .ingest_service import ingest_service as service
+
+    return service
+
+
+class _LazyIngestService:
+    def __getattr__(self, item):
+        return getattr(get_ingest_service(), item)
+
+    def __call__(self, *args, **kwargs):
+        return get_ingest_service()(*args, **kwargs)
+
+
+ingest_service = _LazyIngestService()

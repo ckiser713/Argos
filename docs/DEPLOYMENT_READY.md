@@ -58,7 +58,7 @@ vllm-server
 
 ### 2️⃣ Systemd (Production Server)
 ```bash
-MODEL_PATH=/models/orchestrator/bf16 ./deploy-vllm.sh systemd
+MODEL_PATH=/models/vllm/orchestrator/bf16 ./deploy-vllm.sh systemd
 # Manage with:
 systemctl status vllm
 journalctl -u vllm -f
@@ -73,7 +73,7 @@ journalctl -u vllm -f
 # Run with Docker:
 docker run -p 8000:8000 \
   --device /dev/kfd --device /dev/dri \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   vllm-rocm-nix:latest
 ```
 **Best for:** Portable deployments, Docker Compose
@@ -84,7 +84,7 @@ docker run -p 8000:8000 \
 
 ### Required
 ```bash
-export MODEL_PATH="/models/orchestrator/bf16"
+export MODEL_PATH="/models/vllm/orchestrator/bf16"
 ```
 
 ### Optional Tuning
@@ -170,13 +170,13 @@ lane_fast_rag_url = "http://localhost:8002/v1"  # Different port/model
 ### Multi-Lane Setup
 ```bash
 # Terminal 1 - Orchestrator
-MODEL_PATH=/models/orchestrator/bf16 VLLM_PORT=8000 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 VLLM_PORT=8000 vllm-server
 
 # Terminal 2 - Coder
-MODEL_PATH=/models/coder/bf16 VLLM_PORT=8001 vllm-server
+MODEL_PATH=/models/vllm/coder/bf16 VLLM_PORT=8001 vllm-server
 
 # Terminal 3 - FastRAG
-MODEL_PATH=/models/fast-rag/bf16 VLLM_PORT=8002 vllm-server
+MODEL_PATH=/models/vllm/fast_rag/bf16 VLLM_PORT=8002 vllm-server
 ```
 
 ## Verification Checklist

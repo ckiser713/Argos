@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from app.domain.model_lanes import ModelLane
 from app.services.llm_service import generate_text
 from app.services.qdrant_code_search import QdrantCodeSearchBackend
 
@@ -250,6 +251,7 @@ Return ONLY valid JSON, no markdown formatting."""
             response = generate_text(
                 prompt=prompt,
                 project_id=project_id,
+                lane=ModelLane.CODER,
                 temperature=0.2,
                 max_tokens=2000,
                 json_mode=True,
@@ -280,4 +282,3 @@ Return ONLY valid JSON, no markdown formatting."""
 
 
 repo_service = RepoService()
-

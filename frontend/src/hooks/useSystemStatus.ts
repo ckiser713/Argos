@@ -1,7 +1,7 @@
 // src/hooks/useSystemStatus.ts
 import { useQuery } from "@tanstack/react-query";
-import { getSystemStatus, getModelLanesStatus } from "../lib/argosApi";
-import type { SystemStatus, ModelLaneStatus } from "../lib/argosApi";
+import { getSystemStatus, getModelLanesStatus } from "../lib/cortexApi";
+import type { SystemStatus, ModelLaneStatus } from "../lib/cortexApi";
 
 export const systemStatusQueryKey = ["systemStatus"] as const;
 export const modelLanesQueryKey = ["modelLanes"] as const;

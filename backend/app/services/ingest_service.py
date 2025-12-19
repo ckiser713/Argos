@@ -22,7 +22,6 @@ from app.services.rag_service import rag_service
 from app.services.streaming_service import emit_ingest_event
 from app.services.repo_service import repo_service
 from app.services.storage_service import storage_service
-from app.tasks.ingest_tasks import process_ingest_job_task
 
 from langchain_classic.chains import create_extraction_chain_pydantic
 from app.services.local_llm_client import LocalChatLLM
@@ -220,6 +219,8 @@ class IngestService:
     def enqueue_job(self, job_id: str) -> str:
         if self.settings.tasks_eager:
             return self._run_inline_with_retries(job_id)
+        from app.tasks.ingest_tasks import process_ingest_job_task
+
         result = process_ingest_job_task.apply_async(args=[job_id], queue="ingest")
         task_id = result.id
         with get_db_session() as session:

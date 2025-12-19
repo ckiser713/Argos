@@ -12,64 +12,51 @@ from sentence_transformers import SentenceTransformer
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from backend.app.services.model_registry import get_model_registry
+
+# Initialize logging first
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# --- Model Configuration ---
+# Try to load HF_TOKEN from .env files (prioritize .env over environment)
+# Get project root (parent of backend directory)
+project_root = Path(__file__).parent.parent.parent
+env_files = [
+    project_root / ".env",  # Project root .env
+    project_root / "backend" / ".env",  # Backend .env
+    Path("/etc/llama/llama.env"),  # System llama env
+    Path("/var/lib/llama/.env"),
+    Path("/var/lib/llama/llama.env"),
+    Path.home() / ".env",
+]
 
-# Defines all models required by the Cortex application
-MODEL_CONFIG = {
-    "vllm": {
-        "orchestrator": {
-            "description": "ORCHESTRATOR Lane - DeepSeek-R1 Reasoning Model",
-            "formats": {
-                "bf16": {"repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"},
-                "fp8": {"repo": "neuralmagic/DeepSeek-R1-Distill-Qwen-32B-fp8"},
-            },
-        },
-        "coder": {
-            "description": "CODER Lane - Qwen Coder Model",
-            "formats": {
-                "bf16": {"repo": "Qwen/Qwen2.5-Coder-32B-Instruct"},
-                "fp8": {"repo": "neuralmagic/Qwen2.5-Coder-32B-Instruct-fp8"},
-            },
-        },
-        "fast_rag": {
-            "description": "FAST_RAG Lane - Llama 3.2 Vision Model",
-            "formats": {
-                "bf16": {"repo": "meta-llama/Llama-3.2-11B-Vision-Instruct"}
-            },
-        },
-    },
-    "gguf": {
-        "super_reader": {
-            "description": "SUPER_READER Lane - Nemotron UltraLong 4M",
-            "repo": "Mungert/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-GGUF",
-            "filename": "Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf",
-        },
-        "governance": {
-            "description": "GOVERNANCE Lane - Granite 3.0 Instruct",
-            "repo": "bartowski/granite-3.0-8b-instruct-GGUF",
-            "filename": "granite-3.0-8b-instruct-Q4_K_M.gguf",
-        },
-    },
-    "embedding": {
-        "general_purpose": {
-            "description": "General purpose embedding model (384d)",
-            "repo": "all-MiniLM-L6-v2",
-        },
-        "code_search": {
-            "description": "Code-specific embedding model (768d)",
-            "repo": "jinaai/jina-embeddings-v2-base-code",
-        },
-        "code_search_fallback": {
-            "description": "Code-specific embedding model fallback (768d)",
-            "repo": "microsoft/codebert-base",
-        },
-    },
-}
+env_token_loaded = False
+for env_file in env_files:
+    if env_file.exists():
+        try:
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("HF_TOKEN=") and not line.startswith("#"):
+                        token = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if token:
+                            os.environ["HF_TOKEN"] = token
+                            logger.info(f"Loaded HF_TOKEN from {env_file}")
+                            env_token_loaded = True
+                            break
+            if env_token_loaded:
+                break
+        except (PermissionError, IOError) as e:
+            logger.debug(f"Could not read {env_file}: {e}")
+            continue
+
+# If no token found in .env files and environment doesn't have one, warn user
+if not os.getenv("HF_TOKEN"):
+    logger.warning("No HF_TOKEN found in environment or .env files!")
+    logger.warning("Please set HF_TOKEN in your .env file or environment variable.")
+    logger.warning("Get a token from: https://huggingface.co/settings/tokens")
 
 
 def get_models_dir():
@@ -78,46 +65,100 @@ def get_models_dir():
 
 
 def hf_download(repo_id, target_dir, revision=None, filename=None):
-    """Wrapper for Hugging Face download functions."""
-    common_args = {
+    """Wrapper for Hugging Face download functions with resumable downloads."""
+    base_args = {
         "repo_id": repo_id,
         "local_dir": str(target_dir),
         "local_dir_use_symlinks": False,
         "token": os.getenv("HF_TOKEN"),
         "revision": revision,
+        "resume_download": True,  # Enable resumable downloads
     }
     if filename:
-        hf_hub_download(filename=filename, **common_args)
+        # hf_hub_download doesn't support max_workers
+        hf_hub_download(filename=filename, **base_args)
     else:
-        snapshot_download(**common_args)
+        # snapshot_download supports max_workers for parallel downloads
+        snapshot_download(**base_args, max_workers=4)
 
 
 def download_vllm_models(base_dir: Path, skip: bool):
-    """Download models for the vLLM engine."""
+    """Download models for the vLLM engine using HuggingFace CLI (hf) for better reliability."""
     if skip:
         logger.info("Skipping vLLM models.")
         return
     logger.info("--- Downloading vLLM Models ---")
     vllm_dir = base_dir / "vllm"
 
-    for lane, config in MODEL_CONFIG["vllm"].items():
-        logger.info(f"Processing lane: {lane} ({config['description']})")
-        for fmt, fmt_config in config["formats"].items():
-            repo = fmt_config["repo"]
-            revision = fmt_config.get("revision")
+    registry = get_model_registry()
+    for lane, config in registry.vllm.items():
+        logger.info(f"Processing lane: {lane} ({config.model_name})")
+        for fmt, repo in config.repos.items():
+            revision = None
             target_dir = vllm_dir / lane / fmt
             logger.info(f"  Downloading format: {fmt.upper()} from {repo}")
 
-            if target_dir.exists() and any(target_dir.iterdir()):
-                logger.info(f"  ✓ Already exists at {target_dir}, skipping.")
-                continue
-            try:
-                hf_download(repo, target_dir, revision=revision)
-                logger.info(f"  ✓ Successfully downloaded to {target_dir}")
-            except Exception as e:
-                logger.warning(
-                    f"  ✗ Failed to download {repo} (format: {fmt}): {e}"
+            # Check if model is actually complete (has safetensors or bin files)
+            if target_dir.exists():
+                has_model_files = any(
+                    f.suffix in [".safetensors", ".bin"] for f in target_dir.rglob("*")
                 )
+                if has_model_files:
+                    logger.info(f"  ✓ Already exists at {target_dir}, skipping.")
+                    continue
+                else:
+                    logger.info(f"  ⚠ Incomplete download detected at {target_dir}, re-downloading...")
+                    # Remove incomplete directory
+                    import shutil
+                    shutil.rmtree(target_dir, ignore_errors=True)
+            
+            # Use huggingface-cli for more reliable large file downloads
+            try:
+                import subprocess
+                target_dir.mkdir(parents=True, exist_ok=True)
+                cmd = [
+                    "huggingface-cli",
+                    "download",
+                    repo,
+                    "--local-dir", str(target_dir),
+                    "--local-dir-use-symlinks", "False",
+                ]
+                if revision:
+                    cmd.extend(["--revision", revision])
+
+                # Set up environment with HF_TOKEN
+                env = os.environ.copy()
+                if os.getenv("HF_TOKEN"):
+                    env["HF_TOKEN"] = os.getenv("HF_TOKEN")
+
+                logger.info(f"  Running: {' '.join(cmd[:3])}...")
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,  # 1 hour timeout per model
+                    env=env,  # Pass environment explicitly
+                )
+                if result.returncode == 0:
+                    logger.info(f"  ✓ Successfully downloaded to {target_dir}")
+                else:
+                    raise Exception(f"hf download failed: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.error(f"  ✗ Download timeout for {repo}")
+            except FileNotFoundError:
+                # Fallback to Python API if hf not available
+                logger.info("  hf not found, using Python API...")
+                try:
+                    hf_download(repo, target_dir, revision=revision)
+                    logger.info(f"  ✓ Successfully downloaded to {target_dir}")
+                except Exception as e:
+                    logger.warning(f"  ✗ Failed to download {repo} (format: {fmt}): {e}")
+                    if fmt == "fp8":
+                        logger.info("    FP8 variant may not be available. This can be expected.")
+                    else:
+                        logger.error(f"    Critical download failure for base model: {repo}")
+            except Exception as e:
+                logger.warning(f"  ✗ Failed to download {repo} (format: {fmt}): {e}")
                 if fmt == "fp8":
                     logger.info("    FP8 variant may not be available. This can be expected.")
                 else:
@@ -132,10 +173,11 @@ def download_gguf_models(base_dir: Path, skip: bool):
     gguf_dir = base_dir / "gguf"
     gguf_dir.mkdir(parents=True, exist_ok=True)
 
-    for lane, config in MODEL_CONFIG["gguf"].items():
-        logger.info(f"Processing lane: {lane} ({config['description']})")
-        repo = config["repo"]
-        filename = config["filename"]
+    registry = get_model_registry()
+    for lane, config in registry.gguf.items():
+        logger.info(f"Processing lane: {lane} ({config.model_name})")
+        repo = config.repo
+        filename = config.filename
         target_file = gguf_dir / filename
 
         if target_file.exists():
@@ -157,15 +199,17 @@ def download_embedding_models(base_dir: Path, skip: bool):
     # SentenceTransformers handles its own caching, so we don't need a specific dir
     
     is_minimal = os.getenv("MINIMAL_EMBEDDINGS", "false").lower() == "true"
+    registry = get_model_registry()
     models_to_download = (
-        [MODEL_CONFIG["embedding"]["general_purpose"]]
+        {"general_purpose": registry.embedding.get("general_purpose", "")}
         if is_minimal
-        else list(MODEL_CONFIG["embedding"].values())
+        else registry.embedding
     )
 
-    for model_config in models_to_download:
-        repo = model_config["repo"]
-        logger.info(f"Processing model: {repo} ({model_config['description']})")
+    for label, repo in models_to_download.items():
+        if not repo:
+            continue
+        logger.info(f"Processing model: {repo} ({label})")
         try:
             # SentenceTransformer downloads and caches the model upon initialization
             SentenceTransformer(repo)

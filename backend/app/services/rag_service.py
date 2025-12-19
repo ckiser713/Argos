@@ -23,7 +23,8 @@ from langchain_community.vectorstores.qdrant import Qdrant
 from app.services.local_llm_client import LocalChatLLM
 
 from app.config import get_settings
-from app.services.llm_service import generate_text, get_routed_llm_config
+from app.domain.model_lanes import ModelLane
+from app.services.llm_service import generate_text, resolve_lane_config
 from app.services.qdrant_service import QdrantService, qdrant_service
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,7 @@ Example: ["query 1", "query 2", "query 3"]
             response = generate_text(
                 prompt=prompt,
                 project_id=project_id,
+                lane=ModelLane.FAST_RAG,
                 temperature=0.3,
             )
             
@@ -320,6 +322,7 @@ Return only the refined query, no explanation.
                     refined_query = generate_text(
                         prompt=refinement_prompt,
                         project_id=project_id,
+                        lane=ModelLane.FAST_RAG,
                         temperature=0.2,
                     ).response.strip()
                     
@@ -423,7 +426,7 @@ Return only the refined query, no explanation.
                     ),
                 ]
                 document_content_description = "Content of a document"
-                base_url, model_name, backend, _ = get_routed_llm_config(query)
+                base_url, model_name, backend, _ = resolve_lane_config(ModelLane.FAST_RAG)
                 
                 # SelfQueryRetriever expects a LangChain-compatible ChatModel.
                 # If routing suggests llama_cpp, fall back to the main OpenAI-compatible model.
@@ -572,6 +575,7 @@ Return only the refined query, no explanation.
             refined = generate_text(
                 prompt=prompt,
                 project_id=project_id,
+                lane=ModelLane.FAST_RAG,
                 temperature=0.2,
             ).response.strip()
             return refined

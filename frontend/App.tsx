@@ -20,7 +20,7 @@ import { useProjects, useCurrentProject } from '@src/hooks/useProjects';
 import { useSystemStatus, useModelLanesStatus } from '@src/hooks/useSystemStatus';
 import { useRoadmap } from '@src/hooks/useRoadmap';
 import { useContextBudget, useRemoveContextItem } from '@src/hooks/useContextItems';
-import { useCortexStore } from '@src/state/cortexStore';
+import { useArgosStore } from '@src/state/cortexStore';
 import { Node, Edge, ReactFlowProvider } from 'reactflow';
 
 // Mock data removed - should fetch from API
@@ -106,7 +106,11 @@ const AppContent: React.FC = () => {
 
   // Load projects and set current project
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
-  const setCurrentProjectId = useCortexStore((s) => s.setCurrentProjectId);
+  // #region agent log
+  console.log('[DEBUG] Projects state:', { projectsLoading, hasProjects: !!projects, projectsCount: projects?.length, error: projectsError?.message });
+  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:109',message:'Projects state',data:{projectsLoading, hasProjects: !!projects, error: projectsError?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  const setCurrentProjectId = useArgosStore((s) => s.setCurrentProjectId);
 
   // Set first project as current if none selected
   useEffect(() => {
@@ -117,15 +121,21 @@ const AppContent: React.FC = () => {
 
   // Show loading state while projects are loading
   if (projectsLoading) {
+    console.log('[DEBUG] Rendering loading state because projectsLoading is true');
     return (
       <div className="flex h-screen w-full bg-void text-white items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan mx-auto mb-4"></div>
           <p className="text-gray-400 font-mono">Loading projects...</p>
+          <div className="mt-4 text-xs text-gray-600 font-mono">
+            State: {JSON.stringify({ projectsLoading, projectsError: projectsError?.message })}
+          </div>
         </div>
       </div>
     );
   }
+
+  console.log('[DEBUG] Past loading state. Projects:', projects?.length);
 
   // Show error state if projects failed to load
   if (projectsError) {

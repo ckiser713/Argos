@@ -14,11 +14,11 @@ Based on the Strix Halo hardware profile (128GB RAM), the routing table is defin
 
 | Lane | Role | Recommended Model | Typical Context | Backend | Usage in Cortex |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ORCHESTRATOR** | "The Brain" | **Qwen3-30B-Thinking-256k** | 32k - 128k | vLLM (ROCm) | LangGraph Project Manager, Roadmap Generation, Agent Planning |
-| **CODER** | "Code Judge" | **Qwen3-Coder-30B-1M** | 128k - 500k | vLLM / TGI | Repo Analysis, Refactoring Suggestions, Gap Analysis |
+| **ORCHESTRATOR** | "The Brain" | **DeepSeek-R1-Distill-Qwen-32B** | 32k - 128k | vLLM (ROCm) | LangGraph Project Manager, Roadmap Generation, Agent Planning |
+| **CODER** | "Code Judge" | **Qwen2.5-Coder-32B-Instruct** | 128k - 500k | vLLM (ROCm) | Repo Analysis, Refactoring Suggestions, Gap Analysis |
 | **SUPER-READER** | "Doc Atlas" | **Nemotron-8B-UltraLong-4M** | 1M - 4M | llama.cpp (GGUF) | Deep Ingest, "Seismic" Log Analysis, Full Monorepo Audits |
-| **FAST-RAG** | "Retrieval" | **MegaBeam-Mistral-7B-512k** | 16k - 128k | vLLM / llama.cpp | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
-| **GOVERNANCE** | "Compliance" | **Granite 4.x Long-Context** | 200k | llama.cpp | Spec Verification, PRD Safety Checks |
+| **FAST-RAG** | "Retrieval" | **Llama-3.2-11B-Vision-Instruct** | 16k - 128k | vLLM (ROCm) | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
+| **GOVERNANCE** | "Compliance" | **granite-3.0-8b-instruct** | 200k | llama.cpp | Spec Verification, PRD Safety Checks |
 
 ## Interfaces & Contracts
 
@@ -31,6 +31,7 @@ class ModelLane(StrEnum):
     CODER = "coder"
     SUPER_READER = "super_reader"
     FAST_RAG = "fast_rag"
+    GOVERNANCE = "governance"
 
 def generate_text(
     prompt: str,
@@ -42,18 +43,20 @@ def generate_text(
     json_mode: bool = False
 ) -> str:
     ...
+```
+
 Lane Resolution Logic
-Check Config: Does ARGOS_MODEL_LANE_{LANE_NAME} exist?
+Check Config: Does `ARGOS_LANE_{LANE}_URL/MODEL/MODEL_PATH` exist?
 
 Resolve Endpoint: If yes, use that specific base_url / model_name.
 
-Fallback: If not configured, default to ARGOS_LLM_DEFAULT_LANE (usually ORCHESTRATOR or FAST_RAG).
+Fallback: If not configured, fall back to `config/model_registry.json` defaults, then to ORCHESTRATOR or SUPER_READER as needed.
 
 Integration Points
 1. AgentService & ProjectManagerGraph
 Change: The Supervisor Agent (backend/app/graphs/project_manager_graph.py) must be configured to use ModelLane.ORCHESTRATOR.
 
-Reasoning: Requires "Thinking" capabilities (Qwen3-Thinking) to generate complex DAGs and plans.
+Reasoning: Requires DeepSeek-R1-Distill-Qwen-32B's thinking capabilities to generate complex DAGs and plans.
 
 2. IngestService
 Change: When performing "Deep Ingest" (processing entire folders), the service requests ModelLane.SUPER_READER.
@@ -63,21 +66,27 @@ Reasoning: Nemotron-8B is the only model capable of maintaining coherence over 1
 3. RepoService
 Change: Code analysis tasks request ModelLane.CODER.
 
-Reasoning: General purpose models fail at specific refactoring syntax; Qwen-Coder is required.
+Reasoning: General purpose models fail at specific refactoring syntax; Qwen2.5-Coder-32B-Instruct is required.
 
 Config Parameters (New)
 Bash
 
 # Default / Orchestrator (vLLM Port 8000)
 ARGOS_LLM_BASE_URL=http://localhost:8000/v1
-ARGOS_LLM_MODEL=Qwen3-30B-Thinking
+ARGOS_LLM_MODEL=DeepSeek-R1-Distill-Qwen-32B
 
 # Super-Reader (llama.cpp Port 8080 - optimized for KV Cache)
 ARGOS_LANE_SUPER_READER_URL=http://localhost:8080/v1
 ARGOS_LANE_SUPER_READER_MODEL=Nemotron-8B-UltraLong-4M
 
 # Coder (vLLM Port 8000 - served alongside Orchestrator or via LoRA)
-ARGOS_LANE_CODER_MODEL=Qwen3-Coder-30B-1M
+ARGOS_LANE_CODER_MODEL=Qwen2.5-Coder-32B-Instruct
+
+# Fast RAG (vLLM Port 8000 - shared GPU switching)
+ARGOS_LANE_FAST_RAG_MODEL=Llama-3.2-11B-Vision-Instruct
+
+# Governance (llama.cpp Port 8081)
+ARGOS_LANE_GOVERNANCE_MODEL=granite-3.0-8b-instruct
 Risks & Mitigations
 VRAM Contention: Running vLLM (Orchestrator) and llama.cpp (Reader) simultaneously on 128GB RAM requires strict memory partitioning. (See 04-runtime-and-ops-strix-optimization.md).
 

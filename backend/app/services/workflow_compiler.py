@@ -5,6 +5,7 @@ from langgraph.graph import END, StateGraph
 
 from app.domain.models import WorkflowGraph, WorkflowNode, WorkflowNodeStatus
 # Import `tool_executor` lazily inside _execute_node_logic to avoid circular import at module import time
+from app.domain.model_lanes import ModelLane
 from app.services.llm_service import generate_text
 
 logger = logging.getLogger("argos.workflow")
@@ -179,7 +180,11 @@ class WorkflowGraphCompiler:
             
             project_id = state.get("project_id")
 
-            llm_response = generate_text(prompt=prompt, project_id=project_id)
+            llm_response = generate_text(
+                prompt=prompt,
+                project_id=project_id,
+                lane=ModelLane.ORCHESTRATOR,
+            )
 
             return {
                 "node_id": node.id,

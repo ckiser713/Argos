@@ -1,21 +1,26 @@
+import asyncio
+import concurrent.futures
 import json
 import logging
 import re
 from typing import Any, List, Optional
 
-from langchain_core.prompts import PromptTemplate, ChatPromptTemplate # Combined
-from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
 
 from app.config import get_settings
 from app.domain.mode import ProjectExecutionSettings
-from app.repos.mode_repo import get_project_settings
+from app.domain.model_lanes import ModelLane, is_vllm_lane
 from app.observability import record_model_call
-from app.services.local_llm_client import get_local_llm_client, LocalChatLLM
+from app.repos.mode_repo import get_project_settings
+from app.services.local_llm_client import get_local_llm_client
+from app.services.model_registry import (
+    get_lane_backend,
+    get_lane_default_path,
+    get_lane_model_name,
+)
+from app.services.vllm_lane_manager import get_lane_manager
 
 logger = logging.getLogger(__name__)
-
-settings = get_settings()
 
 
 def get_llm_client(base_url: Optional[str] = None):
@@ -33,67 +38,34 @@ class LLMResponse(BaseModel):
             return getattr(self.response, item)
         raise AttributeError(f"LLMResponse has no attribute {item}")
 
-# --- LangChain Semantic Routing Setup ---
+def resolve_lane_config(lane: ModelLane) -> tuple[str, str, str, str]:
+    """
+    Resolve base_url, model_name, backend, and model_path for the given lane.
+    """
+    runtime_settings = get_settings()
+    lane_value = lane.value
+    base_url = getattr(runtime_settings, f"lane_{lane_value}_url", "")
+    model_name = getattr(runtime_settings, f"lane_{lane_value}_model", "") or get_lane_model_name(lane)
+    model_path = getattr(runtime_settings, f"lane_{lane_value}_model_path", "") or get_lane_default_path(lane)
+    backend = getattr(runtime_settings, f"lane_{lane_value}_backend", "") or get_lane_backend(lane)
 
-SIMPLE_ROUTE_NAME = "simple"
-COMPLEX_ROUTE_NAME = "complex"
+    if not base_url:
+        base_url = (
+            runtime_settings.lane_orchestrator_url
+            if is_vllm_lane(lane)
+            else runtime_settings.lane_super_reader_url
+        )
 
-ROUTE_DESCRIPTIONS = {
-    SIMPLE_ROUTE_NAME: "Good for simple tasks like formatting, data extraction, and short summaries.",
-    COMPLEX_ROUTE_NAME: "Good for complex tasks like reasoning, planning, coding, and generating creative text.",
-}
+    return base_url, model_name, backend, model_path
 
-ROUTING_PROMPT_TEMPLATE = """
-Given the user's prompt, classify it as either '{simple}' or '{complex}'.
-
-Do not respond with more than one word.
-
-<prompt>
-{{input}}
-</prompt>
-
-Classification:"""
-
-
-# ... (rest of the code remains the same until get_routed_llm_config) ...
 
 def get_routed_llm_config(prompt: str) -> tuple[str, str, str, str]:
     """
-    Determines the appropriate LLM configuration based on the prompt content using a lightweight classifier.
-    
-    Returns (base_url, model_name, backend, model_path)
+    Legacy routing hook retained for compatibility.
+
+    Returns (base_url, model_name, backend, model_path).
     """
-    # Use ChatPromptTemplate for LCEL compatibility
-    prompt_template = ChatPromptTemplate.from_template(
-        ROUTING_PROMPT_TEMPLATE.format(simple=SIMPLE_ROUTE_NAME, complex=COMPLEX_ROUTE_NAME)
-    )
-    
-    classifier_llm = LocalChatLLM(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model_name=settings.llm_model_name,
-        temperature=0.0
-    )
-
-    # Use LCEL to chain the prompt, LLM, and output parser
-    classifier_chain = prompt_template | classifier_llm | StrOutputParser()
-    
-    try:
-        # Use invoke for LCEL runnables
-        classification = classifier_chain.invoke({"input": prompt}).strip().upper() # Use invoke and pass dictionary for prompt
-        logger.info(f"Classified prompt as: {classification}")
-
-        if SIMPLE_ROUTE_NAME.upper() in classification:
-            # Config for local/fast model (llama_cpp)
-            return "", "", "llama_cpp", getattr(settings, "llama_cpp_model_path", "")
-        
-        # Default to complex route for safety and for any other classification
-        # Config for SOTA/expensive model (OpenAI-compatible)
-        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend, ""
-
-    except Exception as e:
-        logger.error(f"Error during LLM classification, falling back to default: {e}")
-        return settings.llm_base_url, settings.llm_model_name, settings.llm_backend, ""
+    return resolve_lane_config(ModelLane.ORCHESTRATOR)
 
 
 def _call_underlying_llm(
@@ -112,10 +84,11 @@ def _call_underlying_llm(
     """
     Call the underlying LLM backend (OpenAI API or llama.cpp).
     """
-    effective_backend = backend or settings.llm_backend.lower()
+    runtime_settings = get_settings()
+    effective_backend = (backend or runtime_settings.llm_backend).lower()
     backend_label = effective_backend
-    
-    if effective_backend == "llama_cpp":
+
+    if effective_backend == "llama_cpp" and not base_url:
         try:
             from app.services.llama_cpp_service import get_llama_cpp_service
             
@@ -127,19 +100,18 @@ def _call_underlying_llm(
                 result = json_match.group(0) if json_match else f'{{"response": {json.dumps(response)}}}'
             else:
                 result = response
-            record_model_call("llama_cpp", model or settings.llm_model_name, True)
+            record_model_call("llama_cpp", model or runtime_settings.llm_model_name, True)
             return result
             
         except ImportError:
             logger.warning("llama_cpp_service not available, falling back to OpenAI API")
-            record_model_call("llama_cpp", model or settings.llm_model_name, False)
+            record_model_call("llama_cpp", model or runtime_settings.llm_model_name, False)
         except Exception as e:
             logger.error(f"llama_cpp_service error, falling back to OpenAI API: {e}")
-            record_model_call("llama_cpp", model or settings.llm_model_name, False)
+            record_model_call("llama_cpp", model or runtime_settings.llm_model_name, False)
 
     # Default: Use OpenAI-compatible API (vLLM/Ollama)
-    target_model = model or settings.llm_model_name
-    backend_label = effective_backend if effective_backend != "llama_cpp" else "openai_compatible"
+    target_model = model or runtime_settings.llm_model_name
     target_client = get_llm_client(base_url)
 
     messages = []
@@ -172,34 +144,67 @@ def _call_underlying_llm(
         return f"LLM Error: {str(e)}"
 
 
-def generate_text(
+async def generate_text_async(
     prompt: str,
     project_id: str,
     *,
+    lane: ModelLane = ModelLane.ORCHESTRATOR,
     temperature: float | None = None,
     max_tokens: int = 4096,
     json_mode: bool = False,
     image_data: Optional[str] = None,
 ) -> LLMResponse:
     """
-    Generates text using the underlying LLM, with mode-aware adjustments and semantic routing.
+    Generates text using the underlying LLM, with mode-aware adjustments and lane routing.
     """
-    if settings.argos_mode == "INGEST":
+    runtime_settings = get_settings()
+
+    if runtime_settings.argos_mode == "INGEST":
         logger.info("Request received in INGEST mode, queuing for later processing.")
-        return LLMResponse(response="Request has been queued and will be processed when ingest is complete.", status="queued")
+        return LLMResponse(
+            response="Request has been queued and will be processed when ingest is complete.",
+            status="queued",
+        )
 
     settings_obj: ProjectExecutionSettings = get_project_settings(project_id)
-    
-    base_url, model_name, backend, model_path = get_routed_llm_config(prompt)
-    
+
+    base_url, model_name, backend, model_path = resolve_lane_config(lane)
+    target_lane = lane
+
+    if is_vllm_lane(lane):
+        lane_manager = get_lane_manager()
+        if not await lane_manager.ensure_lane(lane):
+            vllm_healthy = await lane_manager.is_vllm_healthy()
+            record_model_call(backend, model_name, False)
+            if vllm_healthy and lane != ModelLane.ORCHESTRATOR:
+                target_lane = ModelLane.ORCHESTRATOR
+            else:
+                target_lane = ModelLane.SUPER_READER
+            logger.warning(
+                "Lane switch failed; falling back to %s",
+                target_lane.value,
+                extra={"lane": lane.value, "fallback": target_lane.value},
+            )
+            base_url, model_name, backend, model_path = resolve_lane_config(target_lane)
+            if is_vllm_lane(target_lane) and not await lane_manager.ensure_lane(target_lane):
+                record_model_call(backend, model_name, False)
+                target_lane = ModelLane.SUPER_READER
+                base_url, model_name, backend, model_path = resolve_lane_config(target_lane)
+
     effective_temperature = settings_obj.llm_temperature if temperature is None else temperature
 
     logger.info(
         "llm_service.generate_text.start",
-        extra={"project_id": project_id, "model": model_name, "backend": backend},
+        extra={
+            "project_id": project_id,
+            "model": model_name,
+            "backend": backend,
+            "lane": target_lane.value,
+        },
     )
 
-    final_response = _call_underlying_llm(
+    final_response = await asyncio.to_thread(
+        _call_underlying_llm,
         prompt,
         temperature=effective_temperature,
         max_tokens=max_tokens,
@@ -212,18 +217,21 @@ def generate_text(
     )
 
     if settings_obj.mode == "paranoid":
-        for i in range(settings_obj.validation_passes):
-            checker_prompt = f"Review the following prompt and draft answer. Identify inconsistencies or missing steps and provide a corrected final answer.\n\nPROMPT:\n{prompt}\n\nDRAFT ANSWER:\n{final_response}"
-            # Reroute for validation to ensure consistency
-            val_base_url, val_model_name, val_backend, val_model_path = get_routed_llm_config(checker_prompt)
-            final_response = _call_underlying_llm(
+        for _ in range(settings_obj.validation_passes):
+            checker_prompt = (
+                "Review the following prompt and draft answer. Identify inconsistencies or missing steps "
+                "and provide a corrected final answer.\n\nPROMPT:\n"
+                f"{prompt}\n\nDRAFT ANSWER:\n{final_response}"
+            )
+            final_response = await asyncio.to_thread(
+                _call_underlying_llm,
                 checker_prompt,
                 temperature=min(effective_temperature, 0.2),
                 max_tokens=max_tokens,
-                base_url=val_base_url,
-                model=val_model_name,
-                backend=val_backend,
-                model_path=val_model_path,
+                base_url=base_url,
+                model=model_name,
+                backend=backend,
+                model_path=model_path,
             )
 
     # Chain of Thought might not be standard across all models.
@@ -231,3 +239,36 @@ def generate_text(
     reasoning_trace = re.findall(r"<think>(.*?)</think>", final_response, re.DOTALL)
     clean_response = re.sub(r"<think>.*?</think>", "", final_response, flags=re.DOTALL).strip()
     return LLMResponse(response=clean_response, reasoning_trace=reasoning_trace or None)
+
+
+def generate_text(
+    prompt: str,
+    project_id: str,
+    *,
+    lane: ModelLane = ModelLane.ORCHESTRATOR,
+    temperature: float | None = None,
+    max_tokens: int = 4096,
+    json_mode: bool = False,
+    image_data: Optional[str] = None,
+) -> LLMResponse:
+    """
+    Synchronous wrapper for generate_text_async.
+    """
+    coro = generate_text_async(
+        prompt=prompt,
+        project_id=project_id,
+        lane=lane,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        json_mode=json_mode,
+        image_data=image_data,
+    )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, coro)
+        return future.result()

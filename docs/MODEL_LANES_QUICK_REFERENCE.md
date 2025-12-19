@@ -8,11 +8,11 @@ Cortex uses **Model Lanes** to route different types of requests to specialized 
 
 | Lane | Role | Model | Backend | Port | Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ORCHESTRATOR** | "The Brain" | Qwen3-30B-Thinking-256k | vLLM (ROCm) | 8000 | LangGraph Project Manager, Roadmap Generation, Agent Planning |
-| **CODER** | "Code Judge" | Qwen3-Coder-30B-1M | vLLM / TGI | 8000 | Repo Analysis, Refactoring Suggestions, Gap Analysis |
+| **ORCHESTRATOR** | "The Brain" | DeepSeek-R1-Distill-Qwen-32B | vLLM (ROCm) | 8000 | LangGraph Project Manager, Roadmap Generation, Agent Planning |
+| **CODER** | "Code Judge" | Qwen2.5-Coder-32B-Instruct | vLLM / TGI | 8000 | Repo Analysis, Refactoring Suggestions, Gap Analysis |
 | **SUPER-READER** | "Doc Atlas" | Nemotron-8B-UltraLong-4M | llama.cpp (GGUF) | 8080 | Deep Ingest, "Seismic" Log Analysis, Full Monorepo Audits |
-| **FAST-RAG** | "Retrieval" | MegaBeam-Mistral-7B-512k | vLLM / llama.cpp | 8000 | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
-| **GOVERNANCE** | "Compliance" | Granite 4.x Long-Context | llama.cpp | 8080 | Spec Verification, PRD Safety Checks |
+| **FAST-RAG** | "Retrieval" | Llama-3.2-11B-Vision-Instruct | vLLM / llama.cpp | 8000 | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
+| **GOVERNANCE** | "Compliance" | granite-3.0-8b-instruct | llama.cpp | 8080 | Spec Verification, PRD Safety Checks |
 
 ## Usage in Code
 
@@ -89,7 +89,7 @@ response = generate_text(
 ```bash
 # Default / Orchestrator
 ARGOS_LLM_BASE_URL=http://localhost:8000/v1
-ARGOS_LLM_MODEL=Qwen3-30B-Thinking
+ARGOS_LLM_MODEL=DeepSeek-R1-Distill-Qwen-32B
 ARGOS_LLM_DEFAULT_LANE=orchestrator
 
 # Super-Reader (llama.cpp)
@@ -100,16 +100,16 @@ ARGOS_LANE_SUPER_READER_BACKEND=llama_cpp
 
 # Coder (vLLM)
 ARGOS_LANE_CODER_URL=http://localhost:8000/v1
-ARGOS_LANE_CODER_MODEL=Qwen3-Coder-30B-1M
+ARGOS_LANE_CODER_MODEL=Qwen2.5-Coder-32B-Instruct
 
 # Fast-RAG (vLLM)
 ARGOS_LANE_FAST_RAG_URL=http://localhost:8000/v1
-ARGOS_LANE_FAST_RAG_MODEL=MegaBeam-Mistral-7B-512k
+ARGOS_LANE_FAST_RAG_MODEL=Llama-3.2-11B-Vision-Instruct
 
 # Governance (llama.cpp)
 ARGOS_LANE_GOVERNANCE_URL=http://localhost:8080/v1
-ARGOS_LANE_GOVERNANCE_MODEL=Granite-4.x-Long-Context
-ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/granite-4m.gguf
+ARGOS_LANE_GOVERNANCE_MODEL=granite-3.0-8b-instruct
+ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf
 ARGOS_LANE_GOVERNANCE_BACKEND=llama_cpp
 ```
 

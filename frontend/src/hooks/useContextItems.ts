@@ -5,7 +5,7 @@ import {
   addContextItems,
   updateContextItem,
   removeContextItem,
-} from "../lib/argosApi";
+} from "../lib/cortexApi";
 import type { ContextItem, ContextBudget } from "../domain/types";
 
 export const contextQueryKey = (projectId: string) =>

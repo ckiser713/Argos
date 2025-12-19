@@ -81,9 +81,9 @@ Hardware: AMD Radeon (gfx1151) with 128GB unified memory + ROCm 7.1
 The vLLM Docker image must handle:
 
 #### A. **Multi-Lane Model Serving**
-- **Orchestrator Lane**: Qwen3-30B-Thinking (planning, routing, decision-making)
-- **Coder Lane**: Qwen3-Coder-30B-1M (code analysis, refactoring, gap analysis)
-- **FastRAG Lane**: MegaBeam-Mistral-7B-512k (retrieval-augmented generation, chat)
+- **Orchestrator Lane**: DeepSeek-R1-Distill-Qwen-32B (planning, routing, decision-making)
+- **Coder Lane**: Qwen2.5-Coder-32B-Instruct (code analysis, refactoring, gap analysis)
+- **FastRAG Lane**: Llama-3.2-11B-Vision-Instruct (retrieval-augmented generation, chat)
 
 Each lane has a distinct model with different capabilities:
 - **Context Window Sizes**: 32K-1M tokens
@@ -190,7 +190,7 @@ These variables MUST be configurable at runtime (passed to container):
 
 ```bash
 # Model Selection (determines which model to load first)
-VLLM_MODEL="Qwen/Qwen3-30B-Instruct-bf16"  # Orchestrator model by default
+VLLM_MODEL="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Orchestrator model by default
 # OR specify full model path if already cached:
 VLLM_MODEL="/models/vllm/orchestrator/bf16/model.safetensors"
 
@@ -336,11 +336,11 @@ shm_size: '16gb'  # Essential for large models
 Project Structure:
   /models/
     ├── vllm/
-    │   ├── orchestrator/bf16/  # Qwen3-30B-Thinking
+    │   ├── orchestrator/bf16/  # DeepSeek-R1-Distill-Qwen-32B
     │   │   └── model.safetensors, config.json, tokenizer.model
-    │   ├── coder/bf16/         # Qwen3-Coder-30B-1M
+    │   ├── coder/bf16/         # Qwen2.5-Coder-32B-Instruct
     │   │   └── ...
-    │   └── fast-rag/bf16/      # MegaBeam-Mistral-7B-512k
+    │   └── fast_rag/bf16/      # Llama-3.2-11B-Vision-Instruct
     │       └── ...
     └── vllm-cache/             # HF hub cache (fallback)
         └── (huggingface_hub downloads here)
@@ -361,9 +361,9 @@ Project Structure:
 #### Disk Space Requirements
 
 ```
-Orchestrator (Qwen3-30B):     ~70GB (BF16)
-Coder (Qwen3-Coder-30B):      ~70GB (BF16)
-FastRAG (MegaBeam-7B):        ~20GB (BF16)
+Orchestrator (DeepSeek-R1-Distill-Qwen-32B):     ~70GB (BF16)
+Coder (Qwen2.5-Coder-32B-Instruct):      ~70GB (BF16)
+FastRAG (Llama-3.2-11B-Vision-Instruct):        ~20GB (BF16)
 ─────────────────────────────────────
 Total for 3 models:           ~160GB
 Plus HF hub overhead:         +10GB
@@ -477,7 +477,7 @@ Content-Type: application/json
 
 Request:
 {
-  "model": "Qwen/Qwen3-30B-Instruct",  // Lane selector
+  "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",  // Lane selector
   "messages": [
     {"role": "user", "content": "..."},
     {"role": "assistant", "content": "..."}
@@ -492,7 +492,7 @@ Response:
   "id": "chatcmpl-xxx",
   "object": "text_completion",
   "created": 1733686400,
-  "model": "Qwen/Qwen3-30B-Instruct",
+  "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
   "choices": [
     {
       "index": 0,
@@ -522,7 +522,7 @@ Content-Type: application/json
 
 Request:
 {
-  "model": "Qwen/Qwen3-30B-Instruct",
+  "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
   "prompt": "The future of AI is",
   "temperature": 0.8,
   "max_tokens": 100
@@ -533,7 +533,7 @@ Response:
   "id": "cmpl-xxx",
   "object": "text_completion",
   "created": 1733686400,
-  "model": "Qwen/Qwen3-30B-Instruct",
+  "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
   "choices": [
     {
       "index": 0,
@@ -554,7 +554,7 @@ Response:
   "object": "list",
   "data": [
     {
-      "id": "Qwen/Qwen3-30B-Instruct",
+      "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
       "object": "model",
       "created": 1733686400,
       "owned_by": "vllm"
@@ -585,17 +585,17 @@ Status Codes:
 # Configuration examples:
 llm_backend = "openai"  # Use OpenAI-compatible client
 llm_base_url = "http://localhost:11434/v1"  # Maps to inference-vllm:8000 in docker-compose
-llm_model_name = "Qwen/Qwen3-30B-Instruct"
+llm_model_name = "DeepSeek-R1-Distill-Qwen-32B"
 
 # In Strix environment:
 lane_orchestrator_url = "http://inference-vllm:8000/v1"  # Route to vLLM
-lane_orchestrator_model = "Qwen/Qwen3-30B-Instruct"
+lane_orchestrator_model = "DeepSeek-R1-Distill-Qwen-32B"
 
 lane_coder_url = "http://inference-vllm:8000/v1"
-lane_coder_model = "Qwen/Qwen3-Coder-30B-1M"
+lane_coder_model = "Qwen2.5-Coder-32B-Instruct"
 
 lane_fast_rag_url = "http://inference-vllm:8000/v1"
-lane_fast_rag_model = "MegaBeam/Mistral-7B-512k"
+lane_fast_rag_model = "Llama-3.2-11B-Vision-Instruct"
 ```
 
 **From `backend/app/services/vllm_lane_manager.py`:**
@@ -642,7 +642,7 @@ INFO:     "POST /v1/chat/completions HTTP/1.1" 200
 INFO:     Generated 256 tokens in 8.234 seconds
 
 # Model Loading:
-INFO:     Loading model Qwen/Qwen3-30B-Instruct...
+INFO:     Loading model deepseek-ai/DeepSeek-R1-Distill-Qwen-32B...
 INFO:     Model loaded successfully
 ```
 
@@ -845,7 +845,7 @@ docker run --rm \
   -e HF_TOKEN=${HF_TOKEN} \
   -v ./models:/root/.cache/huggingface \
   vllm/vllm-openai:latest \
-  python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Qwen/Qwen3-30B-Instruct')"
+  python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('deepseek-ai/DeepSeek-R1-Distill-Qwen-32B')"
 
 # 3. vLLM Server Startup
 docker-compose up inference-engine
@@ -859,7 +859,7 @@ curl -X GET http://localhost:11434/v1/models
 curl -X POST http://localhost:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen3-30B-Instruct",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "messages": [{"role": "user", "content": "Say hello"}],
     "max_tokens": 10
   }'
@@ -911,7 +911,7 @@ inference-engine:
   ports:
     - "11434:8000"
   environment:
-    - VLLM_MODEL=Qwen/Qwen3-30B-Instruct  # Orchestrator
+    - VLLM_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-32B  # Orchestrator
     - HIP_VISIBLE_DEVICES=0
     - HSA_OVERRIDE_GFX_VERSION=11.0.0
     - VLLM_GPU_MEMORY_UTILIZATION=0.45

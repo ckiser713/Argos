@@ -9,7 +9,7 @@ import {
   listAgentRunMessages,
   appendAgentRunMessage,
   listAgentRunNodeStates,
-} from "../lib/argosApi";
+} from "../lib/cortexApi";
 import type { AgentRun, AgentStep, AgentMessage, AgentNodeState, StartAgentRunRequest } from "../domain/types";
 import type { PaginatedResponse } from "../domain/api-types";
 

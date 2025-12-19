@@ -136,6 +136,12 @@
           readline
           
           # ============================================
+          # Database Tools
+          # ============================================
+          postgresql_16
+          postgresql16Packages.pgvector
+
+          # ============================================
           # Docker & Container Tools
           # ============================================
           docker
@@ -236,12 +242,11 @@
           # ============================================
           # ROCm Support (for AMD GPU)
           # ============================================
-          # ROCm wheels and binaries are provided from ~/rocm/py311-tor290/
+          # ROCm wheels and binaries are provided from /home/nexus/amd-ai/artifacts/
           # This includes:
-          #   - PyTorch 2.9.1 (ROCm-enabled) wheels in wheels/torch2.9/
-          #   - Common dependencies (triton, tokenizers) in wheels/common/
-          #   - llama.cpp binaries (llama-cpp, llama-bench, llama-quantize) in bin/
-          #   - vLLM Docker image in images/
+          #   - PyTorch 2.9.1 (ROCm-enabled) wheel in vllm_docker_rocm/torch-2.9.1-cp311-cp311-linux_x86_64.whl
+          #   - vLLM 0.12.0 wheel in vllm_docker_rocm/vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl
+          #   - llama.cpp binaries (llama-cli, llama-server, llama-quantize) in bin/
           # These are configured via PIP_FIND_LINKS and PATH environment variables
           # rocmPackages.rocm-smi  # Optional: uncomment if you need rocm-smi tool
         ];
@@ -250,8 +255,8 @@
         # Environment Variables
         # ============================================
         shellHook = ''
-          # Add ROCm binaries to PATH (llama-cpp, llama-bench, llama-quantize)
-          export PATH="$HOME/rocm/py311-tor290/bin:$PATH"
+          # Add ROCm binaries to PATH (llama-cli, llama-server, llama-quantize)
+          export PATH="/home/nexus/amd-ai/artifacts/bin:$PATH"
           # Ensure the Python from Nix (Python 3.11) is first in PATH so Poetry uses it
           export PATH="${pkgs.python311}/bin:${pkgs.poetry}/bin:$PATH"
           # Prefer active Python for Poetry virtualenvs so it uses Python 3.11
@@ -270,28 +275,36 @@
           echo "Poetry: $(poetry --version)"
           echo ""
           echo "ROCm Integration:"
-          echo "  - ROCm wheels: $HOME/rocm/py311-tor290/wheels"
-          echo "  - ROCm binaries: $HOME/rocm/py311-tor290/bin (added to PATH)"
+          echo "  - ROCm wheels: /home/nexus/amd-ai/artifacts/vllm_docker_rocm/"
+          echo "  - ROCm binaries: /home/nexus/amd-ai/artifacts/bin (added to PATH)"
           echo "  - PIP_FIND_LINKS configured for offline PyTorch installation"
           echo ""
           echo "Environment variables set:"
           echo "  - ARGOS_ENV=local (can be overridden by setting ARGOS_ENV before 'nix develop')"
           echo "  - ARGOS_QDRANT_URL=http://localhost:6333"
           echo "  - PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright"
-          echo "  - PIP_FIND_LINKS=$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common"
+          echo "  - PIP_FIND_LINKS=/home/nexus/amd-ai/artifacts/vllm_docker_rocm"
           echo "  - PIP_NO_INDEX not set (allows Poetry/pip to access PyPI)"
-          echo "  - For ROCm packages, use: pip install --no-index --find-links \$HOME/rocm/py311-tor290/wheels/..."
+          echo "  - For ROCm packages, use: pip install --no-index --find-links /home/nexus/amd-ai/artifacts/vllm_docker_rocm/ ..."
           echo ""
-          echo "To install PyTorch from ROCm wheels:"
-          echo "  pip install --find-links $HOME/rocm/py311-tor290/wheels/torch2.9 torch torchvision torchaudio"
-          echo "  pip install --find-links $HOME/rocm/py311-tor290/wheels/common triton tokenizers"
+          echo "To install PyTorch and vLLM from ROCm wheels:"
+          echo "  pip install --find-links /home/nexus/amd-ai/artifacts/vllm_docker_rocm/ torch vllm"
           echo ""
           echo "ROCm binaries available:"
-          if [ -f "$HOME/rocm/py311-tor290/bin/llama-cpp" ]; then
-            echo "  ✓ llama-cpp (ROCm-optimized)"
+          if [ -f "/home/nexus/amd-ai/artifacts/bin/llama-cli" ]; then
+            echo "  ✓ llama-cli (ROCm-optimized)"
           else
-            echo "  ⚠ llama-cpp not found at $HOME/rocm/py311-tor290/bin/llama-cpp"
+            echo "  ⚠ llama-cli not found at /home/nexus/amd-ai/artifacts/bin/llama-cli"
           fi
+          if [ -f "/home/nexus/amd-ai/artifacts/bin/llama-server" ]; then
+            echo "  ✓ llama-server (ROCm-optimized)"
+          else
+            echo "  ⚠ llama-server not found at /home/nexus/amd-ai/artifacts/bin/llama-server"
+          fi
+          echo ""
+          echo "PostgreSQL 16:"
+          echo "  - PostgreSQL: $(psql --version 2>/dev/null | head -1 || echo 'Not available')"
+          echo "  - pgvector: Available via CREATE EXTENSION pgvector;"
           echo ""
           # Rebuild the font cache so Playwright uses the fonts installed in Nix
           if command -v fc-cache >/dev/null 2>&1; then
@@ -309,18 +322,17 @@
         ARGOS_DATABASE_URL = "postgresql://argos:argos@localhost:5432/argos";
         PLAYWRIGHT_BROWSERS_PATH = "$HOME/.cache/ms-playwright";
         
-        # ROCm Integration - Python 3.11 PyTorch 2.9 wheels
+        # ROCm Integration - Python 3.11 PyTorch 2.9 and vLLM 0.12.0 wheels
         # Point pip to ROCm wheels for offline installation
         # Wheels available:
-        #   - torch2.9/: torch-2.9.1, torchvision-0.25.0, torchaudio-2.9.1
-        #   - common/: triton-3.5.0, tokenizers-0.22.2
+        #   - vllm_docker_rocm/: torch-2.9.1-cp311-cp311-linux_x86_64.whl, vllm-0.12.0+rocm711-cp311-cp311-linux_x86_64.whl
         # Note: PIP_NO_INDEX is NOT set globally to allow Poetry/pip to access PyPI for other packages
-        # When installing ROCm packages, use: pip install --no-index --find-links $HOME/rocm/py311-tor290/wheels/...
-        PIP_FIND_LINKS = "$HOME/rocm/py311-tor290/wheels/torch2.9:$HOME/rocm/py311-tor290/wheels/common";
+        # When installing ROCm packages, use: pip install --no-index --find-links /home/nexus/amd-ai/artifacts/vllm_docker_rocm/ ...
+        PIP_FIND_LINKS = "/home/nexus/amd-ai/artifacts/vllm_docker_rocm";
         
         # ROCm binaries (llama.cpp tools) are added to PATH in shellHook
-        # These are: llama-cpp, llama-bench, llama-quantize
-        # Located at: ~/rocm/py311-tor290/bin
+        # These are: llama-cli, llama-server, llama-quantize
+        # Located at: /home/nexus/amd-ai/artifacts/bin
         
         # Python environment setup
         PYTHONPATH = "${pkgs.python311}/lib/python3.11/site-packages";

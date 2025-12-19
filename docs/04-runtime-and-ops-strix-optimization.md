@@ -18,7 +18,7 @@ To maximize stability and context length, we split inference into two distinct c
 
 - **Engine:** vLLM (Optimized for ROCm 6.x/7.x)
 - **Primary Role:** Orchestrator (Thinking), Coder, Fast-RAG.
-- **Models:** Qwen3-30B-Thinking (4-bit), Qwen3-Coder-30B (4-bit).
+- **Models:** DeepSeek-R1-Distill-Qwen-32B (4-bit), Qwen2.5-Coder-32B-Instruct (4-bit).
 - **Memory Budget:** **48 GB**.
 - **Configuration:**
   - `GPU_MEMORY_UTILIZATION=0.45` (Approx 48GB of the 110GB pool).
@@ -186,11 +186,11 @@ When running a 4M token ingest:
 
 | Lane | Model | Context Window | Tokens/sec | Use Case |
 | :--- | :--- | :--- | :--- | :--- |
-| **ORCHESTRATOR** | Qwen3-30B-Thinking | 32k - 128k | 30-50 t/s | Interactive planning |
-| **CODER** | Qwen3-Coder-30B | 128k - 500k | 20-40 t/s | Code analysis |
+| **ORCHESTRATOR** | DeepSeek-R1-Distill-Qwen-32B | 32k - 128k | 30-50 t/s | Interactive planning |
+| **CODER** | Qwen2.5-Coder-32B-Instruct | 128k - 500k | 20-40 t/s | Code analysis |
 | **SUPER-READER** | Nemotron-8B-UltraLong | 1M - 4M | 2-5 t/s | Deep ingest |
-| **FAST-RAG** | MegaBeam-Mistral-7B | 16k - 128k | 40-60 t/s | RAG queries |
-| **GOVERNANCE** | Granite 4.x Long | 200k | 10-20 t/s | Compliance checks |
+| **FAST-RAG** | Llama-3.2-11B-Vision-Instruct | 16k - 128k | 40-60 t/s | RAG queries |
+| **GOVERNANCE** | granite-3.0-8b-instruct | 200k | 10-20 t/s | Compliance checks |
 
 ## Monitoring & Health Checks
 

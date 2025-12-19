@@ -12,62 +12,12 @@ from sentence_transformers import SentenceTransformer
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from backend.app.services.model_registry import get_model_registry
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-# --- Model Configuration (same as download_models.py) ---
-MODEL_CONFIG = {
-    "vllm": {
-        "orchestrator": {
-            "description": "ORCHESTRATOR Lane - DeepSeek-R1 Reasoning Model",
-            "formats": {
-                "bf16": {"repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"},
-                "fp8": {"repo": "neuralmagic/DeepSeek-R1-Distill-Qwen-32B-fp8"},
-            },
-        },
-        "coder": {
-            "description": "CODER Lane - Qwen Coder Model",
-            "formats": {
-                "bf16": {"repo": "Qwen/Qwen2.5-Coder-32B-Instruct"},
-                "fp8": {"repo": "neuralmagic/Qwen2.5-Coder-32B-Instruct-fp8"},
-            },
-        },
-        "fast_rag": {
-            "description": "FAST_RAG Lane - Llama 3.2 Vision Model",
-            "formats": {
-                "bf16": {"repo": "meta-llama/Llama-3.2-11B-Vision-Instruct"}
-            },
-        },
-    },
-    "gguf": {
-        "super_reader": {
-            "description": "SUPER_READER Lane - Nemotron UltraLong 4M",
-            "repo": "Mungert/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-GGUF",
-            "filename": "Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf",
-        },
-        "governance": {
-            "description": "GOVERNANCE Lane - Granite 3.0 Instruct",
-            "repo": "bartowski/granite-3.0-8b-instruct-GGUF",
-            "filename": "granite-3.0-8b-instruct-Q4_K_M.gguf",
-        },
-    },
-    "embedding": {
-        "general_purpose": {
-            "description": "General purpose embedding model (384d)",
-            "repo": "all-MiniLM-L6-v2",
-        },
-        "code_search": {
-            "description": "Code-specific embedding model (768d)",
-            "repo": "jinaai/jina-embeddings-v2-base-code",
-        },
-        "code_search_fallback": {
-            "description": "Code-specific embedding model fallback (768d)",
-            "repo": "microsoft/codebert-base",
-        },
-    },
-}
 
 
 def get_models_dir():
@@ -81,12 +31,12 @@ def verify_vllm_models(base_dir: Path) -> dict:
     vllm_dir = base_dir / "vllm"
     
     logger.info("--- Verifying vLLM Models ---")
-    for lane, config in MODEL_CONFIG["vllm"].items():
-        logger.info(f"Checking lane: {lane} ({config['description']})")
+    registry = get_model_registry()
+    for lane, config in registry.vllm.items():
+        logger.info(f"Checking lane: {lane} ({config.model_name})")
         lane_found = False
         
-        for fmt, fmt_config in config["formats"].items():
-            repo = fmt_config["repo"]
+        for fmt in config.repos.keys():
             target_dir = vllm_dir / lane / fmt
             
             # Check if directory exists and has content
@@ -121,9 +71,10 @@ def verify_gguf_models(base_dir: Path) -> dict:
     gguf_dir = base_dir / "gguf"
     
     logger.info("--- Verifying GGUF Models ---")
-    for lane, config in MODEL_CONFIG["gguf"].items():
-        logger.info(f"Checking lane: {lane} ({config['description']})")
-        filename = config["filename"]
+    registry = get_model_registry()
+    for lane, config in registry.gguf.items():
+        logger.info(f"Checking lane: {lane} ({config.model_name})")
+        filename = config.filename
         target_file = gguf_dir / filename
         
         if target_file.exists() and target_file.stat().st_size > 0:
@@ -144,15 +95,17 @@ def verify_embedding_models() -> dict:
     logger.info("--- Verifying Embedding Models ---")
     
     is_minimal = os.getenv("MINIMAL_EMBEDDINGS", "false").lower() == "true"
+    registry = get_model_registry()
     models_to_check = (
-        [MODEL_CONFIG["embedding"]["general_purpose"]]
+        {"general_purpose": registry.embedding.get("general_purpose", "")}
         if is_minimal
-        else list(MODEL_CONFIG["embedding"].values())
+        else registry.embedding
     )
     
-    for model_config in models_to_check:
-        repo = model_config["repo"]
-        logger.info(f"Checking model: {repo} ({model_config['description']})")
+    for label, repo in models_to_check.items():
+        if not repo:
+            continue
+        logger.info(f"Checking model: {repo} ({label})")
         try:
             # Try to load the model (this will use cache if available)
             model = SentenceTransformer(repo)
@@ -231,4 +184,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

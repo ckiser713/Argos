@@ -127,14 +127,14 @@ Set lane-specific URLs and models:
 ```bash
 # Orchestrator (default lane)
 export CORTEX_LLM_BASE_URL="http://localhost:8000/v1"
-export CORTEX_LLM_MODEL="Qwen3-30B-Thinking"
+export CORTEX_LLM_MODEL="DeepSeek-R1-Distill-Qwen-32B"
 
 # Super-Reader (llama.cpp for long context)
 export CORTEX_LANE_SUPER_READER_URL="http://localhost:8080/v1"
 export CORTEX_LANE_SUPER_READER_MODEL="Nemotron-8B-UltraLong-4M"
 
 # Coder (vLLM for code tasks)
-export CORTEX_LANE_CODER_MODEL="Qwen3-Coder-30B-1M"
+export CORTEX_LANE_CODER_MODEL="Qwen2.5-Coder-32B-Instruct"
 ```
 
 #### Usage in Code

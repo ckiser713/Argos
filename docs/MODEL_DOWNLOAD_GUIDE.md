@@ -48,12 +48,12 @@ After downloading, models are organized as follows:
 ```
 models/
 ├── vllm/                    # vLLM-compatible models
-│   ├── qwen-orchestrator/  # ORCHESTRATOR lane
-│   ├── qwen-coder/         # CODER lane
-│   └── mistral-fastrag/    # FAST_RAG lane
+│   ├── orchestrator/bf16/  # ORCHESTRATOR lane (DeepSeek-R1-Distill-Qwen-32B)
+│   ├── coder/bf16/         # CODER lane (Qwen2.5-Coder-32B-Instruct)
+│   └── fast_rag/bf16/      # FAST_RAG lane (Llama-3.2-11B-Vision-Instruct)
 ├── gguf/                    # GGUF models for llama.cpp
-│   ├── nemotron-8b-instruct.Q4_K_M.gguf  # SUPER_READER lane
-│   └── granite-8b-instruct.Q4_K_M.gguf   # GOVERNANCE lane
+│   ├── Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf  # SUPER_READER lane
+│   └── granite-3.0-8b-instruct-Q4_K_M.gguf   # GOVERNANCE lane
 └── embeddings/              # Embedding models (via Python script)
     └── (cached in ~/.cache/huggingface/)
 ```
@@ -61,34 +61,33 @@ models/
 ## Required Models by Lane
 
 ### ORCHESTRATOR Lane
-- **Model**: Qwen3-30B-Thinking-256k
+- **Model**: DeepSeek-R1-Distill-Qwen-32B (bf16)
+- **Alternate**: `neuralmagic/DeepSeek-R1-Distill-Qwen-32B-fp8` (lower VRAM)
 - **Format**: vLLM (Hugging Face)
-- **Size**: ~60GB (FP16) or ~30GB (4-bit quantized)
-- **Location**: `models/vllm/qwen-orchestrator/`
+- **Location**: `models/vllm/orchestrator/bf16/`
 
 ### CODER Lane
-- **Model**: Qwen3-Coder-30B-1M
+- **Model**: Qwen2.5-Coder-32B-Instruct (bf16)
+- **Alternate**: `neuralmagic/Qwen2.5-Coder-32B-Instruct-fp8`
 - **Format**: vLLM (Hugging Face)
-- **Size**: ~60GB (FP16) or ~30GB (4-bit quantized)
-- **Location**: `models/vllm/qwen-coder/`
+- **Location**: `models/vllm/coder/bf16/`
 
 ### SUPER_READER Lane
 - **Model**: Nemotron-8B-UltraLong-4M
 - **Format**: GGUF (Q4_K_M quantization)
-- **Size**: ~5GB
-- **Location**: `models/gguf/nemotron-8b-instruct.Q4_K_M.gguf`
+- **Filename**: `Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf`
+- **Location**: `models/gguf/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf`
 
 ### FAST_RAG Lane
-- **Model**: MegaBeam-Mistral-7B-512k
+- **Model**: meta-llama/Llama-3.2-11B-Vision-Instruct (bf16)
 - **Format**: vLLM (Hugging Face)
-- **Size**: ~14GB (FP16) or ~7GB (4-bit quantized)
-- **Location**: `models/vllm/mistral-fastrag/`
+- **Location**: `models/vllm/fast_rag/bf16/`
 
 ### GOVERNANCE Lane
-- **Model**: Granite 4.x Long-Context
+- **Model**: granite-3.0-8b-instruct (Q4_K_M)
 - **Format**: GGUF (Q4_K_M quantization)
-- **Size**: ~5GB
-- **Location**: `models/gguf/granite-8b-instruct.Q4_K_M.gguf`
+- **Filename**: `granite-3.0-8b-instruct-Q4_K_M.gguf`
+- **Location**: `models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf`
 
 ### Minimal smoke-test models (for bring-up)
 - **Purpose**: keep services startable and enable post-deploy smoke tests before full production models land.
@@ -122,16 +121,16 @@ After downloading, set these environment variables:
 
 ```bash
 # GGUF Models (llama.cpp)
-export ARGOS_LANE_SUPER_READER_MODEL_PATH=/data/cortex-models/gguf/nemotron-8b-instruct.Q4_K_M.gguf
-export ARGOS_LANE_GOVERNANCE_MODEL_PATH=/data/cortex-models/gguf/granite-8b-instruct.Q4_K_M.gguf
+export ARGOS_LANE_SUPER_READER_MODEL_PATH=/data/cortex-models/gguf/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf
+export ARGOS_LANE_GOVERNANCE_MODEL_PATH=/data/cortex-models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf
 
 # vLLM Models (configured via docker-compose volumes)
 export ARGOS_LANE_ORCHESTRATOR_URL=http://localhost:8000/v1
-export ARGOS_LANE_ORCHESTRATOR_MODEL=Qwen3-30B-Thinking
+export ARGOS_LANE_ORCHESTRATOR_MODEL=DeepSeek-R1-Distill-Qwen-32B
 export ARGOS_LANE_CODER_URL=http://localhost:8000/v1
-export ARGOS_LANE_CODER_MODEL=Qwen3-Coder-30B-1M
+export ARGOS_LANE_CODER_MODEL=Qwen2.5-Coder-32B-Instruct
 export ARGOS_LANE_FAST_RAG_URL=http://localhost:8000/v1
-export ARGOS_LANE_FAST_RAG_MODEL=MegaBeam-Mistral-7B-512k
+export ARGOS_LANE_FAST_RAG_MODEL=Llama-3.2-11B-Vision-Instruct
 ```
 
 ## Docker Compose Configuration
@@ -273,4 +272,3 @@ After downloading models:
 4. **Verify**: Test each lane with sample requests
 
 See `docs/specs/04-runtime-and-ops-strix-optimization.md` for deployment details.
-

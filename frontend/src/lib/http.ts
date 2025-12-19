@@ -140,6 +140,10 @@ export async function http<TResponse = unknown>(
   }
 
   const response = await fetch(url, init);
+  // #region agent log
+  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'http.ts:143',message:'HTTP request completed',data:{path, status: response.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  console.log(`[DEBUG] HTTP ${method} ${path} -> ${response.status}`);
+  // #endregion
 
   if (!response.ok) {
     const payload = (await parseJsonSafe(response)) as ApiErrorPayload | undefined;

@@ -49,11 +49,11 @@ This document summarizes the complete implementation of **Model Lanes** for Cort
 
 | Lane | Role | Model | Backend | Port | Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ORCHESTRATOR** | "The Brain" | Qwen3-30B-Thinking-256k | vLLM (ROCm) | 8000 | LangGraph Project Manager, Roadmap Generation, Agent Planning |
-| **CODER** | "Code Judge" | Qwen3-Coder-30B-1M | vLLM / TGI | 8000 | Repo Analysis, Refactoring Suggestions, Gap Analysis |
+| **ORCHESTRATOR** | "The Brain" | DeepSeek-R1-Distill-Qwen-32B | vLLM (ROCm) | 8000 | LangGraph Project Manager, Roadmap Generation, Agent Planning |
+| **CODER** | "Code Judge" | Qwen2.5-Coder-32B-Instruct | vLLM / TGI | 8000 | Repo Analysis, Refactoring Suggestions, Gap Analysis |
 | **SUPER-READER** | "Doc Atlas" | Nemotron-8B-UltraLong-4M | llama.cpp (GGUF) | 8080 | Deep Ingest, "Seismic" Log Analysis, Full Monorepo Audits |
-| **FAST-RAG** | "Retrieval" | MegaBeam-Mistral-7B-512k | vLLM / llama.cpp | 8000 | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
-| **GOVERNANCE** | "Compliance" | Granite 4.x Long-Context | llama.cpp | 8080 | Spec Verification, PRD Safety Checks |
+| **FAST-RAG** | "Retrieval" | Llama-3.2-11B-Vision-Instruct | vLLM / llama.cpp | 8000 | RAG Synthesis, Chat Q&A, Knowledge Nexus Queries |
+| **GOVERNANCE** | "Compliance" | granite-3.0-8b-instruct | llama.cpp | 8080 | Spec Verification, PRD Safety Checks |
 
 ## Files Created
 
@@ -293,10 +293,10 @@ lane_coder_model_path: str = Field(default="", env="ARGOS_LANE_CODER_MODEL_PATH"
 lane_fast_rag_model_path: str = Field(default="", env="ARGOS_LANE_FAST_RAG_MODEL_PATH")
 
 # Per-lane backend selection
-lane_orchestrator_backend: str = Field(default="", env="ARGOS_LANE_ORCHESTRATOR_BACKEND")
-lane_coder_backend: str = Field(default="", env="ARGOS_LANE_CODER_BACKEND")
+lane_orchestrator_backend: str = Field(default="vllm", env="ARGOS_LANE_ORCHESTRATOR_BACKEND")
+lane_coder_backend: str = Field(default="vllm", env="ARGOS_LANE_CODER_BACKEND")
 lane_super_reader_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_SUPER_READER_BACKEND")
-lane_fast_rag_backend: str = Field(default="", env="ARGOS_LANE_FAST_RAG_BACKEND")
+lane_fast_rag_backend: str = Field(default="vllm", env="ARGOS_LANE_FAST_RAG_BACKEND")
 lane_governance_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_GOVERNANCE_BACKEND")
 ```
 
@@ -307,7 +307,7 @@ lane_governance_backend: str = Field(default="llama_cpp", env="ARGOS_LANE_GOVERN
 ```bash
 # Default / Orchestrator (vLLM Port 8000)
 ARGOS_LLM_BASE_URL=http://localhost:8000/v1
-ARGOS_LLM_MODEL=Qwen3-30B-Thinking
+ARGOS_LLM_MODEL=DeepSeek-R1-Distill-Qwen-32B
 ARGOS_LLM_DEFAULT_LANE=orchestrator
 
 # Super-Reader (llama.cpp Port 8080)
@@ -318,16 +318,16 @@ ARGOS_LANE_SUPER_READER_BACKEND=llama_cpp
 
 # Coder (vLLM Port 8000)
 ARGOS_LANE_CODER_URL=http://localhost:8000/v1
-ARGOS_LANE_CODER_MODEL=Qwen3-Coder-30B-1M
+ARGOS_LANE_CODER_MODEL=Qwen2.5-Coder-32B-Instruct
 
 # Fast-RAG (vLLM Port 8000)
 ARGOS_LANE_FAST_RAG_URL=http://localhost:8000/v1
-ARGOS_LANE_FAST_RAG_MODEL=MegaBeam-Mistral-7B-512k
+ARGOS_LANE_FAST_RAG_MODEL=Llama-3.2-11B-Vision-Instruct
 
 # Governance (llama.cpp Port 8080)
 ARGOS_LANE_GOVERNANCE_URL=http://localhost:8080/v1
-ARGOS_LANE_GOVERNANCE_MODEL=Granite-4.x-Long-Context
-ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/granite-4m.gguf
+ARGOS_LANE_GOVERNANCE_MODEL=granite-3.0-8b-instruct
+ARGOS_LANE_GOVERNANCE_MODEL_PATH=/models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf
 ARGOS_LANE_GOVERNANCE_BACKEND=llama_cpp
 ```
 
@@ -447,12 +447,12 @@ pnpm exec playwright test e2e/model-lanes.spec.ts -g "Lane Configuration"
 ```
 models/
 ├── vllm/                    # vLLM-compatible models
-│   ├── qwen-orchestrator/  # ORCHESTRATOR lane
-│   ├── qwen-coder/         # CODER lane
-│   └── mistral-fastrag/    # FAST_RAG lane
+│   ├── orchestrator/bf16/  # ORCHESTRATOR lane (DeepSeek-R1-Distill-Qwen-32B)
+│   ├── coder/bf16/         # CODER lane (Qwen2.5-Coder-32B-Instruct)
+│   └── fast_rag/bf16/      # FAST_RAG lane (Llama-3.2-11B-Vision-Instruct)
 ├── gguf/                    # GGUF models for llama.cpp
-│   ├── nemotron-8b-instruct.Q4_K_M.gguf  # SUPER_READER lane
-│   └── granite-8b-instruct.Q4_K_M.gguf   # GOVERNANCE lane
+│   ├── Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf  # SUPER_READER lane
+│   └── granite-3.0-8b-instruct-Q4_K_M.gguf   # GOVERNANCE lane
 └── embeddings/              # Embedding models (cached in ~/.cache/huggingface/)
 ```
 
@@ -475,8 +475,8 @@ python3 backend/scripts/download_models.py
 
 ```bash
 # Set lane configurations
-export ARGOS_LANE_SUPER_READER_MODEL_PATH=/data/cortex-models/gguf/nemotron-8b-instruct.Q4_K_M.gguf
-export ARGOS_LANE_GOVERNANCE_MODEL_PATH=/data/cortex-models/gguf/granite-8b-instruct.Q4_K_M.gguf
+export ARGOS_LANE_SUPER_READER_MODEL_PATH=/data/cortex-models/gguf/Llama-3.1-Nemotron-8B-UltraLong-4M-Instruct-q4_k_m.gguf
+export ARGOS_LANE_GOVERNANCE_MODEL_PATH=/data/cortex-models/gguf/granite-3.0-8b-instruct-Q4_K_M.gguf
 export ARGOS_LANE_ORCHESTRATOR_URL=http://localhost:8000/v1
 export ARGOS_LANE_CODER_URL=http://localhost:8000/v1
 export ARGOS_LANE_FAST_RAG_URL=http://localhost:8000/v1
@@ -570,4 +570,3 @@ The Model Lanes implementation is **complete** and production-ready. All core fu
 7. ✅ E2E tests created
 
 The system is ready for testing and deployment on Strix Halo hardware. Models should be downloaded outside containers using the provided scripts, and the Docker Compose configuration will mount them into containers for use.
-

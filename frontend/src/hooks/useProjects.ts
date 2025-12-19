@@ -1,13 +1,20 @@
 // src/hooks/useProjects.ts
 import { useQuery } from "@tanstack/react-query";
-import { getProjects } from "../lib/argosApi";
+import { getProjects } from "../lib/cortexApi";
 import type { ArgosProject } from "../domain/types";
-import { useArgosStore } from "../state/argosStore";
+import { useArgosStore } from "../state/cortexStore";
 
 export const projectsQueryKey = ["projects"] as const;
 
+// #region agent log
+fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useProjects.ts:21',message:'Starting fetchProjects',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+// #endregion
 export async function fetchProjects(): Promise<ArgosProject[]> {
-  return getProjects();
+  const response = await getProjects();
+  // #region agent log
+  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useProjects.ts:24',message:'fetchProjects response received',data:{itemsCount: response.items?.length, total: response.total},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  return response.items;
 }
 
 /**
@@ -19,11 +26,15 @@ export function useProjects() {
   const query = useQuery({
     queryKey: projectsQueryKey,
     queryFn: async () => {
+      console.log('[DEBUG] useProjects: Starting fetchProjects');
       const data = await fetchProjects();
+      console.log('[DEBUG] useProjects: fetchProjects complete, setting projects in store', data?.length);
       setProjects(data);
       return data;
     },
   });
+
+  console.log('[DEBUG] useProjects: query state', { isLoading: query.isLoading, isFetching: query.isFetching, hasData: !!query.data });
 
   return {
     data: query.data,

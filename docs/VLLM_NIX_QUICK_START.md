@@ -48,7 +48,7 @@ curl http://localhost:8000/health
 **Configuration:**
 ```bash
 # Use different model
-MODEL_PATH=/models/orchestrator/bf16 vllm-server
+MODEL_PATH=/models/vllm/orchestrator/bf16 vllm-server
 
 # Adjust GPU memory
 GPU_MEM_UTIL=0.45 vllm-server
@@ -57,7 +57,7 @@ GPU_MEM_UTIL=0.45 vllm-server
 MAX_MODEL_LEN=64000 vllm-server
 
 # All custom args
-MODEL_PATH=/models/coder/bf16 \
+MODEL_PATH=/models/vllm/coder/bf16 \
   VLLM_GPU_MEMORY_UTILIZATION=0.50 \
   MAX_MODEL_LEN=32768 \
   vllm-server
@@ -108,7 +108,7 @@ sudo nano /etc/nixos/configuration.nix
         "HSA_OVERRIDE_GFX_VERSION=11.0.0"
         "VLLM_TARGET_DEVICE=rocm"
         "GPU_MEM_UTIL=0.48"
-        "MODEL_PATH=/home/nexus/Argos_Chatgpt/models/orchestrator/bf16"
+        "MODEL_PATH=/home/nexus/Argos_Chatgpt/models/vllm/orchestrator/bf16"
       ];
       
       ExecStart = "${pkgs.vllm-server}/bin/vllm-server";
@@ -178,7 +178,7 @@ podman run -it \
   --group-add render \
   -p 8000:8000 \
   -v /home/nexus/Argos_Chatgpt/models:/models:ro \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   vllm-rocm-nix:latest
 
 # Test
@@ -199,7 +199,7 @@ docker run -it \
   --group-add render \
   -p 11434:8000 \
   -v /home/nexus/Argos_Chatgpt/models:/models:ro \
-  -e MODEL_PATH=/models/orchestrator/bf16 \
+  -e MODEL_PATH=/models/vllm/orchestrator/bf16 \
   vllm-rocm-nix:latest
 
 # Test on external port 11434
@@ -231,7 +231,7 @@ services:
       - "11434:8000"
     
     environment:
-      - MODEL_PATH=/models/orchestrator/bf16
+      - MODEL_PATH=/models/vllm/orchestrator/bf16
       - GPU_MEM_UTIL=0.48
       - HIP_VISIBLE_DEVICES=0
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
@@ -309,7 +309,7 @@ VLLM_ROCM_GEMM_TUNING=fast                  # Tune for speed vs precision
 
 **Fast RAG Lane (Small Model)**
 ```bash
-MODEL_PATH=/models/fast-rag/bf16 \
+MODEL_PATH=/models/vllm/fast_rag/bf16 \
   MAX_MODEL_LEN=131072 \
   GPU_MEM_UTIL=0.30 \
   vllm-server
@@ -317,7 +317,7 @@ MODEL_PATH=/models/fast-rag/bf16 \
 
 **Orchestrator Lane (Large Model)**
 ```bash
-MODEL_PATH=/models/orchestrator/bf16 \
+MODEL_PATH=/models/vllm/orchestrator/bf16 \
   MAX_MODEL_LEN=32768 \
   GPU_MEM_UTIL=0.50 \
   vllm-server
@@ -356,7 +356,7 @@ curl http://localhost:8000/v1/models
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen3-30B-Instruct",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "messages": [{"role": "user", "content": "Say hello"}],
     "max_tokens": 10
   }'
@@ -368,7 +368,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen3-30B-Instruct",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "messages": [{"role": "user", "content": "Count from 1 to 5"}],
     "stream": true
   }'
@@ -405,7 +405,7 @@ echo $ROCM_HOME
 rocm-smi
 
 # Test model path exists
-ls -la /models/orchestrator/bf16/
+ls -la /models/vllm/orchestrator/bf16/
 
 # Run with verbose output
 PYTHONVERBOSE=1 vllm-server
@@ -421,7 +421,7 @@ GPU_MEM_UTIL=0.40 vllm-server
 MAX_MODEL_LEN=16384 vllm-server
 
 # Or use smaller model
-MODEL_PATH=/models/fast-rag/bf16 vllm-server
+MODEL_PATH=/models/vllm/fast_rag/bf16 vllm-server
 ```
 
 ### Container Port Conflicts
@@ -450,16 +450,16 @@ Update `backend/app/config.py`:
 ```python
 # vLLM (Nix-based)
 lane_orchestrator_url = "http://localhost:8000/v1"
-lane_orchestrator_model = "Qwen/Qwen3-30B-Instruct"
-lane_orchestrator_backend = "openai"
+lane_orchestrator_model = "DeepSeek-R1-Distill-Qwen-32B"
+lane_orchestrator_backend = "vllm"
 
 lane_coder_url = "http://localhost:8000/v1"
-lane_coder_model = "Qwen/Qwen3-Coder-30B-1M"
-lane_coder_backend = "openai"
+lane_coder_model = "Qwen2.5-Coder-32B-Instruct"
+lane_coder_backend = "vllm"
 
 lane_fast_rag_url = "http://localhost:8000/v1"
-lane_fast_rag_model = "MegaBeam/Mistral-7B-512k"
-lane_fast_rag_backend = "openai"
+lane_fast_rag_model = "Llama-3.2-11B-Vision-Instruct"
+lane_fast_rag_backend = "vllm"
 ```
 
 ### Start Full Stack

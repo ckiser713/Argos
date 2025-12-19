@@ -104,6 +104,14 @@ class ModelWarmupService:
         except requests.RequestException as exc:
             return False, str(exc)
 
+    def stop_monitoring(self) -> None:
+        """Stop the background monitor task."""
+        with self._lock:
+            if self._monitor_task is not None:
+                self._monitor_task.cancel()
+                self._monitor_task = None
+        self._logger.info("Model warmup monitor stopped.")
+
 
 def build_lane_health_endpoints(settings: Settings) -> list[str]:
     lane_urls = [
