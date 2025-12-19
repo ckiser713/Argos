@@ -85,3 +85,32 @@ $HOME/
 
 # Archive folder
 archive/
+
+# Comprehensive Argos Ignore Rules
+qdrant_storage/
+n8n_data/
+data/
+backend/atlas.db
+backend/test_atlas.db
+*.db
+*.db-journal
+*.db-wal
+dist/
+frontend/dist/
+frontend/result*
+result*
+e2e/visual-regression.spec.ts-snapshots/
+.env
+.env.local
+.envrc
+.python-version
+.backend.pid
+.pids/
+.pytest_cache/
+.ruff_cache/
+.pnpm-store/
+.cursor/
+*.log
+logs/
+backend/temp_uploads/
+frontend/$HOME/
