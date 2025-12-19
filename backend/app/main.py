@@ -140,25 +140,28 @@ def create_app() -> FastAPI:
     
     setup_metrics_endpoint(app)
     
-    # CORS for local frontend dev - must be added before other middlewares
-    # Support multiple ports for development flexibility
-    allowed = settings.allowed_origins if settings.allowed_origins_str.strip() != "*" else [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:4173",
-        "http://127.0.0.1:4173",
-        "http://localhost:4174",
-        "http://127.0.0.1:4174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed,
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS for local frontend dev - must be added LAST (so it runs first)
+    # Use regex pattern matching for wildcard/flexible origin matching
+    cors_pattern = "http://(?:localhost|127\\.0\\.0\\.1):\\d{4,5}" if settings.allowed_origins_str.strip() == "*" else None
+    
+    if cors_pattern:
+        # Use regex matching for wildcard mode (no credentials with regex)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=cors_pattern,
+            allow_credentials=False,  # Can't use credentials with regex
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        # Use explicit list of allowed origins
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     
     app.add_middleware(ObservabilityMiddleware)
 
