@@ -68,6 +68,10 @@ export function AppProviders({ children }: PropsWithChildren) {
       const maxAttempts = 15; // 30 seconds total (15 * 2s)
       let attempts = 0;
 
+      // #region agent log
+      fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppProviders.tsx:59',message:'Startup check began',data:{apiBaseUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       while (attempts < maxAttempts) {
         try {
           const response = await fetch(`${apiBaseUrl}/api/system/startup-progress`, {
@@ -75,8 +79,16 @@ export function AppProviders({ children }: PropsWithChildren) {
             headers: { "Content-Type": "application/json" },
           });
 
+          // #region agent log
+          fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppProviders.tsx:76',message:'Startup endpoint response',data:{status: response.status, attempts},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+
           if (response.ok) {
             const data = await response.json();
+
+            // #region agent log
+            fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppProviders.tsx:83',message:'Startup data received',data:{database: data.database, keys: Object.keys(data)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
 
             // Check if critical components are ready
             if (data.database) {
@@ -89,6 +101,9 @@ export function AppProviders({ children }: PropsWithChildren) {
             console.log(`Backend starting... (attempt ${attempts + 1}/${maxAttempts})`);
           }
         } catch (error) {
+          // #region agent log
+          fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppProviders.tsx:98',message:'Startup check failed',data:{error: String(error), attempts},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           // Backend not responding yet, keep trying
           console.log(`Waiting for backend... (attempt ${attempts + 1}/${maxAttempts})`);
         }
