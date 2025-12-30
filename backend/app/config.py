@@ -55,8 +55,9 @@ class Settings(BaseSettings):
     otel_sample_ratio: float = Field(default=1.0, env="ARGOS_OTEL_SAMPLE_RATIO")
 
     # Environment variable for allowed origins, comma-separated
+    # Use wildcard regex for localhost development to allow any port
     allowed_origins_str: str = Field(
-        default="http://localhost:5173,http://127.0.0.1:5173,http://0.0.0.0:5173",
+        default="*",
         env="ARGOS_ALLOWED_ORIGINS",
     )
 

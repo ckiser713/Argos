@@ -106,9 +106,6 @@ const AppContent: React.FC = () => {
 
   // Load projects and set current project
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
-  // #region agent log
-  console.log('[DEBUG] Projects state:', { projectsLoading, hasProjects: !!projects, projectsCount: projects?.length, error: projectsError?.message });
-  // #endregion
   const setCurrentProjectId = useArgosStore((s) => s.setCurrentProjectId);
 
   // Set first project as current if none selected
@@ -120,21 +117,15 @@ const AppContent: React.FC = () => {
 
   // Show loading state while projects are loading
   if (projectsLoading) {
-    console.log('[DEBUG] Rendering loading state because projectsLoading is true');
     return (
       <div className="flex h-screen w-full bg-void text-white items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan mx-auto mb-4"></div>
           <p className="text-gray-400 font-mono">Loading projects...</p>
-          <div className="mt-4 text-xs text-gray-600 font-mono">
-            State: {JSON.stringify({ projectsLoading, projectsError: projectsError?.message })}
-          </div>
         </div>
       </div>
     );
   }
-
-  console.log('[DEBUG] Past loading state. Projects:', projects?.length);
 
   // Show error state if projects failed to load
   if (projectsError) {

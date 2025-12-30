@@ -144,10 +144,6 @@ export async function http<TResponse = unknown>(
 
   const url = buildUrl(path, query);
 
-  // #region agent log
-  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/src/lib/http.ts:145',message:'http request starting',data:{method, url, hasBody: body !== undefined, hasToken: !!authTokenProvider?.()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
   const finalHeaders: Record<string, string> = {
     Accept: "application/json",
     ...headers,
@@ -172,28 +168,13 @@ export async function http<TResponse = unknown>(
     init.body = body instanceof FormData ? body : JSON.stringify(body);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, init);
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/src/lib/http.ts:177',message:'http fetch completed',data:{status: response.status, statusText: response.statusText, ok: response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-  } catch (fetchError) {
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/src/lib/http.ts:180',message:'http fetch failed with network error',data:{error: fetchError?.message || 'Unknown network error', url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    throw fetchError;
-  }
+  const response = await fetch(url, init);
 
   if (!response.ok) {
     const payload = (await parseJsonSafe(response)) as ApiErrorPayload | undefined;
     const message =
       payload?.message ||
       `Request to ${url} failed with status ${response.status} ${response.statusText}`;
-
-    // #region agent log
-    fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/src/lib/http.ts:189',message:'http request failed with non-2xx status',data:{status: response.status, statusText: response.statusText, message, url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
 
     throw new ApiError({
       message,
@@ -209,8 +190,5 @@ export async function http<TResponse = unknown>(
   }
 
   const data = await parseJsonSafe(response);
-  // #region agent log
-  fetch('http://localhost:7243/ingest/22b2bc10-668b-4e25-b7af-89ca2a3e5432',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/src/lib/http.ts:205',message:'http request completed successfully',data:{url, hasData: data !== undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   return data as TResponse;
 }
